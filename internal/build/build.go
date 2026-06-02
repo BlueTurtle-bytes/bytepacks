@@ -487,14 +487,28 @@ func runApkoInDocker(configFile, imageTag, outputTar string, opts Options) error
 
 	args := []string{
 		"run", "--rm",
-		"-w", "/work/output", // set CWD so ./melange.rsa.pub and ./packages resolve correctly
+		"-w", "/work/output",
 		"-v", absOut + ":/work/output",
+	}
+
+	if opts.TLSExtraCA != "" {
+		absCA, err := filepath.Abs(opts.TLSExtraCA)
+		if err != nil {
+			return fmt.Errorf("resolving TLS CA path: %w", err)
+		}
+		args = append(args,
+			"-v", absCA+":/extra-certs/"+filepath.Base(absCA)+":ro",
+			"-e", "SSL_CERT_DIR=/etc/ssl/certs:/extra-certs",
+		)
+	}
+
+	args = append(args,
 		"cgr.dev/chainguard/apko",
 		"build", containerConfig,
 		imageTag,
 		containerTar,
 		"--arch", "x86_64",
-	}
+	)
 
 	return runTool("docker", args)
 }
