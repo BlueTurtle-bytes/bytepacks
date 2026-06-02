@@ -1,5 +1,0 @@
-runtime: golang
-build:
-  command: |
-    mkdir -p ${{targets.destdir}}/usr/bin
-    go build -o ${{targets.destdir}}/usr/bin/app ./cmd/apexpack

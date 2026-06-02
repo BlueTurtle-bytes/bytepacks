@@ -49,7 +49,8 @@ build:
     - git
   command: |
     mkdir -p ${{targets.destdir}}/usr/bin
-    go build -o ${{targets.destdir}}/usr/bin/app .
+    MAIN_GO=$(find . -maxdepth 4 -name "main.go" ! -path "*/vendor/*" ! -path "*_test*" | head -1)
+    go build -o ${{targets.destdir}}/usr/bin/app $(dirname "$MAIN_GO")
   env:
     CGO_ENABLED: "0"
     GOFLAGS: "-trimpath"

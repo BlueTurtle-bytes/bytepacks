@@ -13,3 +13,4 @@ bin/
 *.test
 *.out
 vendor/
+Dockerfile

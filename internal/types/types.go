@@ -38,7 +38,6 @@ type Profile struct {
 
 	// Image defines what goes into the final OCI image (feeds into apko.yaml).
 	Image ImageConfig `yaml:"image"`
-
 }
 
 // ============================================================================
