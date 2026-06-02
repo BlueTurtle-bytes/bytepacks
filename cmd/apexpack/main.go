@@ -132,6 +132,7 @@ func buildCmd() *cobra.Command {
 		version     string
 		runtime     string
 		projectName string
+		tlsExtraCA  string
 		dryRun      bool
 	)
 
@@ -225,6 +226,7 @@ Examples:
 				Tag:            tag,
 				Framework:      detectedFramework,
 				PackageManager: detectedPM,
+				TLSExtraCA:     tlsExtraCA,
 			}
 
 			plan, err := build.Plan(matchedProfile, opts)
@@ -280,6 +282,8 @@ Examples:
 		"Override the project name (defaults to the source directory name)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"Print generated melange.yaml and apko.yaml without building")
+	cmd.Flags().StringVar(&tlsExtraCA, "tls-extra-ca", "",
+		"Path to an extra CA certificate (PEM) to trust — use in corporate proxy environments (env: APEXPACK_EXTRA_CA)")
 
 	return cmd
 }

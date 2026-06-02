@@ -49,6 +49,12 @@ type Options struct {
 
 	// Profile is set internally by Run() to make cache paths available to tool runners.
 	Profile *types.Profile
+
+	// TLSExtraCA is a path to an extra CA certificate (PEM) to trust during builds.
+	// Use this in corporate environments where a proxy replaces TLS certificates.
+	// The cert is mounted into the melange container and added to SSL_CERT_DIR.
+	// Falls back to the APEXPACK_EXTRA_CA environment variable if not set.
+	TLSExtraCA string
 }
 
 // Plan builds a MelangeConfig and ApkoConfig from the profile and options.
@@ -91,6 +97,9 @@ func Run(plan *types.BuildPlan, opts Options) error {
 	opts.Profile = plan.Profile
 	opts.Framework = plan.Framework
 	opts.PackageManager = plan.PackageManager
+	if opts.TLSExtraCA == "" {
+		opts.TLSExtraCA = os.Getenv("APEXPACK_EXTRA_CA")
+	}
 
 	if err := os.MkdirAll(opts.OutputDir, 0o755); err != nil {
 		return fmt.Errorf("creating output dir: %w", err)
@@ -317,13 +326,18 @@ func runMelange(configFile string, opts Options) error {
 		return runMelangeInDocker(configFile, keyFile, opts)
 	}
 
-	return runTool("melange", []string{
+	env := os.Environ()
+	if opts.TLSExtraCA != "" {
+		absCA, _ := filepath.Abs(opts.TLSExtraCA)
+		env = append(env, "SSL_CERT_DIR=/etc/ssl/certs:"+filepath.Dir(absCA))
+	}
+	return runToolEnv("melange", []string{
 		"build", configFile,
 		"--source-dir", opts.SourceDir,
 		"--out-dir", packagesDir,
 		"--signing-key", keyFile,
 		"--arch", "x86_64",
-	})
+	}, env)
 }
 
 // runMelangeInDocker runs the melange build entirely inside a Linux container.
@@ -372,6 +386,20 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 		for _, cachePath := range override.Caches {
 			args = append(args, "-v", cacheVolumeName(cachePath)+":"+cachePath)
 		}
+	}
+
+	// Inject corporate CA cert so melange can reach Wolfi repositories through
+	// a TLS-intercepting proxy. SSL_CERT_DIR adds the cert directory alongside
+	// the container's existing system certs — both are trusted.
+	if opts.TLSExtraCA != "" {
+		absCA, err := filepath.Abs(opts.TLSExtraCA)
+		if err != nil {
+			return fmt.Errorf("resolving TLS CA path: %w", err)
+		}
+		args = append(args,
+			"-v", absCA+":/extra-certs/"+filepath.Base(absCA)+":ro",
+			"-e", "SSL_CERT_DIR=/etc/ssl/certs:/extra-certs",
+		)
 	}
 
 	args = append(args,
@@ -458,6 +486,30 @@ func runTool(name string, args []string) error {
 	}
 
 	cmd := exec.Command(path, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	fmt.Printf("  → %s %s\n", name, strings.Join(args, " "))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s exited with error: %w", name, err)
+	}
+	return nil
+}
+
+// runToolEnv is like runTool but uses a custom environment instead of inheriting the process env.
+func runToolEnv(name string, args []string, env []string) error {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		home, _ := os.UserHomeDir()
+		fallback := filepath.Join(home, ".nimbopacks", "toolchain", "bin", name)
+		if _, statErr := os.Stat(fallback); statErr == nil {
+			path = fallback
+		} else {
+			return fmt.Errorf("%s not found in PATH — run: nimbopacks toolchain install", name)
+		}
+	}
+
+	cmd := exec.Command(path, args...)
+	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	fmt.Printf("  → %s %s\n", name, strings.Join(args, " "))

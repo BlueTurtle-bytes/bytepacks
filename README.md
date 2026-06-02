@@ -94,6 +94,9 @@ apexpack build . --dry-run
 
 # Custom output directory
 apexpack build . --output /tmp/my-build
+
+# Corporate proxy — trust an extra CA certificate
+apexpack build . --tls-extra-ca ~/corp-ca.pem
 ```
 
 | Flag | Default | Description |
@@ -104,6 +107,7 @@ apexpack build . --output /tmp/my-build
 | `--output` / `-o` | `.apexpack-output/` | Where configs and image tarball are written |
 | `--dry-run` | `false` | Print generated configs, do not run tools |
 | `--profiles-dir` | `profiles/` | Directory containing language profiles |
+| `--tls-extra-ca` | _(none)_ | Path to an extra CA cert (PEM) to trust — for corporate proxy environments (env: `APEXPACK_EXTRA_CA`) |
 
 ---
 
@@ -611,6 +615,43 @@ On macOS, each declared cache path becomes a persistent named Docker volume. The
 
 **7. Profiles directory is runtime — not embedded**
 Profiles live on disk in `profiles/`, not compiled into the binary. Add, edit, or override profiles without recompiling. Teams can maintain a shared profiles repo and point `--profiles-dir` at it.
+
+---
+
+## Corporate Proxy Environments
+
+In networks where a TLS-intercepting proxy (Zscaler, Blue Coat, etc.) replaces certificates, the melange build container will fail to reach `packages.wolfi.dev` with an x509 certificate error:
+
+```
+failed to verify the x509 cert: signed by unknown authority
+```
+
+The fix is to provide the corporate CA certificate so the melange container trusts it alongside the standard system CAs.
+
+**Step 1 — get the corporate CA certificate (PEM format)**
+
+```bash
+# macOS — export from system Keychain
+security find-certificate -a -p /Library/Keychains/System.keychain > ~/corp-ca.pem
+
+# Linux — usually already on disk
+cp /usr/local/share/ca-certificates/corporate.crt ~/corp-ca.pem
+```
+
+Or ask your IT / security team for the root CA certificate in PEM format.
+
+**Step 2 — pass it to apexpack**
+
+```bash
+# Via flag
+apexpack build . --tls-extra-ca ~/corp-ca.pem
+
+# Via environment variable — set once in your shell profile
+export APEXPACK_EXTRA_CA=~/corp-ca.pem
+apexpack build .
+```
+
+The flag takes precedence over the environment variable. Both the system CAs and the corporate CA are trusted — the corporate cert is added alongside, not instead of, the container's existing trust store.
 
 ---
 
