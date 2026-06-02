@@ -1,0 +1,79 @@
+# Node.js language profile
+# Detects: package.json
+# Supports: Express, Fastify, NestJS, Next.js, plain Node
+# Package managers: npm (default), yarn, pnpm
+# Runtime image: Wolfi + nodejs (no npm — smaller final image)
+
+runtime: node
+version: "1"
+description: Node.js application (Express, Fastify, NestJS, Next.js)
+
+detect:
+  files:
+    - package.json
+  content:
+    - file: package.json
+      contains: "\"next\""
+      boost-confidence: 0.05
+      framework: nextjs
+    - file: package.json
+      contains: "\"@nestjs/core\""
+      boost-confidence: 0.05
+      framework: nestjs
+    - file: package.json
+      contains: "\"express\""
+      boost-confidence: 0.03
+      framework: express
+    - file: package.json
+      contains: "\"fastify\""
+      boost-confidence: 0.03
+      framework: fastify
+    - file: package.json
+      contains: "\"hono\""
+      boost-confidence: 0.03
+      framework: hono
+    - file: package.json
+      contains: "\"@remix-run/node\""
+      boost-confidence: 0.03
+      framework: remix
+  confidence: 0.85
+
+build:
+  # nodejs and npm are needed to install dependencies and run the build.
+  # python3 and build-base are needed for native Node addons (node-gyp).
+  dependencies:
+    - busybox
+    - nodejs
+    - npm
+    - python3
+    - build-base
+    - git
+  # npm ci installs exact versions from package-lock.json (reproducible).
+  # npm run build compiles TypeScript, bundles assets, etc.
+  # The dist/ or build/ output is copied to /home/build/output/app/
+  command: |
+    npm ci --prefer-offline
+    npm run build --if-present
+    mkdir -p /home/build/output/app
+    cp -r . /home/build/output/app/
+    rm -rf /home/build/output/app/node_modules
+    cd /home/build/output/app && npm ci --omit=dev --prefer-offline
+  env:
+    NODE_ENV: "production"
+    NPM_CONFIG_CACHE: "/home/build/.npm"
+    CI: "true"
+
+image:
+  # Only nodejs runtime — no npm, no build tools in the final image.
+  packages:
+    - nodejs
+    - ca-certificates-bundle=20260413-r0
+  entrypoint: node
+  cmd:
+    - "/app/server.js"
+  run-as: 65532
+  ports:
+    - "3000"
+  env:
+    NODE_ENV: "production"
+    PORT: "3000"

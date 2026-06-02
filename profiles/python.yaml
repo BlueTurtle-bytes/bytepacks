@@ -1,0 +1,89 @@
+# Python language profile
+# Detects: requirements.txt, pyproject.toml, Pipfile, setup.py
+# Supports: FastAPI, Django, Flask, plain Python scripts
+# Package managers: pip (default), poetry, pdm, pipenv
+# Runtime image: Wolfi + python-3.12
+
+runtime: python
+version: "1"
+description: Python application (FastAPI, Django, Flask, uvicorn)
+
+detect:
+  files:
+    - requirements.txt
+    - pyproject.toml
+    - Pipfile
+    - setup.py
+  content:
+    - file: requirements.txt
+      contains: "fastapi"
+      boost-confidence: 0.04
+      framework: fastapi
+    - file: requirements.txt
+      contains: "django"
+      boost-confidence: 0.04
+      framework: django
+    - file: requirements.txt
+      contains: "flask"
+      boost-confidence: 0.04
+      framework: flask
+    - file: requirements.txt
+      contains: "aiohttp"
+      boost-confidence: 0.03
+      framework: aiohttp
+    - file: pyproject.toml
+      contains: "fastapi"
+      boost-confidence: 0.04
+      framework: fastapi
+    - file: pyproject.toml
+      contains: "django"
+      boost-confidence: 0.04
+      framework: django
+    - file: pyproject.toml
+      contains: "flask"
+      boost-confidence: 0.04
+      framework: flask
+
+  confidence: 0.85
+
+build:
+  # python-3.12 and py3-pip are needed to install dependencies.
+  # build-base is needed for packages that compile C extensions (e.g. psycopg2).
+  dependencies:
+    - busybox
+    - python-3.12
+    - py3-pip
+    - build-base
+    - git
+  # Install all dependencies from requirements.txt.
+  # --no-cache-dir keeps the image smaller (no pip download cache).
+  # The application source is copied to /home/build/output/app/
+  command: |
+    pip install --no-cache-dir -r requirements.txt --target /home/build/output/app/deps
+    cp -r . /home/build/output/app/src
+  env:
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONUNBUFFERED: "1"
+    PIP_NO_CACHE_DIR: "1"
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+image:
+  packages:
+    - python-3.12
+    - ca-certificates-bundle=20260413-r0
+  # python3 -m uvicorn is the recommended way to run FastAPI / ASGI apps.
+  # For Django / Flask use: python3 -m gunicorn
+  entrypoint: python3
+  cmd:
+    - "-m"
+    - "uvicorn"
+    - "main:app"
+    - "--host=0.0.0.0"
+    - "--port=8000"
+  run-as: 65532
+  ports:
+    - "8000"
+  env:
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONUNBUFFERED: "1"
+    PYTHONPATH: "/app/deps:/app/src"

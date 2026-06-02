@@ -1,0 +1,87 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: apexpack-build
+  labels:
+    app.kubernetes.io/version: "1.0"
+  annotations:
+    tekton.dev/displayName: "apexpack build"
+    tekton.dev/description: >-
+      Builds a minimal, secure OCI image from source using melange and apko.
+      Reads language profiles from a cloned git workspace.
+      Requires a privileged security context for melange's bubblewrap sandbox.
+spec:
+  params:
+    - name: IMAGE
+      description: "Full OCI image reference to produce (e.g. ghcr.io/myorg/myapp:v1.0.0)."
+    - name: VERSION
+      description: "Version string embedded in the APK package."
+      default: "0.0.1"
+    - name: RUNTIME
+      description: "Language runtime profile to use. If empty, auto-detection runs."
+      default: ""
+    - name: PROJECT_NAME
+      description: "Override the project name. Defaults to the source directory basename."
+      default: ""
+
+  workspaces:
+    - name: source
+      description: "Cloned source code to build."
+    - name: profiles
+      description: "Cloned profiles repository. Profiles are read from <profiles-workspace>/profiles/."
+    - name: output
+      description: "Where the OCI tarball, APK package, SBOM, and signing keys are written."
+    - name: registry-credentials
+      description: "Docker config.json for registry push (optional)."
+      optional: true
+      mountPath: /home/nonroot/.docker
+
+  results:
+    - name: IMAGE_TARBALL
+      description: "Path to the built OCI image tarball in the output workspace."
+    - name: SBOM_PATH
+      description: "Path to the SPDX SBOM in the output workspace."
+    - name: APK_PATH
+      description: "Path to the built APK package in the output workspace."
+
+  stepTemplate:
+    securityContext:
+      privileged: true   # melange needs bubblewrap; remove if node has user namespaces enabled
+
+  steps:
+    - name: build
+      image: ghcr.io/apexpack/apexpack:latest
+      script: |
+        #!/bin/sh
+        set -e
+
+        PROFILES_DIR="$(workspaces.profiles.path)/profiles"
+
+        RUNTIME_FLAG=""
+        if [ -n "$(params.RUNTIME)" ]; then
+          RUNTIME_FLAG="--runtime $(params.RUNTIME)"
+        fi
+
+        NAME_FLAG=""
+        if [ -n "$(params.PROJECT_NAME)" ]; then
+          NAME_FLAG="--project-name $(params.PROJECT_NAME)"
+        fi
+
+        apexpack build \
+          $(workspaces.source.path) \
+          --tag $(params.IMAGE) \
+          --version $(params.VERSION) \
+          --output $(workspaces.output.path) \
+          --profiles-dir "$PROFILES_DIR" \
+          $RUNTIME_FLAG \
+          $NAME_FLAG
+
+        # Emit result paths for downstream tasks.
+        SOURCE_BASE=$(basename $(workspaces.source.path))
+        printf "%s" "$(workspaces.output.path)/${SOURCE_BASE}.tar"      > $(results.IMAGE_TARBALL.path)
+        printf "%s" "$(workspaces.output.path)/sbom-x86_64.spdx.json"   > $(results.SBOM_PATH.path)
+        printf "%s" "$(workspaces.output.path)/packages/x86_64/*.apk"   > $(results.APK_PATH.path)
+
+        echo ""
+        echo "Build complete:"
+        ls -lh $(workspaces.output.path)/

@@ -1,0 +1,68 @@
+# .NET language profile
+# Detects: *.csproj (single project), *.sln (solution / monorepo)
+# Supports: ASP.NET Core, Minimal API, Worker Service, Console apps
+# Runtime image: Wolfi + aspnetcore-8-runtime (ASP.NET runtime, not SDK)
+
+runtime: dotnet
+version: "1"
+description: .NET application (ASP.NET Core, Minimal API, Worker Service)
+
+detect:
+  # Glob patterns — .csproj and .sln filenames are always project-specific.
+  patterns:
+    - "*.csproj"
+    - "*.sln"
+  content:
+    - file: global.json
+      contains: "dotnet"
+      boost-confidence: 0.05
+    - file: Directory.Packages.props
+      contains: "AspNetCore"
+      boost-confidence: 0.05
+      framework: aspnetcore
+    - file: Directory.Packages.props
+      contains: "MassTransit"
+      boost-confidence: 0.03
+      framework: masstransit
+    - file: Directory.Packages.props
+      contains: "Orleans"
+      boost-confidence: 0.03
+      framework: orleans
+  confidence: 0.85
+
+build:
+  # dotnet-8-sdk includes the compiler, NuGet restore, and publish tooling.
+  dependencies:
+    - busybox
+    - dotnet-8-sdk
+    - build-base
+    - git
+  # dotnet publish produces a self-contained output directory.
+  # /home/build/output/app is where apko will pick up the published files.
+  command: |
+    dotnet restore
+    dotnet publish -c Release -o /home/build/output/app
+  env:
+    DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    DOTNET_NOLOGO: "1"
+    NUGET_PACKAGES: "/home/build/.nuget/packages"
+
+image:
+  # aspnetcore-8-runtime is the ASP.NET Core runtime — no SDK, no compiler.
+  # Much smaller than dotnet-8-sdk and has a smaller CVE surface.
+  packages:
+    - aspnetcore-8-runtime
+    - ca-certificates-bundle=20260413-r0
+    - icu-libs
+  # The entrypoint is the published DLL.
+  # apexpack sets this to /app/<ProjectName>.dll at build time.
+  entrypoint: /usr/bin/dotnet
+  cmd:
+    - "/app/app.dll"
+  run-as: 65532
+  ports:
+    - "8080"
+  env:
+    ASPNETCORE_URLS: "http://+:8080"
+    DOTNET_RUNNING_IN_CONTAINER: "true"
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "false"

@@ -1,0 +1,55 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: apexpack-scan
+  labels:
+    app.kubernetes.io/version: "1.0"
+  annotations:
+    tekton.dev/displayName: "apexpack CVE scan"
+    tekton.dev/description: >-
+      Scans the SBOM produced by apexpack-build for CVEs using grype.
+      Exits 1 if vulnerabilities at or above FAIL_ON severity are found.
+      Upload SARIF output to GitHub Code Scanning or a security tool.
+spec:
+  params:
+    - name: SBOM_PATH
+      description: "Path to the SPDX SBOM file to scan."
+    - name: FAIL_ON
+      description: "Minimum severity that fails the pipeline: critical, high, medium, low, none."
+      default: "high"
+    - name: FORMAT
+      description: "Output format: table, json, sarif."
+      default: "table"
+
+  workspaces:
+    - name: output
+      description: "Where the scan report is written."
+
+  results:
+    - name: SCAN_RESULT
+      description: "pass or fail based on CVE findings."
+
+  steps:
+    - name: scan
+      image: ghcr.io/anchore/grype:latest
+      env:
+        - name: GRYPE_DB_CACHE_DIR
+          value: "/tmp/grype-db"
+      script: |
+        #!/bin/sh
+
+        grype \
+          "sbom:$(params.SBOM_PATH)" \
+          --fail-on $(params.FAIL_ON) \
+          --output $(params.FORMAT) \
+          --file $(workspaces.output.path)/scan-results.$(params.FORMAT) \
+          2>&1
+
+        if [ $? -eq 0 ]; then
+          printf "pass" > $(results.SCAN_RESULT.path)
+          echo "✓ No CVEs found at or above $(params.FAIL_ON) severity."
+        else
+          printf "fail" > $(results.SCAN_RESULT.path)
+          echo "✗ CVEs found. See scan-results.$(params.FORMAT) for details."
+          exit 1
+        fi

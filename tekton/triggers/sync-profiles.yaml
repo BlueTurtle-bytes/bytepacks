@@ -1,0 +1,182 @@
+# ── Tekton Trigger: auto-sync profiles on git push ───────────────────────────
+#
+# How it works:
+#   1. You push a change to profiles/*.yaml in your git repo
+#   2. GitHub/GitLab sends a webhook to the EventListener
+#   3. Tekton fires a TaskRun that clones the repo and kubectl-applies the profiles
+#   4. The apexpack-profiles ConfigMap is updated automatically
+#   5. The next PipelineRun uses the new profiles
+#
+# Deploy:
+#   kubectl apply -f tekton/triggers/sync-profiles.yaml
+#
+# Register the webhook:
+#   Get the EventListener URL:
+#     kubectl get svc el-sync-profiles -n tekton-pipelines -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+#   Add a webhook in GitHub/GitLab pointing to: http://<ip>:8080
+#   Set Content-Type: application/json
+#   Trigger on: Push events
+# ─────────────────────────────────────────────────────────────────────────────
+---
+# Task: clone the profiles repo and apply the ConfigMap
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: sync-apexpack-profiles
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: GIT_URL
+      description: "URL of the repo containing profiles/*.yaml"
+    - name: GIT_REVISION
+      description: "Branch to sync from"
+      default: "main"
+    - name: CONFIGMAP_NAMESPACE
+      description: "Namespace where the ConfigMap lives"
+      default: "tekton-pipelines"
+
+  workspaces:
+    - name: repo
+      description: "Scratch space for cloning"
+
+  steps:
+    # Step 1: clone the profiles repo
+    - name: clone
+      image: alpine/git:latest
+      script: |
+        git clone --depth 1 --branch $(params.GIT_REVISION) \
+          $(params.GIT_URL) $(workspaces.repo.path)/profiles-repo
+
+    # Step 2: regenerate and apply the ConfigMap from the profiles directory
+    - name: apply-configmap
+      image: bitnami/kubectl:latest
+      script: |
+        #!/bin/sh
+        set -e
+
+        PROFILES_DIR="$(workspaces.repo.path)/profiles-repo/profiles"
+
+        if [ ! -d "$PROFILES_DIR" ]; then
+          echo "ERROR: no profiles/ directory found in repo"
+          exit 1
+        fi
+
+        echo "Syncing profiles from $PROFILES_DIR:"
+        ls "$PROFILES_DIR"
+
+        # Regenerate the ConfigMap from all *.yaml files in profiles/
+        # --dry-run=client generates the YAML without applying
+        # kubectl apply -f - applies it, creating or updating the ConfigMap
+        kubectl create configmap apexpack-profiles \
+          --from-file="$PROFILES_DIR" \
+          --namespace=$(params.CONFIGMAP_NAMESPACE) \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+        echo ""
+        echo "✓ apexpack-profiles ConfigMap updated"
+        kubectl get configmap apexpack-profiles \
+          -n $(params.CONFIGMAP_NAMESPACE) \
+          -o jsonpath='{.metadata.resourceVersion}' | xargs echo "ResourceVersion:"
+---
+# TriggerBinding: extract fields from the webhook payload
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: sync-profiles-binding
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: GIT_URL
+      value: "$(body.repository.clone_url)"       # GitHub webhook format
+    - name: GIT_REVISION
+      value: "$(body.ref)"                         # e.g. refs/heads/main
+---
+# TriggerTemplate: defines the TaskRun to create when the trigger fires
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: sync-profiles-template
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: GIT_URL
+    - name: GIT_REVISION
+      default: "main"
+
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: TaskRun
+      metadata:
+        generateName: sync-profiles-
+        namespace: tekton-pipelines
+      spec:
+        taskRef:
+          name: sync-apexpack-profiles
+        params:
+          - name: GIT_URL
+            value: $(tt.params.GIT_URL)
+          - name: GIT_REVISION
+            value: $(tt.params.GIT_REVISION)
+        workspaces:
+          - name: repo
+            volumeClaimTemplate:
+              spec:
+                accessModes: [ReadWriteOnce]
+                resources:
+                  requests:
+                    storage: 256Mi
+---
+# Trigger: wires the binding to the template, with a filter
+apiVersion: triggers.tekton.dev/v1beta1
+kind: Trigger
+metadata:
+  name: sync-profiles-on-push
+  namespace: tekton-pipelines
+spec:
+  bindings:
+    - ref: sync-profiles-binding
+  template:
+    ref: sync-profiles-template
+  # Only fire if the push is to the main branch
+  interceptors:
+    - ref:
+        name: cel
+      params:
+        - name: filter
+          value: "body.ref == 'refs/heads/main'"
+---
+# EventListener: the HTTP endpoint that receives webhooks
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: sync-profiles
+  namespace: tekton-pipelines
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    - triggerRef: sync-profiles-on-push
+---
+# RBAC: allow the sync task to update ConfigMaps
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: apexpack-profile-syncer
+  namespace: tekton-pipelines
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: apexpack-profile-syncer
+  namespace: tekton-pipelines
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: apexpack-profile-syncer
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: tekton-pipelines

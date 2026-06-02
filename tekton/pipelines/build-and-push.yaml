@@ -1,0 +1,179 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: apexpack-build-and-push
+  annotations:
+    tekton.dev/description: >-
+      Full apexpack build pipeline: clone-profiles → clone-source → detect → build → scan → push.
+      Profiles are cloned fresh from git on every run — no ConfigMap sync required.
+spec:
+  params:
+    - name: GIT_URL
+      description: "Source repository URL to build."
+    - name: GIT_REVISION
+      description: "Branch, tag, or commit SHA to build."
+      default: "main"
+    - name: IMAGE
+      description: "Full OCI image reference to push (e.g. ghcr.io/myorg/myapp:v1.0.0)."
+    - name: VERSION
+      description: "Version string for the APK package."
+      default: "0.0.1"
+    - name: RUNTIME
+      description: "Language runtime override. Empty = auto-detect."
+      default: ""
+    - name: FAIL_ON
+      description: "CVE severity that fails the pipeline."
+      default: "high"
+    - name: PROFILES_GIT_URL
+      description: >-
+        Git URL of the repository containing profiles/*.yaml files.
+        Defaults to the apexpack repo. Override to use your own profiles repo.
+      default: "https://github.com/apexpack/apexpack"
+    - name: PROFILES_GIT_REVISION
+      description: "Branch or tag of the profiles repo to use."
+      default: "main"
+
+  workspaces:
+    - name: source
+      description: "Source code being built."
+    - name: profiles
+      description: "Cloned profiles repo — profiles/*.yaml are read from here."
+    - name: output
+      description: "Build artifacts: OCI tarball, APK, SBOM, scan results."
+    - name: registry-credentials
+      description: "Docker config.json for registry auth (optional)."
+      optional: true
+
+  results:
+    - name: RUNTIME
+      value: "$(tasks.detect.results.RUNTIME)"
+    - name: FRAMEWORK
+      value: "$(tasks.detect.results.FRAMEWORK)"
+    - name: IMAGE_TARBALL
+      value: "$(tasks.build.results.IMAGE_TARBALL)"
+    - name: SBOM_PATH
+      value: "$(tasks.build.results.SBOM_PATH)"
+    - name: SCAN_RESULT
+      value: "$(tasks.scan.results.SCAN_RESULT)"
+
+  tasks:
+    # ── Step 1a: Clone language profiles ─────────────────────────────────────
+    # Profiles are read fresh from git on every run.
+    # To update a profile: merge the change to PROFILES_GIT_REVISION.
+    # The very next PipelineRun picks it up — no kubectl apply needed.
+    - name: clone-profiles
+      taskRef:
+        resolver: hub
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: version
+            value: "0.9"
+      params:
+        - name: url
+          value: $(params.PROFILES_GIT_URL)
+        - name: revision
+          value: $(params.PROFILES_GIT_REVISION)
+      workspaces:
+        - name: output
+          workspace: profiles
+
+    # ── Step 1b: Clone source repo ────────────────────────────────────────────
+    - name: clone-source
+      taskRef:
+        resolver: hub
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: version
+            value: "0.9"
+      params:
+        - name: url
+          value: $(params.GIT_URL)
+        - name: revision
+          value: $(params.GIT_REVISION)
+      workspaces:
+        - name: output
+          workspace: source
+
+    # ── Step 2: Detect language and framework ─────────────────────────────────
+    - name: detect
+      taskRef:
+        name: apexpack-detect
+      runAfter:
+        - clone-profiles
+        - clone-source
+      params:
+        - name: RUNTIME_OVERRIDE
+          value: $(params.RUNTIME)
+      workspaces:
+        - name: source
+          workspace: source
+        - name: profiles
+          workspace: profiles
+
+    # ── Step 3: Build OCI image ───────────────────────────────────────────────
+    - name: build
+      taskRef:
+        name: apexpack-build
+      runAfter:
+        - detect
+      params:
+        - name: IMAGE
+          value: $(params.IMAGE)
+        - name: VERSION
+          value: $(params.VERSION)
+        - name: RUNTIME
+          value: $(tasks.detect.results.RUNTIME)
+      workspaces:
+        - name: source
+          workspace: source
+        - name: profiles
+          workspace: profiles
+        - name: output
+          workspace: output
+        - name: registry-credentials
+          workspace: registry-credentials
+
+    # ── Step 4: CVE scan ──────────────────────────────────────────────────────
+    - name: scan
+      taskRef:
+        name: apexpack-scan
+      runAfter:
+        - build
+      params:
+        - name: SBOM_PATH
+          value: $(tasks.build.results.SBOM_PATH)
+        - name: FAIL_ON
+          value: $(params.FAIL_ON)
+        - name: FORMAT
+          value: sarif
+      workspaces:
+        - name: output
+          workspace: output
+
+    # ── Step 5: Push to registry ──────────────────────────────────────────────
+    - name: push
+      taskRef:
+        resolver: hub
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: crane-copy
+          - name: version
+            value: "0.1"
+      runAfter:
+        - scan
+      params:
+        - name: source
+          value: "$(tasks.build.results.IMAGE_TARBALL)"
+        - name: destination
+          value: $(params.IMAGE)
+      workspaces:
+        - name: credentials
+          workspace: registry-credentials

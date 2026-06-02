@@ -1,0 +1,69 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: apexpack-detect
+  labels:
+    app.kubernetes.io/version: "1.0"
+  annotations:
+    tekton.dev/displayName: "apexpack detect"
+    tekton.dev/description: >-
+      Detects the language and framework of a source repository.
+      Reads profiles from a cloned git workspace — no ConfigMap sync needed.
+spec:
+  params:
+    - name: RUNTIME_OVERRIDE
+      description: "Skip detection and use this runtime (e.g. golang, java). Empty = auto-detect."
+      default: ""
+
+  workspaces:
+    - name: source
+      description: "Cloned source code to detect."
+    - name: profiles
+      description: "Cloned profiles repository. Profiles are read from <profiles-workspace>/profiles/."
+
+  results:
+    - name: RUNTIME
+      description: "Detected runtime (e.g. golang, java, python, node, dotnet, webserver)."
+    - name: FRAMEWORK
+      description: "Detected framework (e.g. gin, spring-boot, express). Empty if not identified."
+    - name: CONFIDENCE
+      description: "Detection confidence as a percentage (e.g. 90)."
+
+  steps:
+    - name: detect
+      image: ghcr.io/apexpack/apexpack:latest
+      script: |
+        #!/bin/sh
+        set -e
+
+        PROFILES_DIR="$(workspaces.profiles.path)/profiles"
+
+        if [ -n "$(params.RUNTIME_OVERRIDE)" ]; then
+          printf "%s" "$(params.RUNTIME_OVERRIDE)" > $(results.RUNTIME.path)
+          printf "%s" ""                            > $(results.FRAMEWORK.path)
+          printf "%s" "100"                         > $(results.CONFIDENCE.path)
+          echo "Runtime overridden to: $(params.RUNTIME_OVERRIDE)"
+          exit 0
+        fi
+
+        apexpack detect \
+          $(workspaces.source.path) \
+          --profiles-dir "$PROFILES_DIR" \
+          2>&1 | tee /tmp/detect-output.txt
+
+        RUNTIME=$(grep "^→" /tmp/detect-output.txt | awk '{print $2}')
+        CONFIDENCE=$(grep "^→" /tmp/detect-output.txt | grep -o '[0-9]*%' | tr -d '%')
+        FRAMEWORK=$(grep "^→" /tmp/detect-output.txt | grep -o 'framework: [^ ]*' | cut -d' ' -f2)
+
+        if [ -z "$RUNTIME" ]; then
+          echo "ERROR: could not detect language."
+          echo "Available profiles in $PROFILES_DIR:"
+          ls "$PROFILES_DIR"
+          exit 1
+        fi
+
+        printf "%s" "$RUNTIME"    > $(results.RUNTIME.path)
+        printf "%s" "$FRAMEWORK"  > $(results.FRAMEWORK.path)
+        printf "%s" "$CONFIDENCE" > $(results.CONFIDENCE.path)
+
+        echo "Detected: $RUNTIME (${CONFIDENCE}%) framework: $FRAMEWORK"

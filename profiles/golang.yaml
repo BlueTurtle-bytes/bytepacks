@@ -1,0 +1,65 @@
+# Go language profile
+# Detected when: go.mod exists in the source directory
+# Builds with: go build (CGO disabled, trimpath for reproducibility)
+# Runtime image: Wolfi base + ca-certificates-bundle only
+
+runtime: golang
+version: "1"
+description: Go application (gin, echo, chi, stdlib, gRPC)
+
+detect:
+  files:
+    - go.mod
+    - main.go
+  content:
+    - file: go.mod
+      contains: "^module "
+      boost-confidence: 0.05
+    - file: go.sum
+      contains: "gin-gonic"
+      boost-confidence: 0.02
+      framework: gin
+    - file: go.sum
+      contains: "labstack/echo"
+      boost-confidence: 0.02
+      framework: echo
+    - file: go.sum
+      contains: "gofiber/fiber"
+      boost-confidence: 0.02
+      framework: fiber
+    - file: go.sum
+      contains: "google.golang.org/grpc"
+      boost-confidence: 0.02
+      framework: grpc
+    - file: go.sum
+      contains: "connectrpc.com/connect"
+      boost-confidence: 0.02
+      framework: connect
+    - file: main.go
+      contains: "func main"
+      framework: root-main
+
+  confidence: 0.85
+
+build:
+  dependencies:
+    - busybox
+    - go
+    - build-base
+    - git
+  command: |
+    mkdir -p ${{targets.destdir}}/usr/bin
+    go build -o ${{targets.destdir}}/usr/bin/app .
+  env:
+    CGO_ENABLED: "0"
+    GOFLAGS: "-trimpath"
+    GOPATH: "/home/build/go"
+
+image:
+  packages:
+    - ca-certificates-bundle=20260413-r0
+  entrypoint: /usr/bin/app
+  run-as: 65532
+  ports:
+    - "8080"
+

@@ -1,0 +1,114 @@
+# Java language profile
+# Detects Maven projects (pom.xml) and Gradle projects (build.gradle / build.gradle.kts)
+# Supports: Spring Boot, Quarkus, Micronaut, plain Java
+# Runtime image: Wolfi + openjdk-21-jre (JRE only — smaller attack surface than JDK)
+
+runtime: java
+version: "1"
+description: Java application (Maven or Gradle, Spring Boot, Quarkus)
+
+detect:
+  files:
+    - pom.xml
+    - build.gradle
+    - build.gradle.kts
+  content:
+    - file: pom.xml
+      contains: "spring-boot"
+      boost-confidence: 0.05
+      framework: spring-boot
+    - file: pom.xml
+      contains: "quarkus"
+      boost-confidence: 0.05
+      framework: quarkus
+    - file: pom.xml
+      contains: "micronaut"
+      boost-confidence: 0.05
+      framework: micronaut
+    - file: build.gradle
+      contains: "spring-boot"
+      boost-confidence: 0.05
+      framework: spring-boot-gradle
+    - file: build.gradle.kts
+      contains: "spring-boot"
+      boost-confidence: 0.05
+      framework: spring-boot-gradle
+    - file: build.gradle
+      contains: "quarkus"
+      boost-confidence: 0.05
+      framework: quarkus-gradle
+    - file: build.gradle.kts
+      contains: "quarkus"
+      boost-confidence: 0.05
+      framework: quarkus-gradle
+    - file: build.gradle
+      contains: "micronaut"
+      boost-confidence: 0.05
+      framework: micronaut-gradle
+    - file: build.gradle.kts
+      contains: "micronaut"
+      boost-confidence: 0.05
+      framework: micronaut-gradle
+  confidence: 0.85
+
+build:
+  # openjdk-21 provides the JDK needed to compile.
+  # maven is the build tool. build-base provides make, gcc etc.
+  dependencies:
+    - busybox
+    - openjdk-21
+    - maven
+    - build-base
+    - git
+  # Default: plain Maven project with no detected framework.
+  command: |
+    mvn package -DskipTests -B -q
+    mkdir -p /home/build/output/app
+    cp target/*.jar /home/build/output/app/app.jar
+  env:
+    JAVA_HOME: "/usr/lib/jvm/java-21-openjdk"
+    MAVEN_OPTS: "-Xmx512m -XX:+UseContainerSupport"
+    GRADLE_OPTS: "-Xmx512m -XX:+UseContainerSupport"
+
+  frameworks:
+    quarkus:
+      # Quarkus default output is a fast-jar directory — uber-jar gives a single runnable JAR.
+      command: |
+        mvn package -DskipTests -B -q -Dquarkus.package.jar.type=uber-jar
+        mkdir -p /home/build/output/app
+        cp target/*-runner.jar /home/build/output/app/app.jar
+    spring-boot-gradle:
+      command: |
+        chmod +x ./gradlew
+        ./gradlew build -x test --no-daemon -q
+        mkdir -p /home/build/output/app
+        cp build/libs/*.jar /home/build/output/app/app.jar
+    quarkus-gradle:
+      command: |
+        chmod +x ./gradlew
+        ./gradlew build -Dquarkus.package.jar.type=uber-jar -x test --no-daemon -q
+        mkdir -p /home/build/output/app
+        cp build/quarkus-app/*-runner.jar /home/build/output/app/app.jar
+    micronaut-gradle:
+      command: |
+        chmod +x ./gradlew
+        ./gradlew build -x test --no-daemon -q
+        mkdir -p /home/build/output/app
+        cp build/libs/*.jar /home/build/output/app/app.jar
+
+image:
+  # JRE only — not JDK. No compiler in the final image reduces attack surface.
+  packages:
+    - openjdk-21-jre
+    - ca-certificates-bundle=20260413-r0
+  # java -jar is the entrypoint. The JAR path is passed via cmd.
+  entrypoint: java
+  cmd:
+    - "-jar"
+    - "/app/app.jar"
+  run-as: 65532
+  ports:
+    - "8080"
+  env:
+    JAVA_HOME: "/usr/lib/jvm/java-21-openjdk"
+    JAVA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"

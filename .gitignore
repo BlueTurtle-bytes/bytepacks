@@ -1,0 +1,14 @@
+# Build output
+bin/
+.apexpack-output/
+
+# melange signing keys (generated per build, never commit)
+*.rsa
+*.rsa.pub
+
+# macOS
+.DS_Store
+
+# Go
+*.test
+*.out

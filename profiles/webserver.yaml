@@ -1,0 +1,115 @@
+# Webserver / Static site profile
+# Detects: index.html (plain static), or SPA build markers (vite.config.*, angular.json)
+# Supports: Plain HTML, React/Vue/Svelte SPA (Vite, CRA), Angular, Hugo, Jekyll
+# Runtime image: Wolfi + nginx (serves static files)
+
+runtime: webserver
+version: "1"
+description: Static site or SPA served by nginx (React, Vue, Angular, plain HTML)
+
+detect:
+  files:
+    - index.html
+    - vite.config.ts
+    - vite.config.js
+    - angular.json
+    - hugo.toml
+    - hugo.yaml
+    - _config.yml
+  content:
+    - file: package.json
+      contains: "\"@angular/core\""
+      boost-confidence: 0.05
+      framework: angular
+    - file: package.json
+      contains: "\"vite\""
+      boost-confidence: 0.05
+      framework: vite
+    - file: package.json
+      contains: "\"react\""
+      boost-confidence: 0.03
+      framework: react
+    - file: package.json
+      contains: "\"vue\""
+      boost-confidence: 0.03
+      framework: vue
+    - file: package.json
+      contains: "\"svelte\""
+      boost-confidence: 0.03
+      framework: svelte
+    - file: hugo.toml
+      contains: "baseURL"
+      boost-confidence: 0.05
+      framework: hugo
+    - file: hugo.yaml
+      contains: "baseURL"
+      boost-confidence: 0.05
+      framework: hugo
+  # Lower base confidence — webserver is a fallback when no language is detected.
+  confidence: 0.70
+
+build:
+  # For plain static sites, no build step is needed — just copy files.
+  # For SPAs (React/Vue/Vite), npm ci && npm run build compiles assets.
+  dependencies:
+    - busybox
+    - nodejs
+    - npm
+    - git
+  # Default: plain HTML — no build tool, just copy static files.
+  command: |
+    mkdir -p /home/build/output/html
+    cp -r . /home/build/output/html/
+  env:
+    NODE_ENV: "production"
+    CI: "true"
+
+  frameworks:
+    angular:
+      command: |
+        npm ci --prefer-offline
+        npm run build
+        mkdir -p /home/build/output/html
+        cp -r dist/. /home/build/output/html/
+    vite:
+      command: |
+        npm ci --prefer-offline
+        npm run build
+        mkdir -p /home/build/output/html
+        cp -r dist/. /home/build/output/html/
+    react:
+      # CRA output is build/, not dist/. Vite+React projects are detected as vite, not react.
+      command: |
+        npm ci --prefer-offline
+        npm run build
+        mkdir -p /home/build/output/html
+        cp -r build/. /home/build/output/html/
+    vue:
+      command: |
+        npm ci --prefer-offline
+        npm run build
+        mkdir -p /home/build/output/html
+        cp -r dist/. /home/build/output/html/
+    svelte:
+      command: |
+        npm ci --prefer-offline
+        npm run build
+        mkdir -p /home/build/output/html
+        cp -r build/. /home/build/output/html/
+
+image:
+  # nginx serves the static files.
+  # nginx-config-bundle provides a sensible default nginx.conf.
+  packages:
+    - nginx
+    - ca-certificates-bundle=20260413-r0
+  entrypoint: nginx
+  cmd:
+    - "-g"
+    - "daemon off;"
+  run-as: 65532
+  ports:
+    - "8080"
+  env:
+    NGINX_PORT: "8080"
+
