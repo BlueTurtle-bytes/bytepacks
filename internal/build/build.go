@@ -220,6 +220,21 @@ func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
 		}
 	}
 
+	// Propagate Go module env vars from the host into the melange.yaml environment
+	// block. Melange explicitly passes these into the bubblewrap sandbox, so the
+	// go build command running inside the sandbox uses the same proxy and TLS
+	// settings as the host. Profile-defined values take precedence.
+	for _, key := range []string{"GOPROXY", "GONOSUMDB", "GONOSUMCHECK", "GOINSECURE", "GOPRIVATE"} {
+		if val := os.Getenv(key); val != "" {
+			if cfg.Environment.Env == nil {
+				cfg.Environment.Env = make(map[string]string)
+			}
+			if _, exists := cfg.Environment.Env[key]; !exists {
+				cfg.Environment.Env[key] = val
+			}
+		}
+	}
+
 	return cfg
 }
 
