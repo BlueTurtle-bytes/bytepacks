@@ -402,6 +402,18 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 		)
 	}
 
+	// Forward Go toolchain env vars from the host into the build container.
+	// This ensures the container's go build uses the same proxy, CA, and
+	// checksum settings as the host — essential in corporate proxy environments.
+	for _, key := range []string{
+		"GOPROXY", "GONOSUMDB", "GONOSUMCHECK", "GOINSECURE", "GOPRIVATE",
+		"GOFLAGS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+	} {
+		if val := os.Getenv(key); val != "" {
+			args = append(args, "-e", key+"="+val)
+		}
+	}
+
 	args = append(args,
 		"cgr.dev/chainguard/melange",
 		"build", containerConfig,

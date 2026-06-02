@@ -43,6 +43,8 @@ go install ./cmd/apexpack
 #                                           https://github.com/chainguard-dev/apko
 ```
 
+**Corporate / proxy environments:** if your network uses TLS inspection (Zscaler, etc.), see the [Corporate Proxy Environments](#corporate-proxy-environments) section before running `go build`.
+
 ---
 
 ## Commands
