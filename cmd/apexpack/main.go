@@ -182,6 +182,7 @@ Examples:
 			// Detect or use the explicitly specified runtime.
 			var matchedProfile *types.Profile
 			var detectedFramework string
+			var detectedPM string
 			if runtime != "" {
 				matchedProfile = profile.GetByRuntime(profiles, runtime)
 				if matchedProfile == nil {
@@ -196,6 +197,7 @@ Examples:
 				}
 				matchedProfile = result.Profile
 				detectedFramework = result.Framework
+				detectedPM = result.PackageManager
 				fw := detectedFramework
 				if fw == "" {
 					fw = "no framework identified"
@@ -215,13 +217,14 @@ Examples:
 			}
 
 			opts := build.Options{
-				SourceDir:   absSrcDir,
-				ProfilesDir: profilesDir,
-				OutputDir:   outputDir,
-				ProjectName: projectName,
-				Version:     version,
-				Tag:         tag,
-				Framework:   detectedFramework,
+				SourceDir:      absSrcDir,
+				ProfilesDir:    profilesDir,
+				OutputDir:      outputDir,
+				ProjectName:    projectName,
+				Version:        version,
+				Tag:            tag,
+				Framework:      detectedFramework,
+				PackageManager: detectedPM,
 			}
 
 			plan, err := build.Plan(matchedProfile, opts)

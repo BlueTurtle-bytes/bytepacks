@@ -69,6 +69,8 @@ build:
     JAVA_HOME: "/usr/lib/jvm/java-21-openjdk"
     MAVEN_OPTS: "-Xmx512m -XX:+UseContainerSupport"
     GRADLE_OPTS: "-Xmx512m -XX:+UseContainerSupport"
+  caches:
+    - /home/build/.m2/repository
 
   frameworks:
     quarkus:
@@ -83,18 +85,24 @@ build:
         ./gradlew build -x test --no-daemon -q
         mkdir -p /home/build/output/app
         cp build/libs/*.jar /home/build/output/app/app.jar
+      caches:
+        - /home/build/.gradle
     quarkus-gradle:
       command: |
         chmod +x ./gradlew
         ./gradlew build -Dquarkus.package.jar.type=uber-jar -x test --no-daemon -q
         mkdir -p /home/build/output/app
         cp build/quarkus-app/*-runner.jar /home/build/output/app/app.jar
+      caches:
+        - /home/build/.gradle
     micronaut-gradle:
       command: |
         chmod +x ./gradlew
         ./gradlew build -x test --no-daemon -q
         mkdir -p /home/build/output/app
         cp build/libs/*.jar /home/build/output/app/app.jar
+      caches:
+        - /home/build/.gradle
 
 image:
   # JRE only — not JDK. No compiler in the final image reduces attack surface.

@@ -54,6 +54,9 @@ build:
     CGO_ENABLED: "0"
     GOFLAGS: "-trimpath"
     GOPATH: "/home/build/go"
+  caches:
+    - /home/build/go/pkg/mod
+    - /home/build/.cache/go-build
 
 image:
   packages:

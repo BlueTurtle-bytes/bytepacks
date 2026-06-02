@@ -41,6 +41,14 @@ type Options struct {
 	// Framework is the detected framework (e.g. "spring-boot", "quarkus").
 	// When set, build.Plan applies any matching FrameworkBuildOverride from the profile.
 	Framework string
+
+	// PackageManager is the detected build tool (e.g. "pnpm", "bun", "uv").
+	// Used to resolve framework overrides with the fallback order:
+	//   {framework}-{packageManager} → {packageManager} → {framework} → default
+	PackageManager string
+
+	// Profile is set internally by Run() to make cache paths available to tool runners.
+	Profile *types.Profile
 }
 
 // Plan builds a MelangeConfig and ApkoConfig from the profile and options.
@@ -50,18 +58,39 @@ func Plan(p *types.Profile, opts Options) (*types.BuildPlan, error) {
 	opts = applyDefaults(opts)
 
 	return &types.BuildPlan{
-		ProjectName: opts.ProjectName,
-		Version:     opts.Version,
-		Profile:     p,
-		Framework:   opts.Framework,
-		Melange:     buildMelangeConfig(p, opts),
-		Apko:        buildApkoConfig(p, opts),
+		ProjectName:    opts.ProjectName,
+		Version:        opts.Version,
+		Profile:        p,
+		Framework:      opts.Framework,
+		PackageManager: opts.PackageManager,
+		ProcfileCmd:    readProcfileCmd(opts.SourceDir),
+		Melange:        buildMelangeConfig(p, opts),
+		Apko:           buildApkoConfig(p, opts),
 	}, nil
+}
+
+// readProcfileCmd parses the "web:" process from a Procfile and returns its command.
+// Returns empty string if no Procfile exists or no web process is defined.
+func readProcfileCmd(srcDir string) string {
+	data, err := os.ReadFile(filepath.Join(srcDir, "Procfile"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "web:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "web:"))
+		}
+	}
+	return ""
 }
 
 // Run writes melange.yaml and apko.yaml to disk, then runs the tools.
 func Run(plan *types.BuildPlan, opts Options) error {
 	opts = applyDefaults(opts)
+	opts.Profile = plan.Profile
+	opts.Framework = plan.Framework
+	opts.PackageManager = plan.PackageManager
 
 	if err := os.MkdirAll(opts.OutputDir, 0o755); err != nil {
 		return fmt.Errorf("creating output dir: %w", err)
@@ -141,11 +170,7 @@ func marshalYAML(v any) (string, error) {
 // buildMelangeConfig constructs a MelangeConfig from a profile and options.
 // The struct is later marshalled to YAML by yaml.Marshal.
 func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
-	// Build-time packages: always start with wolfi-baselayout, add profile deps.
-	packages := append(
-		[]string{"wolfi-baselayout"},
-		p.Build.Dependencies...,
-	)
+	packages := append([]string{"wolfi-baselayout"}, p.Build.Dependencies...)
 
 	cfg := types.MelangeConfig{
 		Package: types.MelangePackage{
@@ -153,9 +178,7 @@ func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
 			Version:     opts.Version,
 			Epoch:       0,
 			Description: fmt.Sprintf("Built by apexpack (%s)", p.Runtime),
-			Copyright: []types.MelangeCopyright{
-				{License: "Apache-2.0"},
-			},
+			Copyright:   []types.MelangeCopyright{{License: "Apache-2.0"}},
 		},
 		Environment: types.MelangeEnvironment{
 			Contents: types.MelangeContents{
@@ -163,59 +186,83 @@ func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
 				Repositories: []string{"https://packages.wolfi.dev/os"},
 				Packages:     packages,
 			},
-			// Build-time environment variables from the profile.
 			Env: p.Build.Env,
 		},
-		Pipeline: []types.MelangePipeline{
-			{Runs: p.Build.Command},
-		},
+		Pipeline: []types.MelangePipeline{{Runs: p.Build.Command}},
 	}
 
-	// Apply framework-specific overrides. Only set fields replace their defaults.
-	if opts.Framework != "" {
-		if override, ok := p.Build.Frameworks[opts.Framework]; ok {
-			if len(override.Dependencies) > 0 {
-				cfg.Environment.Contents.Packages = append(
-					[]string{"wolfi-baselayout"},
-					override.Dependencies...,
-				)
+	// Resolve the framework override using a three-level fallback:
+	//   1. {framework}-{packageManager}  e.g. "nextjs-pnpm"
+	//   2. {packageManager}              e.g. "pnpm"
+	//   3. {framework}                   e.g. "nextjs"
+	override, found := resolveOverride(p, opts.Framework, opts.PackageManager)
+	if found {
+		if len(override.Dependencies) > 0 {
+			cfg.Environment.Contents.Packages = append([]string{"wolfi-baselayout"}, override.Dependencies...)
+		}
+		if override.Command != "" {
+			cfg.Pipeline = []types.MelangePipeline{{Runs: override.Command}}
+		}
+		for k, v := range override.Env {
+			if cfg.Environment.Env == nil {
+				cfg.Environment.Env = make(map[string]string)
 			}
-			if override.Command != "" {
-				cfg.Pipeline = []types.MelangePipeline{{Runs: override.Command}}
-			}
-			for k, v := range override.Env {
-				if cfg.Environment.Env == nil {
-					cfg.Environment.Env = make(map[string]string)
-				}
-				cfg.Environment.Env[k] = v
-			}
+			cfg.Environment.Env[k] = v
 		}
 	}
 
 	return cfg
 }
 
+// resolveOverride finds the most specific FrameworkBuildOverride for the detected
+// framework and package manager, using the three-level fallback.
+func resolveOverride(p *types.Profile, framework, pm string) (types.FrameworkBuildOverride, bool) {
+	if len(p.Build.Frameworks) == 0 {
+		return types.FrameworkBuildOverride{}, false
+	}
+	candidates := []string{}
+	if framework != "" && pm != "" {
+		candidates = append(candidates, framework+"-"+pm)
+	}
+	if pm != "" {
+		candidates = append(candidates, pm)
+	}
+	if framework != "" {
+		candidates = append(candidates, framework)
+	}
+	for _, key := range candidates {
+		if override, ok := p.Build.Frameworks[key]; ok {
+			return override, true
+		}
+	}
+	return types.FrameworkBuildOverride{}, false
+}
+
 // buildApkoConfig constructs an ApkoConfig from a profile and options.
 // The struct is later marshalled to YAML by yaml.Marshal.
 func buildApkoConfig(p *types.Profile, opts Options) types.ApkoConfig {
-	// Runtime packages: wolfi-baselayout + the built APK + profile image packages.
-	packages := append(
-		[]string{"wolfi-baselayout", opts.ProjectName},
-		p.Image.Packages...,
-	)
+	packages := append([]string{"wolfi-baselayout", opts.ProjectName}, p.Image.Packages...)
 
-	// Default run-as UID is 65532 (Wolfi nonroot convention).
 	runAs := p.Image.RunAs
 	if runAs == 0 {
 		runAs = 65532
 	}
 
+	// Entrypoint: profile wins; fall back to Procfile "web:" command.
+	entrypoint := p.Image.Entrypoint
+	cmd := p.Image.Cmd
+	if entrypoint == "" {
+		if procCmd := readProcfileCmd(opts.SourceDir); procCmd != "" {
+			parts := strings.Fields(procCmd)
+			entrypoint = parts[0]
+			if len(parts) > 1 {
+				cmd = parts[1:]
+			}
+		}
+	}
+
 	cfg := types.ApkoConfig{
 		Contents: types.ApkoContents{
-			// Relative paths are resolved from the apko.yaml file location
-			// (the output directory). This works both when apko runs on the
-			// host and when it runs inside a Docker container with the output
-			// directory mounted at a different absolute path.
 			Keyring: []string{
 				"https://packages.wolfi.dev/os/wolfi-signing.rsa.pub",
 				"./melange.rsa.pub",
@@ -226,28 +273,26 @@ func buildApkoConfig(p *types.Profile, opts Options) types.ApkoConfig {
 			},
 			Packages: packages,
 		},
-		Entrypoint: types.ApkoEntrypoint{
-			Command: p.Image.Entrypoint,
-		},
+		Entrypoint:  types.ApkoEntrypoint{Command: entrypoint},
 		Accounts: types.ApkoAccounts{
 			RunAs: fmt.Sprintf("%d", runAs),
-			Users: []types.ApkoUser{
-				{Username: "nonroot", UID: runAs, GID: runAs},
-			},
-			Groups: []types.ApkoGroup{
-				{Groupname: "nonroot", GID: runAs},
-			},
+			Users: []types.ApkoUser{{Username: "nonroot", UID: runAs, GID: runAs}},
+			Groups: []types.ApkoGroup{{Groupname: "nonroot", GID: runAs}},
 		},
-		// Runtime environment variables from the profile.
 		Environment: p.Image.Env,
 	}
 
-	// Optional CMD — space-joined string because apko takes cmd as a string.
-	if len(p.Image.Cmd) > 0 {
-		cfg.Cmd = strings.Join(p.Image.Cmd, " ")
+	if len(cmd) > 0 {
+		cfg.Cmd = strings.Join(cmd, " ")
 	}
 
 	return cfg
+}
+
+// cacheVolumeName returns a stable Docker volume name for a build cache path.
+func cacheVolumeName(cachePath string) string {
+	safe := strings.NewReplacer("/", "-", ".", "-", " ", "-").Replace(strings.TrimPrefix(cachePath, "/"))
+	return "apexpack-cache-" + safe
 }
 
 // ============================================================================
@@ -312,18 +357,31 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 
 	args := []string{
 		"run", "--rm",
-		// --privileged lets melange use bubblewrap inside the Linux container.
-		// This is safe for local development on Docker Desktop.
 		"--privileged",
 		"-v", absSrc + ":/work/src:ro",
 		"-v", absOut + ":/work/output",
+	}
+
+	// Mount named Docker volumes for each declared cache path.
+	// Volumes persist across builds so package managers reuse their caches.
+	for _, cachePath := range opts.Profile.Build.Caches {
+		args = append(args, "-v", cacheVolumeName(cachePath)+":"+cachePath)
+	}
+	// Also apply cache overrides from the resolved framework/package-manager entry.
+	if override, found := resolveOverride(opts.Profile, opts.Framework, opts.PackageManager); found {
+		for _, cachePath := range override.Caches {
+			args = append(args, "-v", cacheVolumeName(cachePath)+":"+cachePath)
+		}
+	}
+
+	args = append(args,
 		"cgr.dev/chainguard/melange",
 		"build", containerConfig,
 		"--source-dir", "/work/src",
 		"--out-dir", "/work/output/packages",
 		"--signing-key", containerKey,
 		"--arch", "x86_64",
-	}
+	)
 
 	return runTool("docker", args)
 }

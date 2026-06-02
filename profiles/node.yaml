@@ -1,7 +1,7 @@
 # Node.js language profile
 # Detects: package.json
 # Supports: Express, Fastify, NestJS, Next.js, plain Node
-# Package managers: npm (default), yarn, pnpm
+# Package managers: npm (default), pnpm, bun, yarn, yarn-berry
 # Runtime image: Wolfi + nodejs (no npm — smaller final image)
 
 runtime: node
@@ -11,6 +11,17 @@ description: Node.js application (Express, Fastify, NestJS, Next.js)
 detect:
   files:
     - package.json
+  package-managers:
+    - file: bun.lockb
+      manager: bun
+    - file: bun.lock
+      manager: bun
+    - file: pnpm-lock.yaml
+      manager: pnpm
+    - file: .yarnrc.yml
+      manager: yarn-berry
+    - file: yarn.lock
+      manager: yarn
   content:
     - file: package.json
       contains: "\"next\""
@@ -39,8 +50,6 @@ detect:
   confidence: 0.85
 
 build:
-  # nodejs and npm are needed to install dependencies and run the build.
-  # python3 and build-base are needed for native Node addons (node-gyp).
   dependencies:
     - busybox
     - nodejs
@@ -48,9 +57,7 @@ build:
     - python3
     - build-base
     - git
-  # npm ci installs exact versions from package-lock.json (reproducible).
-  # npm run build compiles TypeScript, bundles assets, etc.
-  # The dist/ or build/ output is copied to /home/build/output/app/
+  # Default: npm. Installs prod deps only in final output.
   command: |
     npm ci --prefer-offline
     npm run build --if-present
@@ -62,9 +69,84 @@ build:
     NODE_ENV: "production"
     NPM_CONFIG_CACHE: "/home/build/.npm"
     CI: "true"
+  caches:
+    - /home/build/.npm
+
+  frameworks:
+    pnpm:
+      dependencies:
+        - busybox
+        - nodejs
+        - npm
+        - python3
+        - build-base
+        - git
+      command: |
+        npm install -g pnpm
+        pnpm install --frozen-lockfile
+        pnpm run build --if-present
+        mkdir -p /home/build/output/app
+        cp -r . /home/build/output/app/
+        rm -rf /home/build/output/app/node_modules
+        cd /home/build/output/app && pnpm install --frozen-lockfile --prod
+      env:
+        NODE_ENV: "production"
+        PNPM_HOME: "/home/build/.local/share/pnpm"
+        CI: "true"
+      caches:
+        - /home/build/.local/share/pnpm/store
+
+    bun:
+      dependencies:
+        - busybox
+        - bun
+        - python3
+        - build-base
+        - git
+      command: |
+        bun install --frozen-lockfile
+        bun run build --if-present
+        mkdir -p /home/build/output/app
+        cp -r . /home/build/output/app/
+        rm -rf /home/build/output/app/node_modules
+        cd /home/build/output/app && bun install --frozen-lockfile --production
+      env:
+        NODE_ENV: "production"
+        BUN_INSTALL_CACHE_DIR: "/home/build/.bun/install/cache"
+        CI: "true"
+      caches:
+        - /home/build/.bun/install/cache
+
+    yarn:
+      command: |
+        yarn install --frozen-lockfile
+        yarn build --if-present
+        mkdir -p /home/build/output/app
+        cp -r . /home/build/output/app/
+        rm -rf /home/build/output/app/node_modules
+        cd /home/build/output/app && yarn install --frozen-lockfile --production
+      env:
+        NODE_ENV: "production"
+        YARN_CACHE_FOLDER: "/home/build/.yarn/cache"
+        CI: "true"
+      caches:
+        - /home/build/.yarn/cache
+
+    yarn-berry:
+      command: |
+        yarn install --immutable
+        yarn build --if-present
+        mkdir -p /home/build/output/app
+        cp -r . /home/build/output/app/
+        cd /home/build/output/app && yarn workspaces focus --production
+      env:
+        NODE_ENV: "production"
+        YARN_CACHE_FOLDER: "/home/build/.yarn/cache"
+        CI: "true"
+      caches:
+        - /home/build/.yarn/cache
 
 image:
-  # Only nodejs runtime — no npm, no build tools in the final image.
   packages:
     - nodejs
     - ca-certificates-bundle=20260413-r0

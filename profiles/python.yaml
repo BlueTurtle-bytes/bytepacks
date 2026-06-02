@@ -1,7 +1,7 @@
 # Python language profile
 # Detects: requirements.txt, pyproject.toml, Pipfile, setup.py
-# Supports: FastAPI, Django, Flask, plain Python scripts
-# Package managers: pip (default), poetry, pdm, pipenv
+# Supports: FastAPI, Django, Flask, plain Python
+# Package managers: pip (default), uv, poetry, pipenv
 # Runtime image: Wolfi + python-3.12
 
 runtime: python
@@ -14,6 +14,13 @@ detect:
     - pyproject.toml
     - Pipfile
     - setup.py
+  package-managers:
+    - file: uv.lock
+      manager: uv
+    - file: poetry.lock
+      manager: poetry
+    - file: Pipfile.lock
+      manager: pipenv
   content:
     - file: requirements.txt
       contains: "fastapi"
@@ -47,17 +54,13 @@ detect:
   confidence: 0.85
 
 build:
-  # python-3.12 and py3-pip are needed to install dependencies.
-  # build-base is needed for packages that compile C extensions (e.g. psycopg2).
   dependencies:
     - busybox
     - python-3.12
     - py3-pip
     - build-base
     - git
-  # Install all dependencies from requirements.txt.
-  # --no-cache-dir keeps the image smaller (no pip download cache).
-  # The application source is copied to /home/build/output/app/
+  # Default: pip from requirements.txt
   command: |
     pip install --no-cache-dir -r requirements.txt --target /home/build/output/app/deps
     cp -r . /home/build/output/app/src
@@ -66,13 +69,67 @@ build:
     PYTHONUNBUFFERED: "1"
     PIP_NO_CACHE_DIR: "1"
     PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  caches:
+    - /home/build/.cache/pip
+
+  frameworks:
+    uv:
+      dependencies:
+        - busybox
+        - python-3.12
+        - uv
+        - build-base
+        - git
+      command: |
+        uv pip install -r requirements.txt --target /home/build/output/app/deps
+        cp -r . /home/build/output/app/src
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+        PYTHONUNBUFFERED: "1"
+        UV_CACHE_DIR: "/home/build/.cache/uv"
+      caches:
+        - /home/build/.cache/uv
+
+    poetry:
+      dependencies:
+        - busybox
+        - python-3.12
+        - py3-pip
+        - py3-poetry
+        - build-base
+        - git
+      command: |
+        poetry export -f requirements.txt --output /tmp/requirements.txt --without-hashes --without dev
+        pip install --no-cache-dir -r /tmp/requirements.txt --target /home/build/output/app/deps
+        cp -r . /home/build/output/app/src
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+        PYTHONUNBUFFERED: "1"
+        POETRY_CACHE_DIR: "/home/build/.cache/pypoetry"
+        PIP_NO_CACHE_DIR: "1"
+      caches:
+        - /home/build/.cache/pypoetry
+        - /home/build/.cache/pip
+
+    pipenv:
+      command: |
+        pip install pipenv
+        pipenv requirements > /tmp/requirements.txt
+        pip install --no-cache-dir -r /tmp/requirements.txt --target /home/build/output/app/deps
+        cp -r . /home/build/output/app/src
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+        PYTHONUNBUFFERED: "1"
+        PIP_NO_CACHE_DIR: "1"
+        PIPENV_CACHE_DIR: "/home/build/.cache/pipenv"
+      caches:
+        - /home/build/.cache/pip
+        - /home/build/.cache/pipenv
 
 image:
   packages:
     - python-3.12
     - ca-certificates-bundle=20260413-r0
-  # python3 -m uvicorn is the recommended way to run FastAPI / ASGI apps.
-  # For Django / Flask use: python3 -m gunicorn
   entrypoint: python3
   cmd:
     - "-m"

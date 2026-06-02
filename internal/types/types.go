@@ -64,9 +64,24 @@ type DetectConfig struct {
 	// A matching rule boosts confidence.
 	Content []ContentRule `yaml:"content,omitempty"`
 
+	// PackageManagers lists rules that identify the build tool by file existence.
+	// The first matching rule sets DetectResult.PackageManager.
+	// Example: pnpm-lock.yaml → "pnpm", bun.lockb → "bun"
+	PackageManagers []PackageManagerRule `yaml:"package-managers,omitempty"`
+
 	// Confidence is the score returned when this profile matches (0.0–1.0).
 	// Higher = more specific match. Default: 0.8
 	Confidence float64 `yaml:"confidence,omitempty"`
+}
+
+// PackageManagerRule identifies a build tool by the presence of a specific file.
+type PackageManagerRule struct {
+	// File is the filename whose existence signals this package manager.
+	File string `yaml:"file"`
+
+	// Manager is the identifier set on DetectResult.PackageManager when the file exists.
+	// Example: "pnpm", "bun", "yarn", "yarn-berry", "uv", "poetry"
+	Manager string `yaml:"manager"`
 }
 
 
@@ -112,6 +127,11 @@ type BuildConfig struct {
 	// Example: {CGO_ENABLED: "0", GOFLAGS: "-trimpath"}
 	Env map[string]string `yaml:"env,omitempty"`
 
+	// Caches lists absolute paths inside the build container to persist between runs.
+	// On macOS (Docker), each path is mounted as a named Docker volume.
+	// Example: ["/home/build/.npm", "/home/build/go/pkg/mod"]
+	Caches []string `yaml:"caches,omitempty"`
+
 	// Frameworks maps a detected framework name to build overrides.
 	// When detection identifies a framework (e.g. "quarkus", "spring-boot"),
 	// the matching entry's Command replaces the default, and its Env is merged on top.
@@ -130,6 +150,9 @@ type FrameworkBuildOverride struct {
 
 	// Env is merged on top of Build.Env. Framework values win on key conflicts.
 	Env map[string]string `yaml:"env,omitempty"`
+
+	// Caches replaces Build.Caches when set.
+	Caches []string `yaml:"caches,omitempty"`
 }
 
 // ============================================================================
@@ -244,6 +267,11 @@ type DetectResult struct {
 	//           "django", "fastapi", "flask", "gin", "grpc"
 	// Empty string means no specific framework was identified.
 	Framework string
+
+	// PackageManager is the build tool identified by a PackageManagerRule.
+	// Examples: "pnpm", "bun", "yarn", "yarn-berry", "uv", "poetry"
+	// Empty string means the default package manager for the runtime is used.
+	PackageManager string
 }
 
 // ============================================================================
@@ -366,6 +394,14 @@ type BuildPlan struct {
 	// Framework is the detected framework (e.g. "spring-boot", "quarkus").
 	// Empty if detection found no specific framework.
 	Framework string
+
+	// PackageManager is the detected build tool (e.g. "pnpm", "bun", "uv").
+	// Empty if the default package manager for the runtime is used.
+	PackageManager string
+
+	// ProcfileCmd is the "web:" command parsed from a Procfile, if one exists.
+	// Used as the image entrypoint/cmd when the profile has no explicit entrypoint.
+	ProcfileCmd string
 
 	// Melange is the structured melange.yaml config — marshalled to YAML on write.
 	Melange MelangeConfig

@@ -2,7 +2,7 @@
 
 Build secure, minimal OCI container images from source using [melange](https://github.com/chainguard-dev/melange) and [apko](https://github.com/chainguard-dev/apko) — no Dockerfiles required.
 
-Language support is driven by **YAML profiles** in the `profiles/` directory. Adding a new language means writing one YAML file. Framework-specific build behaviour (Quarkus vs Spring Boot, Maven vs Gradle) is expressed as overrides inside that same file — no Go code required.
+Language support is driven by **YAML profiles** in the `profiles/` directory. Adding a new language means writing one YAML file. Framework-specific and package-manager-specific build behaviour is expressed as overrides inside that same file — no Go code required.
 
 ---
 
@@ -12,7 +12,7 @@ Language support is driven by **YAML profiles** in the `profiles/` directory. Ad
 # Build the CLI
 go build -o bin/apexpack ./cmd/apexpack
 
-# Detect your project language
+# Detect your project language and package manager
 ./bin/apexpack detect .
 
 # Preview what will be built (no tools run)
@@ -49,7 +49,7 @@ go install ./cmd/apexpack
 
 ### `apexpack detect [source-dir]`
 
-Scans a source directory against all profiles and reports matches, sorted by confidence. Identifies the runtime and the specific framework in use.
+Scans a source directory against all profiles and reports matches sorted by confidence. Identifies the runtime, the specific framework, and the package manager in use.
 
 ```bash
 apexpack detect .
@@ -62,16 +62,22 @@ Example output:
 ```
 Detected 1 match(es) in .:
 
-→ java          95%  framework: spring-boot   (matched: [pom.xml])
+→ node           90%  framework: nextjs   (matched: [package.json])
 
 To build: apexpack build .
+```
+
+For a pnpm project the same command also picks up the package manager:
+
+```
+→ node           90%  framework: nextjs   (matched: [package.json, pnpm-lock.yaml])
 ```
 
 ---
 
 ### `apexpack build [source-dir]`
 
-Detects the language, loads the matching profile, applies any framework-specific build overrides, generates `melange.yaml` and `apko.yaml`, then runs melange and apko to produce an OCI image tarball.
+Detects the language, loads the matching profile, resolves any framework or package-manager build overrides, generates `melange.yaml` and `apko.yaml`, then runs melange and apko to produce an OCI image tarball. Build caches are mounted as named Docker volumes on macOS so package managers reuse their download caches across builds.
 
 ```bash
 # Auto-detect language and build
@@ -162,18 +168,19 @@ Source Code
     │
     ▼
 detect              Read profiles/*.yaml, match files against source dir
-    │               Score by confidence, identify framework from content rules
+    │               Score by confidence
+    │               Identify framework (content rules) and package manager (file existence)
     ▼
 Profile             Language-specific YAML (golang.yaml, java.yaml, etc.)
-    │               Applies framework build override if one matches
+    │               Resolves build override: {framework}-{pm} → {pm} → {framework} → default
     ▼
 melange.yaml  ──┐
-                │  Generated from the profile + project name/version
-apko.yaml     ──┘
+                │  Generated from the resolved profile + project name/version
+apko.yaml     ──┘   Image entrypoint from Procfile if profile has none
     │
     ▼
 melange             Compiles source → .apk package (Wolfi APK format)
-    │               Sandboxed build environment, reproducible output
+    │               Named Docker volumes provide package manager caches (macOS)
     ▼
 apko                Assembles .apk packages → OCI image
     │               Generates SBOM, minimal Wolfi base, non-root by default
@@ -198,14 +205,14 @@ OCI Image (.tar)    Ready to push to any registry
 
 ### Bundled Profiles
 
-| Profile | Detects | Frameworks | Build Tool |
-|---------|---------|------------|------------|
-| `golang` | `go.mod`, `main.go` | gin, echo, fiber, grpc, connect, root-main | `go build` |
-| `java` | `pom.xml`, `build.gradle`, `build.gradle.kts` | spring-boot, quarkus, micronaut (Maven + Gradle variants) | `mvn package` or `./gradlew build` |
-| `dotnet` | `*.csproj`, `*.sln` | aspnetcore, masstransit, orleans | `dotnet publish` |
-| `node` | `package.json` | nextjs, nestjs, express, fastify, hono, remix | `npm ci && npm run build` |
-| `python` | `requirements.txt`, `pyproject.toml`, `Pipfile` | fastapi, django, flask, aiohttp | `pip install` |
-| `webserver` | `index.html`, `vite.config.*`, `angular.json` | angular, vite, react, vue, svelte | `npm run build` or static copy |
+| Profile | Detects | Frameworks | Package Managers |
+|---------|---------|------------|-----------------|
+| `golang` | `go.mod`, `main.go` | gin, echo, fiber, grpc, connect, root-main | _(go modules only)_ |
+| `java` | `pom.xml`, `build.gradle`, `build.gradle.kts` | spring-boot, quarkus, micronaut (+ gradle variants) | _(Maven or Gradle via framework name)_ |
+| `dotnet` | `*.csproj`, `*.sln` | aspnetcore, masstransit, orleans | _(dotnet CLI only)_ |
+| `node` | `package.json` | nextjs, nestjs, express, fastify, hono, remix | npm _(default)_, pnpm, bun, yarn, yarn-berry |
+| `python` | `requirements.txt`, `pyproject.toml`, `Pipfile` | fastapi, django, flask, aiohttp | pip _(default)_, uv, poetry, pipenv |
+| `webserver` | `index.html`, `vite.config.*`, `angular.json` | angular, vite, react, vue, svelte | _(npm only)_ |
 
 ---
 
@@ -214,87 +221,138 @@ OCI Image (.tar)    Ready to push to any registry
 Each file in `profiles/` describes one language. The filename becomes the runtime identifier (e.g. `java.yaml` → `runtime: java`).
 
 ```yaml
-runtime: golang           # unique identifier used by --runtime flag
+runtime: node             # unique identifier used by --runtime flag
 version: "1"              # profile schema version
-description: "Go application (gin, echo, chi, stdlib, gRPC)"
+description: "Node.js application (Express, Fastify, NestJS, Next.js)"
 
 # ── Detection ──────────────────────────────────────────────────────────────
 detect:
   # Exact filenames — match if ANY of these exist in the source directory
   files:
-    - go.mod
-    - main.go
+    - package.json
 
   # Glob patterns — match if ANY pattern matches at least one file
-  # Useful when filenames are variable (e.g. MyApp.csproj)
   patterns:
     - "*.csproj"
 
+  # Package manager rules — checked by file existence, first match wins.
+  # Sets DetectResult.PackageManager independently of the framework.
+  package-managers:
+    - file: bun.lockb
+      manager: bun
+    - file: pnpm-lock.yaml
+      manager: pnpm
+    - file: .yarnrc.yml
+      manager: yarn-berry
+    - file: yarn.lock
+      manager: yarn
+
   # Content rules — read a file and check if it contains a string.
   # The first rule with a non-empty framework that matches sets DetectResult.Framework.
-  # More specific frameworks (nextjs) go before broader ones (react) in the list.
   content:
-    - file: go.sum
-      contains: "gin-gonic"
-      boost-confidence: 0.02
-      framework: gin
-    - file: main.go
-      contains: "func main"
-      framework: root-main
+    - file: package.json
+      contains: "\"next\""
+      boost-confidence: 0.05
+      framework: nextjs
+    - file: package.json
+      contains: "\"express\""
+      boost-confidence: 0.03
+      framework: express
 
   confidence: 0.85   # base confidence score (0.0–1.0) when files/patterns match
 
 # ── Build (feeds into melange.yaml) ────────────────────────────────────────
 build:
   dependencies:        # APK packages in the BUILD environment (not in the final image)
-    - go
-    - build-base
+    - nodejs
+    - npm
     - git
-  command: |           # default shell command — used when no framework override matches
-    mkdir -p ${{targets.destdir}}/usr/bin
-    go build -o ${{targets.destdir}}/usr/bin/app .
+  command: |           # default — used when no framework/package-manager override matches
+    npm ci --prefer-offline
+    npm run build --if-present
+    mkdir -p /home/build/output/app
+    cp -r . /home/build/output/app/
+    rm -rf /home/build/output/app/node_modules
+    cd /home/build/output/app && npm ci --omit=dev --prefer-offline
   env:
-    CGO_ENABLED: "0"
-    GOFLAGS: "-trimpath"
+    NODE_ENV: "production"
+    NPM_CONFIG_CACHE: "/home/build/.npm"
+  caches:              # paths persisted as named Docker volumes between builds (macOS)
+    - /home/build/.npm
 
-  # Framework overrides — only define fields that differ from the defaults above.
-  # Any unset field (dependencies, command, env) falls back to the build defaults.
+  # Framework/package-manager overrides.
+  # Only define fields that differ from the defaults above.
+  # Lookup order: {framework}-{packageManager} → {packageManager} → {framework} → default
   frameworks:
-    quarkus:
-      command: |       # replaces build.command for Quarkus Maven projects
-        mvn package -DskipTests -B -q -Dquarkus.package.jar.type=uber-jar
-        mkdir -p /home/build/output/app
-        cp target/*-runner.jar /home/build/output/app/app.jar
-    quarkus-gradle:
-      dependencies:    # replaces build.dependencies for this framework
-        - busybox
-        - openjdk-21
-        - build-base
+    pnpm:              # any project using pnpm, regardless of framework
+      dependencies:
+        - nodejs
+        - npm
         - git
       command: |
-        chmod +x ./gradlew
-        ./gradlew build -Dquarkus.package.jar.type=uber-jar -x test --no-daemon -q
+        npm install -g pnpm
+        pnpm install --frozen-lockfile
+        pnpm run build --if-present
         mkdir -p /home/build/output/app
-        cp build/quarkus-app/*-runner.jar /home/build/output/app/app.jar
+        cp -r . /home/build/output/app/
+        cd /home/build/output/app && pnpm install --frozen-lockfile --prod
+      env:
+        NODE_ENV: "production"
+        PNPM_HOME: "/home/build/.local/share/pnpm"
+      caches:
+        - /home/build/.local/share/pnpm/store
+    bun:
+      dependencies:
+        - bun
+        - git
+      command: |
+        bun install --frozen-lockfile
+        bun run build --if-present
+        mkdir -p /home/build/output/app
+        cp -r . /home/build/output/app/
+        cd /home/build/output/app && bun install --frozen-lockfile --production
+      caches:
+        - /home/build/.bun/install/cache
 
 # ── Image (feeds into apko.yaml) ────────────────────────────────────────────
 image:
-  packages:            # APK packages in the FINAL image — keep minimal
+  packages:
+    - nodejs
     - ca-certificates-bundle
-  entrypoint: /usr/bin/app
-  cmd: []
-  run-as: 65532        # UID — never 0/root
+  entrypoint: node
+  cmd:
+    - "/app/server.js"
+  run-as: 65532
   ports:
-    - "8080"
+    - "3000"
   env:
-    APP_ENV: "production"
+    NODE_ENV: "production"
 ```
 
-#### How framework detection and overrides work
+---
 
-Detection content rules set a `framework` name (e.g. `spring-boot`, `quarkus-gradle`). The `build.frameworks` map keys must match these names exactly. When a framework is detected, its entry in the `frameworks` map is applied on top of the defaults — only the fields you define are overridden.
+### Detection: framework vs package manager
 
-The framework name encodes both the framework AND the build tool when needed. For example, `spring-boot` means Maven + Spring Boot, while `spring-boot-gradle` means Gradle + Spring Boot. Detection rules produce the right name based on which files are present:
+These are two independent dimensions detected separately and combined during build override resolution.
+
+**Framework** is set by the first matching `content` rule with a non-empty `framework` field. It identifies _what_ the app is built with (Spring Boot, Next.js, Quarkus, etc.).
+
+**Package manager** is set by the first matching `package-managers` rule. It identifies _how_ dependencies are installed (pnpm, bun, poetry, uv, etc.), detected purely by file existence — no content reading required.
+
+```
+Detected framework:        nextjs
+Detected package manager:  pnpm
+
+Override lookup order:
+  1. "nextjs-pnpm"   → not in frameworks map
+  2. "pnpm"          → found! use pnpm command and caches   ✓
+  3. "nextjs"        → (skipped)
+  4. default         → (skipped)
+```
+
+A `nextjs-pnpm` entry would only be needed if Next.js + pnpm requires something different from pnpm alone. In practice, the package manager entry handles all frameworks uniformly.
+
+For Java, build tool (Maven vs Gradle) is encoded directly in the framework name (`spring-boot` vs `spring-boot-gradle`) because Gradle and Maven are detected by file presence (`pom.xml` vs `build.gradle`) and affect the framework command fundamentally:
 
 ```yaml
 content:
@@ -303,10 +361,48 @@ content:
     framework: spring-boot          # Maven — uses default mvn command
   - file: build.gradle
     contains: "spring-boot"
-    framework: spring-boot-gradle   # Gradle — triggers the gradle override
+    framework: spring-boot-gradle   # Gradle — triggers gradle override
 ```
 
-Only add a framework entry when it actually differs from the default. If all detected frameworks use the same build command, no `frameworks` section is needed (see `golang.yaml`).
+---
+
+### Build caching
+
+Each profile and framework entry can declare `caches` — a list of absolute paths inside the build container to persist between runs. On macOS, each path is mounted as a named Docker volume (`apexpack-cache-*`). This means npm, pnpm, Maven, Gradle, pip, uv, and Go module caches survive between builds without re-downloading packages.
+
+```yaml
+build:
+  caches:
+    - /home/build/.m2/repository   # Maven local repo
+
+  frameworks:
+    spring-boot-gradle:
+      caches:
+        - /home/build/.gradle      # replaces build.caches for this framework
+```
+
+Framework-level `caches` replace (not append to) the top-level `build.caches`. If a framework uses a different cache location, declare it in the framework entry.
+
+---
+
+### Procfile support
+
+If a project has a `Procfile` with a `web:` process and the detected profile has no explicit `image.entrypoint`, apexpack parses the Procfile and uses the `web:` command as the container entrypoint:
+
+```
+# Procfile
+web: node dist/server.js
+worker: node dist/worker.js
+```
+
+Results in:
+```yaml
+entrypoint:
+  command: node
+cmd: dist/server.js
+```
+
+The profile's `image.entrypoint` always takes precedence. Procfile is only used as a fallback when the profile leaves entrypoint empty.
 
 ---
 
@@ -354,10 +450,11 @@ build:
 
 1. Create `profiles/<runtime>.yaml`
 2. Define `runtime`, `detect`, `build`, `image` (all required)
-3. Add `frameworks` entries only for cases that need a different `command`, `dependencies`, or `env`
-4. Run `apexpack profiles` to verify it loads
-5. Run `apexpack detect /path/to/sample-project` to test detection
-6. Run `apexpack build /path/to/sample-project --dry-run` to verify generated configs
+3. Add `package-managers` rules if the language supports multiple build tools
+4. Add `frameworks` entries only for cases that need different `command`, `dependencies`, `env`, or `caches`
+5. Run `apexpack profiles` to verify it loads
+6. Run `apexpack detect /path/to/sample-project` to test detection
+7. Run `apexpack build /path/to/sample-project --dry-run` to verify generated configs
 
 Example — Rust:
 
@@ -391,6 +488,9 @@ build:
     cp target/release/$(basename $PWD) /home/build/output/app/app
   env:
     CARGO_NET_OFFLINE: "false"
+  caches:
+    - /home/build/.cargo/registry
+    - /home/build/.cargo/git
 
 image:
   packages:
@@ -406,14 +506,14 @@ image:
 ## How Detection Confidence Works
 
 ```
-Base confidence (from detect.confidence)      e.g. 0.85
-+ boost from each matching content rule       e.g. +0.05 (spring-boot found in pom.xml)
-+ boost from each matching content rule       e.g. +0.02 (additional signal)
-─────────────────────────────────────────────────────────
-Final confidence                              e.g. 0.92  (capped at 1.0)
+Base confidence (from detect.confidence)         e.g. 0.85
++ boost from each matching content rule          e.g. +0.05 (spring-boot found in pom.xml)
++ boost from each matching content rule          e.g. +0.02 (additional signal)
+──────────────────────────────────────────────────────────
+Final confidence                                 e.g. 0.92  (capped at 1.0)
 ```
 
-When multiple profiles match (e.g. a Next.js project matches both `node` and `webserver` because it has an `index.html`), results are sorted highest-confidence first. The `build` command uses the top result automatically. Use `--runtime` to override.
+Package manager rules do not affect confidence — they only set `DetectResult.PackageManager`. When multiple profiles match, results are sorted highest-confidence first. The `build` command uses the top result automatically. Use `--runtime` to override.
 
 ---
 
@@ -474,13 +574,16 @@ profiles/*.yaml
       │
       │  detect.Run(profiles, srcDir)
       ▼
-[]types.DetectResult   { Profile, Confidence, Framework, MatchedFiles }
+[]types.DetectResult   { Profile, Confidence, Framework, PackageManager, MatchedFiles }
       │
-      │  build.Plan(profile, opts)   ← applies framework override if matched
+      │  build.Plan(profile, opts)
+      │    resolves: {framework}-{pm} → {pm} → {framework} → default
+      │    reads Procfile for fallback entrypoint
       ▼
-*types.BuildPlan       { MelangeConfig, ApkoConfig, Framework }
+*types.BuildPlan       { MelangeConfig, ApkoConfig, Framework, PackageManager, ProcfileCmd }
       │
       │  build.Run(plan, opts)
+      │    mounts named Docker volumes for declared caches (macOS)
       ▼
 melange → .apk package
 apko    → OCI image tarball + SBOM
@@ -491,17 +594,23 @@ apko    → OCI image tarball + SBOM
 **1. `types.go` is the centre of everything**
 Every package imports `internal/types`. Nothing else imports from `cmd/`. This keeps dependency direction clean and prevents circular imports.
 
-**2. Framework overrides are sparse**
-A `frameworks` entry only needs to define what differs from the profile defaults. Unset fields (`dependencies`, `command`, `env`) are inherited. Only add a framework entry when the command or deps genuinely change.
+**2. Framework and package manager are detected independently**
+`framework` comes from content rules (what the app uses). `PackageManager` comes from file-existence rules (how deps are installed). They combine during build override resolution using a three-level fallback, so a single `pnpm` entry covers all frameworks using pnpm without requiring `nextjs-pnpm`, `nestjs-pnpm`, etc.
 
-**3. Detection encodes the build tool**
-For languages with multiple build tools (Maven vs Gradle for Java), the content rules produce distinct framework names (`spring-boot` vs `spring-boot-gradle`). This keeps build commands unconditional — no `if [ -f pom.xml ]` in YAML commands.
+**3. Framework overrides are sparse**
+A `frameworks` entry only needs to define what differs from the profile defaults. Unset fields (`dependencies`, `command`, `env`, `caches`) are inherited. Only add a framework entry when the command, deps, or caches genuinely change.
 
-**4. Plan and Run are separated**
-`build.Plan()` generates config content. `build.Run()` writes files and runs tools. The `--dry-run` flag uses Plan without Run, so you can inspect exactly what will be built before committing.
+**4. Build tool encoded in framework name for Java**
+For Java, Maven vs Gradle is a fundamental build tool difference that changes the command entirely. Encoding it in the framework name (`spring-boot` vs `spring-boot-gradle`) keeps commands unconditional — no `if [ -f pom.xml ]` in YAML.
 
-**5. Profiles directory is runtime — not embedded**
-Profiles live on disk in `profiles/`, not compiled into the binary. You can add, edit, or override profiles without recompiling. Teams can maintain a shared profiles repo and point `--profiles-dir` at it.
+**5. Caches are named Docker volumes**
+On macOS, each declared cache path becomes a persistent named Docker volume. The volume name is derived from the path, so the same cache is reused across all builds of that project type.
+
+**6. Plan and Run are separated**
+`build.Plan()` generates config content. `build.Run()` writes files and runs tools. The `--dry-run` flag uses Plan without Run, so you can inspect exactly what will be built — including which package manager override fired — before committing.
+
+**7. Profiles directory is runtime — not embedded**
+Profiles live on disk in `profiles/`, not compiled into the binary. Add, edit, or override profiles without recompiling. Teams can maintain a shared profiles repo and point `--profiles-dir` at it.
 
 ---
 
@@ -555,7 +664,7 @@ The pipeline steps:
 |------|------|-------------|
 | 1a | `git-clone` | Clone the profiles repo |
 | 1b | `git-clone` | Clone the source repo |
-| 2 | `apexpack-detect` | Detect language and framework |
+| 2 | `apexpack-detect` | Detect language, framework, and package manager |
 | 3 | `apexpack-build` | Build OCI image (privileged — melange uses bubblewrap) |
 | 4 | `apexpack-scan` | Scan SBOM for CVEs with grype |
 | 5 | `crane-copy` | Push image tarball to registry |
@@ -568,16 +677,17 @@ The pipeline steps:
 
 1. Create `profiles/<runtime>.yaml`
 2. Define `runtime`, `detect`, `build`, `image` (all required)
-3. Add `frameworks` entries for any cases that need a different `command`, `dependencies`, or `env`
-4. Run `apexpack profiles` to verify it loads
-5. Run `apexpack detect /path/to/sample-project` to test detection
-6. Run `apexpack build /path/to/sample-project --dry-run` to verify generated configs
+3. Add `package-managers` rules if the language has multiple build tools (pnpm, uv, etc.)
+4. Add `frameworks` entries for any cases that need a different `command`, `dependencies`, `env`, or `caches`
+5. Run `apexpack profiles` to verify it loads
+6. Run `apexpack detect /path/to/sample-project` to test detection
+7. Run `apexpack build /path/to/sample-project --dry-run` to verify generated configs
 
 ### Modifying the Go code
 
 All data structures are in `internal/types/types.go`. Change the struct there first, then update the code that reads or writes those fields. Go changes are only needed when:
 
-- Adding a new detection method (currently: exact files, glob patterns, content string match)
+- Adding a new detection method (currently: exact files, glob patterns, content string match, package manager file existence)
 - Adding a new build output format (currently: melange + apko)
 - Adding a new CLI command
 

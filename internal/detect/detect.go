@@ -79,6 +79,14 @@ func matchProfile(p *types.Profile, srcDir string) (types.DetectResult, bool) {
 		}
 	}
 
+	var packageManager string
+	for _, rule := range p.Detect.PackageManagers {
+		if fileExists(filepath.Join(srcDir, rule.File)) {
+			packageManager = rule.Manager
+			break
+		}
+	}
+
 	if confidence > 1.0 {
 		confidence = 1.0
 	}
@@ -89,6 +97,7 @@ func matchProfile(p *types.Profile, srcDir string) (types.DetectResult, bool) {
 		MatchedFiles:   matchedFiles,
 		MatchedContent: matchedContent,
 		Framework:      framework,
+		PackageManager: packageManager,
 	}, true
 }
 
