@@ -1,0 +1,17 @@
+runtime: golang
+build:
+  command: |
+    mkdir -p ${{targets.destdir}}/usr/bin
+    mkdir -p ${{targets.destdir}}/etc/apexpack/profiles
+    go build -o ${{targets.destdir}}/usr/bin/{APP_NAME} ./cmd/apexpack
+    cp profiles/*.yaml ${{targets.destdir}}/etc/apexpack/profiles/
+image:
+  packages:
+    - busybox
+    - git
+    - melange
+    - apko
+    - grype
+scan:
+  auto-patch: false
+  patch-persist: false

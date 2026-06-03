@@ -1,0 +1,23 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: crane-copy
+spec:
+  params:
+    - name: source
+      description: "Path to the OCI image tarball to push."
+    - name: destination
+      description: "Full OCI image reference to push to (e.g. ghcr.io/myorg/myapp:v1.0)."
+  workspaces:
+    - name: credentials
+      description: "Docker config.json for registry auth."
+      optional: true
+      mountPath: /root/.docker
+  steps:
+    - name: push
+      image: gcr.io/go-containerregistry/crane:latest
+      command: ["crane"]
+      args:
+        - "push"
+        - "$(params.source)"
+        - "$(params.destination)"

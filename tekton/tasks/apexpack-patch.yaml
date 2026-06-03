@@ -1,0 +1,98 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: apexpack-patch
+  labels:
+    app.kubernetes.io/version: "1.0"
+  annotations:
+    tekton.dev/displayName: "apexpack CVE auto-patch"
+    tekton.dev/description: >-
+      Runs 'apexpack patch --apply' to update profile YAML files with pinned
+      package versions that fix CVEs found during the scan step.
+      When PERSIST=true, commits the updated profiles back to git so future
+      pipeline runs start with the patched versions already pinned.
+spec:
+  params:
+    - name: SBOM_PATH
+      description: "Absolute path to the SBOM file produced by apexpack-build."
+    - name: PROFILES_SUBDIR
+      description: "Subdirectory within the profiles workspace that contains *.yaml profile files."
+      default: "profiles"
+    - name: PERSIST
+      description: "When true, commit the patched profiles back to git."
+      default: "false"
+    - name: GIT_REVISION
+      description: "Branch to push the patched profiles to (only used when PERSIST=true)."
+      default: "main"
+
+  workspaces:
+    - name: profiles
+      description: "Cloned profiles repo — profiles/*.yaml are patched in-place here."
+    - name: output
+      description: "Build output workspace — used to locate the SBOM."
+
+  results:
+    - name: PATCHES_APPLIED
+      description: "Number of package version pins written to profiles."
+
+  steps:
+    - name: patch
+      image: apexpack:latest
+      imagePullPolicy: IfNotPresent
+      script: |
+        #!/bin/sh
+        set -e
+
+        PROFILES_PATH="$(workspaces.profiles.path)/$(params.PROFILES_SUBDIR)"
+
+        echo "=== Applying CVE patches ==="
+        echo "SBOM:     $(params.SBOM_PATH)"
+        echo "Profiles: $PROFILES_PATH"
+        echo ""
+
+        apexpack patch \
+          --sbom "$(params.SBOM_PATH)" \
+          --apply \
+          --profiles-dir "$PROFILES_PATH" \
+          2>&1 | tee /tmp/patch-output.txt
+
+        # Count pinned lines (lines starting with "↑") as a rough patch count.
+        COUNT=$(grep -c "^    ↑" /tmp/patch-output.txt 2>/dev/null || echo "0")
+        printf "%s" "$COUNT" > $(results.PATCHES_APPLIED.path)
+
+        echo ""
+        echo "✓ $COUNT package(s) patched."
+
+    - name: persist
+      image: apexpack:latest
+      imagePullPolicy: IfNotPresent
+      script: |
+        #!/bin/sh
+        set -e
+
+        # Skip if persistence is not requested.
+        if [ "$(params.PERSIST)" != "true" ]; then
+          echo "→ PERSIST=false — skipping git commit."
+          exit 0
+        fi
+
+        COUNT=$(cat $(results.PATCHES_APPLIED.path) 2>/dev/null || echo "0")
+        if [ "$COUNT" = "0" ]; then
+          echo "→ No patches applied — nothing to commit."
+          exit 0
+        fi
+
+        echo "=== Committing patched profiles to git ==="
+        cd "$(workspaces.profiles.path)"
+
+        git config user.email "apexpack-bot@ci"
+        git config user.name "apexpack-bot"
+        git add "$(params.PROFILES_SUBDIR)/"
+
+        if git diff --cached --quiet; then
+          echo "→ No changes staged — profiles already up to date."
+        else
+          git commit -m "chore: auto-patch CVEs — pin $COUNT package(s) to latest Wolfi versions"
+          git push origin "$(params.GIT_REVISION)"
+          echo "✓ Patched profiles committed and pushed."
+        fi
