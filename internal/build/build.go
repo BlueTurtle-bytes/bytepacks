@@ -197,7 +197,7 @@ func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
 			},
 			Env: p.Build.Env,
 		},
-		Pipeline: []types.MelangePipeline{{Runs: p.Build.Command}},
+		Pipeline: []types.MelangePipeline{{Runs: applyProjectTemplates(p.Build.Command, opts.ProjectName)}},
 	}
 
 	// Resolve the framework override using a three-level fallback:
@@ -210,7 +210,7 @@ func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
 			cfg.Environment.Contents.Packages = append([]string{"wolfi-baselayout"}, override.Dependencies...)
 		}
 		if override.Command != "" {
-			cfg.Pipeline = []types.MelangePipeline{{Runs: override.Command}}
+			cfg.Pipeline = []types.MelangePipeline{{Runs: applyProjectTemplates(override.Command, opts.ProjectName)}}
 		}
 		for k, v := range override.Env {
 			if cfg.Environment.Env == nil {
@@ -272,8 +272,8 @@ func buildApkoConfig(p *types.Profile, opts Options) types.ApkoConfig {
 		runAs = 65532
 	}
 
-	// Entrypoint: profile wins; fall back to Procfile "web:" command.
-	entrypoint := p.Image.Entrypoint
+	// Entrypoint: profile wins (with {APP_NAME} substituted); fall back to Procfile "web:" command.
+	entrypoint := applyProjectTemplates(p.Image.Entrypoint, opts.ProjectName)
 	cmd := p.Image.Cmd
 	if entrypoint == "" {
 		if procCmd := readProcfileCmd(opts.SourceDir); procCmd != "" {
@@ -311,6 +311,13 @@ func buildApkoConfig(p *types.Profile, opts Options) types.ApkoConfig {
 	}
 
 	return cfg
+}
+
+// applyProjectTemplates replaces {APP_NAME} with the project name.
+// Use {APP_NAME} in profile build commands and image entrypoints to produce
+// binaries and entrypoints named after the project rather than a fixed "app".
+func applyProjectTemplates(s, projectName string) string {
+	return strings.ReplaceAll(s, "{APP_NAME}", projectName)
 }
 
 // cacheVolumeName returns a stable Docker volume name for a build cache path.
@@ -462,7 +469,7 @@ func runApko(configFile string, opts Options) error {
 		return runApkoInDocker(configFile, imageTag, outputTar, opts)
 	}
 
-	return runTool("apko", []string{
+	return runToolInDir(opts.OutputDir, "apko", []string{
 		"build", configFile,
 		imageTag,
 		outputTar,
@@ -517,16 +524,28 @@ func runApkoInDocker(configFile, imageTag, outputTar string, opts Options) error
 func runTool(name string, args []string) error {
 	path, err := exec.LookPath(name)
 	if err != nil {
-		home, _ := os.UserHomeDir()
-		fallback := filepath.Join(home, ".nimbopacks", "toolchain", "bin", name)
-		if _, statErr := os.Stat(fallback); statErr == nil {
-			path = fallback
-		} else {
-			return fmt.Errorf("%s not found in PATH — run: nimbopacks toolchain install", name)
-		}
+		return fmt.Errorf("%s not found in PATH", name)
 	}
 
 	cmd := exec.Command(path, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	fmt.Printf("  → %s %s\n", name, strings.Join(args, " "))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s exited with error: %w", name, err)
+	}
+	return nil
+}
+
+// runToolInDir is like runTool but sets the working directory before exec.
+func runToolInDir(dir, name string, args []string) error {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return fmt.Errorf("%s not found in PATH", name)
+	}
+
+	cmd := exec.Command(path, args...)
+	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	fmt.Printf("  → %s %s\n", name, strings.Join(args, " "))
@@ -540,13 +559,7 @@ func runTool(name string, args []string) error {
 func runToolEnv(name string, args []string, env []string) error {
 	path, err := exec.LookPath(name)
 	if err != nil {
-		home, _ := os.UserHomeDir()
-		fallback := filepath.Join(home, ".nimbopacks", "toolchain", "bin", name)
-		if _, statErr := os.Stat(fallback); statErr == nil {
-			path = fallback
-		} else {
-			return fmt.Errorf("%s not found in PATH — run: nimbopacks toolchain install", name)
-		}
+		return fmt.Errorf("%s not found in PATH", name)
 	}
 
 	cmd := exec.Command(path, args...)

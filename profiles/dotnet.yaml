@@ -66,3 +66,7 @@ image:
     ASPNETCORE_URLS: "http://+:8080"
     DOTNET_RUNNING_IN_CONTAINER: "true"
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "false"
+
+scan:
+  auto-patch: false
+  patch-persist: false

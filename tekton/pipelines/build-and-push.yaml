@@ -32,6 +32,16 @@ spec:
     - name: PROFILES_GIT_REVISION
       description: "Branch or tag of the profiles repo to use."
       default: "main"
+    - name: AUTO_PATCH
+      description: >-
+        Force auto-patch on for this run regardless of the language profile setting.
+        Leave empty to use the profile's scan.auto-patch default.
+      default: ""
+    - name: PATCH_PERSIST
+      description: >-
+        Force patch-persist on for this run regardless of the language profile setting.
+        Leave empty to use the profile's scan.patch-persist default.
+      default: ""
 
   workspaces:
     - name: source
@@ -55,42 +65,18 @@ spec:
       value: "$(tasks.build.results.SBOM_PATH)"
     - name: SCAN_RESULT
       value: "$(tasks.scan.results.SCAN_RESULT)"
+    - name: AUTO_PATCH
+      value: "$(tasks.detect.results.AUTO_PATCH)"
+    - name: PATCH_PERSIST
+      value: "$(tasks.detect.results.PATCH_PERSIST)"
+    - name: PATCHES_APPLIED
+      value: "$(tasks.patch.results.PATCHES_APPLIED)"
 
   tasks:
-    # ── Step 1a: Clone language profiles ─────────────────────────────────────
-    # Profiles are read fresh from git on every run.
-    # To update a profile: merge the change to PROFILES_GIT_REVISION.
-    # The very next PipelineRun picks it up — no kubectl apply needed.
-    - name: clone-profiles
-      taskRef:
-        resolver: hub
-        params:
-          - name: kind
-            value: task
-          - name: name
-            value: git-clone
-          - name: version
-            value: "0.9"
-      params:
-        - name: url
-          value: $(params.PROFILES_GIT_URL)
-        - name: revision
-          value: $(params.PROFILES_GIT_REVISION)
-      workspaces:
-        - name: output
-          workspace: profiles
-
-    # ── Step 1b: Clone source repo ────────────────────────────────────────────
+    # ── Step 1: Clone source repo ─────────────────────────────────────────────
     - name: clone-source
       taskRef:
-        resolver: hub
-        params:
-          - name: kind
-            value: task
-          - name: name
-            value: git-clone
-          - name: version
-            value: "0.9"
+        name: git-clone
       params:
         - name: url
           value: $(params.GIT_URL)
@@ -105,11 +91,14 @@ spec:
       taskRef:
         name: apexpack-detect
       runAfter:
-        - clone-profiles
         - clone-source
       params:
         - name: RUNTIME_OVERRIDE
           value: $(params.RUNTIME)
+        - name: AUTO_PATCH_OVERRIDE
+          value: $(params.AUTO_PATCH)
+        - name: PATCH_PERSIST_OVERRIDE
+          value: $(params.PATCH_PERSIST)
       workspaces:
         - name: source
           workspace: source
@@ -152,23 +141,78 @@ spec:
           value: $(params.FAIL_ON)
         - name: FORMAT
           value: sarif
+        - name: SOFT_FAIL
+          value: $(tasks.detect.results.AUTO_PATCH)
       workspaces:
         - name: output
           workspace: output
 
-    # ── Step 5: Push to registry ──────────────────────────────────────────────
-    - name: push
+    # ── Step 5: Auto-patch CVEs (only when AUTO_PATCH=true and scan failed) ───
+    - name: patch
       taskRef:
-        resolver: hub
-        params:
-          - name: kind
-            value: task
-          - name: name
-            value: crane-copy
-          - name: version
-            value: "0.1"
+        name: apexpack-patch
       runAfter:
         - scan
+      when:
+        - input: "$(tasks.scan.results.SCAN_RESULT)"
+          operator: in
+          values: ["fail"]
+        - input: "$(tasks.detect.results.AUTO_PATCH)"
+          operator: in
+          values: ["true"]
+      params:
+        - name: SBOM_PATH
+          value: $(tasks.build.results.SBOM_PATH)
+        - name: PROFILES_SUBDIR
+          value: profiles
+        - name: PERSIST
+          value: $(tasks.detect.results.PATCH_PERSIST)
+        - name: GIT_REVISION
+          value: $(params.PROFILES_GIT_REVISION)
+      workspaces:
+        - name: profiles
+          workspace: profiles
+        - name: output
+          workspace: output
+
+    # ── Step 6: Rebuild with patched profiles (only after a successful patch) ─
+    - name: rebuild
+      taskRef:
+        name: apexpack-build
+      runAfter:
+        - patch
+      when:
+        - input: "$(tasks.scan.results.SCAN_RESULT)"
+          operator: in
+          values: ["fail"]
+        - input: "$(tasks.detect.results.AUTO_PATCH)"
+          operator: in
+          values: ["true"]
+      params:
+        - name: IMAGE
+          value: $(params.IMAGE)
+        - name: VERSION
+          value: $(params.VERSION)
+        - name: RUNTIME
+          value: $(tasks.detect.results.RUNTIME)
+      workspaces:
+        - name: source
+          workspace: source
+        - name: profiles
+          workspace: profiles
+        - name: output
+          workspace: output
+        - name: registry-credentials
+          workspace: registry-credentials
+
+    # ── Step 7: Push to registry ──────────────────────────────────────────────
+    # Runs after rebuild. If rebuild was skipped (no CVEs or AUTO_PATCH=false),
+    # Tekton still proceeds here using the original build's tarball.
+    - name: push
+      taskRef:
+        name: crane-copy
+      runAfter:
+        - rebuild
       params:
         - name: source
           value: "$(tasks.build.results.IMAGE_TARBALL)"

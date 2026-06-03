@@ -38,6 +38,27 @@ type Profile struct {
 
 	// Image defines what goes into the final OCI image (feeds into apko.yaml).
 	Image ImageConfig `yaml:"image"`
+
+	// Scan configures CVE scanning and auto-patch defaults for this language profile.
+	// Projects can override these via apexpack.yaml. In the Tekton pipeline the
+	// AUTO_PATCH and PATCH_PERSIST params take precedence.
+	Scan ScanConfig `yaml:"scan,omitempty"`
+}
+
+// ============================================================================
+// ScanConfig — CVE scan and auto-patch settings
+// ============================================================================
+
+// ScanConfig controls CVE scanning behaviour. It is embedded in both Profile
+// (as a language-level default) and ProjectConfig (as a per-project override).
+type ScanConfig struct {
+	// AutoPatch triggers 'apexpack patch --apply' when CVEs are found.
+	// In the Tekton pipeline the AUTO_PATCH param takes precedence.
+	AutoPatch bool `yaml:"auto-patch,omitempty"`
+
+	// PatchPersist commits the patched profiles back to git after auto-patching.
+	// Requires git credentials to be available. In Tekton, use PATCH_PERSIST param.
+	PatchPersist bool `yaml:"patch-persist,omitempty"`
 }
 
 // ============================================================================
@@ -204,6 +225,9 @@ type ImageConfig struct {
 //	build:
 //	  env:
 //	    CGO_ENABLED: "1"      # this project requires CGO
+//	scan:
+//	  auto-patch: true        # override the profile's scan.auto-patch default
+//	  patch-persist: false    # commit patched profiles back to git
 type ProjectConfig struct {
 	// Runtime overrides auto-detection (e.g. "golang", "java").
 	Runtime string `yaml:"runtime,omitempty"`
@@ -214,6 +238,9 @@ type ProjectConfig struct {
 
 	// Build overrides are merged on top of the profile's build config.
 	Build *ProjectBuildOverride `yaml:"build,omitempty"`
+
+	// Scan overrides the language profile's scan defaults for this project.
+	Scan *ScanConfig `yaml:"scan,omitempty"`
 }
 
 // ProjectImageOverride lets a project add extra runtime packages or env vars.

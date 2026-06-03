@@ -120,3 +120,7 @@ image:
   env:
     JAVA_HOME: "/usr/lib/jvm/java-21-openjdk"
     JAVA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+scan:
+  auto-patch: true
+  patch-persist: false

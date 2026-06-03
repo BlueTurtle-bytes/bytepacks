@@ -423,7 +423,7 @@ runtime: golang          # optional — overrides auto-detection
 build:
   command: |             # replaces build.command from the profile
     mkdir -p ${{targets.destdir}}/usr/bin
-    go build -o ${{targets.destdir}}/usr/bin/app ./cmd/myapp
+    go build -o ${{targets.destdir}}/usr/bin/{APP_NAME} ./cmd/myapp
   env:                   # merged on top of profile build.env
     CGO_ENABLED: "1"
   dependencies:          # appended to profile build.dependencies
@@ -434,12 +434,13 @@ image:
     - sqlite-libs
   env:                   # merged on top of profile image.env
     DATABASE_PATH: "/data/app.db"
-  entrypoint: /usr/bin/myapp   # replaces profile entrypoint
 ```
+
+`{APP_NAME}` is substituted with the project name at build time (derived from the source directory name or `--project-name`). Use it in `build.command` and `image.entrypoint` to avoid hardcoding binary names — every project automatically gets a binary and entrypoint named after itself.
 
 #### Go projects with `cmd/` layout
 
-Go projects where `main.go` lives in `cmd/<name>/` (not at the root) need this override, since `go build .` has nothing to compile at the root:
+Go projects where `main.go` lives in `cmd/<name>/` (not at the root) need this override, since the default `find`-based command would locate the right `main.go` but may resolve the wrong package path in monorepos:
 
 ```yaml
 # apexpack.yaml
@@ -447,7 +448,7 @@ runtime: golang
 build:
   command: |
     mkdir -p ${{targets.destdir}}/usr/bin
-    go build -o ${{targets.destdir}}/usr/bin/app ./cmd/myapp
+    go build -o ${{targets.destdir}}/usr/bin/{APP_NAME} ./cmd/myapp
 ```
 
 ---
@@ -563,10 +564,17 @@ apexpack/
 │   ├── python.yaml
 │   └── webserver.yaml
 │
-└── tekton/                  Tekton CI/CD resources
-    ├── tasks/               apexpack-detect, apexpack-build, apexpack-scan Tasks
+├── apexpack.yaml            Per-project overrides for building apexpack itself
+│                            (binary name, extra image packages: busybox, melange, apko, grype)
+│
+├── rebuild-image.sh         Rebuilds apexpack:latest and loads it into the kind cluster
+│
+└── tekton/
+    ├── install/             Tekton install manifests (pipeline + dashboard)
+    ├── tasks/               apexpack-detect, apexpack-build, apexpack-scan, git-clone, crane-copy
     ├── pipelines/           build-and-push Pipeline
-    └── config/              ConfigMap, ArgoCD and Flux integration
+    ├── pipelinerun/         Example PipelineRun (spring-petclinic)
+    └── config/              ConfigMap and supporting config
 ```
 
 ### Data Flow
@@ -661,56 +669,101 @@ The flag takes precedence over the environment variable. Both the system CAs and
 
 apexpack ships Tekton Tasks and a Pipeline that clone the source, detect the language, build the image, scan for CVEs, and push — all driven by the YAML profiles.
 
+### Installing Tekton
+
+```bash
+kubectl apply -f tekton/install/tekton-pipeline.yaml
+kubectl apply -f tekton/install/tekton-dashboard.yaml
+```
+
+> The bundled `tekton-pipeline.yaml` sets `coschedule: disabled` in `feature-flags`. This is required because the build task binds two PVCs (`source` and `output`) simultaneously, which is incompatible with the default `coschedule: workspaces` mode. On a single-node cluster (kind, k3d) this has no scheduling impact.
+
+### Applying Tasks and Pipeline
+
+```bash
+kubectl apply -f tekton/tasks/
+kubectl apply -f tekton/pipelines/
+```
+
+### Running the Pipeline
+
+The `profiles` workspace is served from a ConfigMap — no PVC needed. Create it once from the bundled profiles:
+
+```bash
+kubectl create configmap apexpack-profiles --from-file=profiles/
+kubectl create -f tekton/pipelinerun/pipelinerun.yaml
+```
+
+`tekton/pipelinerun/pipelinerun.yaml` is a ready-to-use example that builds `spring-petclinic`. Edit the `GIT_URL`, `IMAGE`, and `GIT_REVISION` params before running:
+
 ```yaml
-# Example PipelineRun
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  name: build-my-app
+  generateName: apexpack-build-
 spec:
   pipelineRef:
     name: apexpack-build-and-push
   params:
     - name: GIT_URL
       value: https://github.com/myorg/myapp
+    - name: GIT_REVISION
+      value: main
     - name: IMAGE
       value: ghcr.io/myorg/myapp:v1.0.0
     - name: FAIL_ON
       value: high
   workspaces:
     - name: source
-      volumeClaimTemplate:
-        spec:
-          accessModes: [ReadWriteOnce]
-          resources:
-            requests:
-              storage: 1Gi
+      persistentVolumeClaim:
+        claimName: apexpack-source
     - name: profiles
-      volumeClaimTemplate:
-        spec:
-          accessModes: [ReadWriteOnce]
-          resources:
-            requests:
-              storage: 100Mi
+      configMap:
+        name: apexpack-profiles
     - name: output
-      volumeClaimTemplate:
-        spec:
-          accessModes: [ReadWriteOnce]
-          resources:
-            requests:
-              storage: 2Gi
+      persistentVolumeClaim:
+        claimName: apexpack-output
 ```
 
-The pipeline steps:
+### Pipeline steps
 
-| Step | Task | Description |
-|------|------|-------------|
-| 1a | `git-clone` | Clone the profiles repo |
-| 1b | `git-clone` | Clone the source repo |
-| 2 | `apexpack-detect` | Detect language, framework, and package manager |
-| 3 | `apexpack-build` | Build OCI image (privileged — melange uses bubblewrap) |
-| 4 | `apexpack-scan` | Scan SBOM for CVEs with grype |
-| 5 | `crane-copy` | Push image tarball to registry |
+| Step | Task | Image | Description |
+|------|------|-------|-------------|
+| 1 | `git-clone` | `alpine/git` | Clone the source repo |
+| 2 | `apexpack-detect` | `apexpack:latest` | Detect language, framework, and package manager |
+| 3 | `apexpack-build` | `apexpack:latest` | Build OCI image (privileged — melange uses bubblewrap) |
+| 4 | `apexpack-scan` | `apexpack:latest` | Scan SBOM for CVEs with grype; prints table to log, writes SARIF to output workspace |
+| 5 | `crane-copy` | `gcr.io/go-containerregistry/crane` | Push image tarball to registry |
+
+### The `apexpack:latest` tool image
+
+All pipeline tasks run inside `apexpack:latest` — a self-hosted image that bundles the CLI together with melange, apko, and grype. On Linux (inside the pod) these tools are called natively, not via Docker.
+
+The image is built by apexpack building itself. `apexpack.yaml` in the repo root defines the overrides from the default golang profile:
+
+```yaml
+runtime: golang
+build:
+  command: |
+    mkdir -p ${{targets.destdir}}/usr/bin
+    go build -o ${{targets.destdir}}/usr/bin/{APP_NAME} ./cmd/apexpack
+image:
+  packages:
+    - busybox    # provides /bin/sh for Tekton script execution
+    - melange    # APK builder — runs natively on Linux
+    - apko       # OCI assembler — runs natively on Linux
+    - grype      # CVE scanner
+```
+
+`{APP_NAME}` is substituted with the project name (`apexpack`) at build time, so no explicit `entrypoint` override is needed.
+
+To rebuild and reload into a kind cluster:
+
+```bash
+./rebuild-image.sh
+```
+
+This script runs `apexpack build`, loads the resulting tarball into Docker, and imports it into the kind cluster.
 
 ---
 

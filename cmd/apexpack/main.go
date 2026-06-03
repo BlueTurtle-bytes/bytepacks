@@ -527,17 +527,12 @@ Examples:
 	return cmd
 }
 
-// findTool looks for a binary in PATH, then in ~/.nimbopacks/toolchain/bin/.
+// findTool looks for a binary in PATH.
 func findTool(name string) (string, error) {
 	if p, err := exec.LookPath(name); err == nil {
 		return p, nil
 	}
-	home, _ := os.UserHomeDir()
-	fallback := filepath.Join(home, ".nimbopacks", "toolchain", "bin", name)
-	if _, err := os.Stat(fallback); err == nil {
-		return fallback, nil
-	}
-	return "", fmt.Errorf("%s not found", name)
+	return "", fmt.Errorf("%s not found in PATH", name)
 }
 
 // --- profiles command ---

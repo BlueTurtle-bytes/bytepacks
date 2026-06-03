@@ -159,3 +159,7 @@ image:
   env:
     NODE_ENV: "production"
     PORT: "3000"
+
+scan:
+  auto-patch: false
+  patch-persist: false

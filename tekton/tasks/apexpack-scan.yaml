@@ -20,6 +20,9 @@ spec:
     - name: FORMAT
       description: "Output format: table, json, sarif."
       default: "table"
+    - name: SOFT_FAIL
+      description: "When true, write fail result but exit 0 so the pipeline can continue to auto-patch."
+      default: "false"
 
   workspaces:
     - name: output
@@ -31,25 +34,34 @@ spec:
 
   steps:
     - name: scan
-      image: ghcr.io/anchore/grype:latest
+      image: apexpack:latest
+      imagePullPolicy: IfNotPresent
       env:
         - name: GRYPE_DB_CACHE_DIR
           value: "/tmp/grype-db"
       script: |
         #!/bin/sh
 
-        grype \
-          "sbom:$(params.SBOM_PATH)" \
-          --fail-on $(params.FAIL_ON) \
-          --output $(params.FORMAT) \
-          --file $(workspaces.output.path)/scan-results.$(params.FORMAT) \
-          2>&1
+        SBOM="sbom:$(params.SBOM_PATH)"
+        OUTPUT_FILE="$(workspaces.output.path)/scan-results.$(params.FORMAT)"
 
-        if [ $? -eq 0 ]; then
+        echo "=== CVE Scan Results ==="
+        grype "$SBOM" --output table 2>&1 || true
+        echo "========================"
+
+        if grype "$SBOM" \
+            --fail-on $(params.FAIL_ON) \
+            --output $(params.FORMAT) \
+            --file "$OUTPUT_FILE" \
+            2>/dev/null; then
           printf "pass" > $(results.SCAN_RESULT.path)
           echo "✓ No CVEs found at or above $(params.FAIL_ON) severity."
         else
           printf "fail" > $(results.SCAN_RESULT.path)
-          echo "✗ CVEs found. See scan-results.$(params.FORMAT) for details."
-          exit 1
+          echo "✗ CVEs found at or above $(params.FAIL_ON) severity. Full report: $OUTPUT_FILE"
+          if [ "$(params.SOFT_FAIL)" = "true" ]; then
+            echo "→ AUTO_PATCH enabled — continuing to apply patches."
+          else
+            exit 1
+          fi
         fi

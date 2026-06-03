@@ -50,12 +50,17 @@ spec:
 
   steps:
     - name: build
-      image: ghcr.io/apexpack/apexpack:latest
+      image: apexpack:latest
+      imagePullPolicy: IfNotPresent
       script: |
         #!/bin/sh
         set -e
 
-        PROFILES_DIR="$(workspaces.profiles.path)/profiles"
+        if [ -d "$(workspaces.profiles.path)/profiles" ]; then
+          PROFILES_DIR="$(workspaces.profiles.path)/profiles"
+        else
+          PROFILES_DIR="$(workspaces.profiles.path)"
+        fi
 
         RUNTIME_FLAG=""
         if [ -n "$(params.RUNTIME)" ]; then

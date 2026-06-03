@@ -113,3 +113,6 @@ image:
   env:
     NGINX_PORT: "8080"
 
+scan:
+  auto-patch: false
+  patch-persist: false
