@@ -59,6 +59,28 @@ spec:
         #!/bin/sh
         set -e
 
+        # bwrap --unshare-user fails when the container runtime uses userns-remap
+        # (Docker on Colima QEMU). We are already root in a privileged container so
+        # user-namespace isolation is redundant. Shadow the real bwrap with a wrapper
+        # that strips the user-namespace flags before forwarding the call.
+        cat > /usr/local/bin/bwrap << 'BWRAP_WRAPPER'
+        #!/bin/sh
+        args=""
+        skip_next=0
+        for a in "$@"; do
+          if [ "$skip_next" = "1" ]; then skip_next=0; continue; fi
+          case "$a" in
+            --unshare-user) ;;
+            --unshare-all) args="$args --unshare-pid --unshare-net --unshare-uts --unshare-ipc" ;;
+            --uid|--gid)   skip_next=1 ;;
+            *)             args="$args $a" ;;
+          esac
+        done
+        exec /usr/bin/bwrap $args
+        BWRAP_WRAPPER
+        chmod +x /usr/local/bin/bwrap
+        export PATH=/usr/local/bin:$PATH
+
         if [ -d "$(workspaces.profiles.path)/profiles" ]; then
           PROFILES_DIR="$(workspaces.profiles.path)/profiles"
         else
