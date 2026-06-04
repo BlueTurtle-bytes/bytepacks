@@ -74,13 +74,28 @@ build:
 
   tls_ca_env: []  # JVM ignores SSL_CERT_FILE; tls_ca_pre_step handles it via keytool
   tls_ca_pre_step: |
-    JVM_CACERTS=$(find /usr/lib/jvm -name "cacerts" 2>/dev/null | head -1)
-    if [ -n "$JVM_CACERTS" ] && [ -f "/home/build/.apexpack-ca.crt" ]; then
-      keytool -importcert -noprompt -alias apexpack-corp-ca \
-        -file /home/build/.apexpack-ca.crt \
-        -keystore "$JVM_CACERTS" \
-        -storepass changeit 2>/dev/null || true
+    if [ ! -f "/home/build/.apexpack-ca.crt" ]; then
+      echo "→ tls_ca_pre_step: no CA cert at /home/build/.apexpack-ca.crt, skipping"
+      exit 0
     fi
+    # keytool may not be symlinked into /usr/bin on Wolfi — find it explicitly.
+    KEYTOOL=$(find /usr/lib/jvm -name "keytool" 2>/dev/null | head -1)
+    if [ -z "$KEYTOOL" ]; then
+      echo "ERROR: keytool not found under /usr/lib/jvm" >&2
+      exit 1
+    fi
+    JVM_CACERTS=$(find /usr/lib/jvm -name "cacerts" 2>/dev/null | head -1)
+    if [ -z "$JVM_CACERTS" ]; then
+      echo "ERROR: cacerts not found under /usr/lib/jvm" >&2
+      exit 1
+    fi
+    echo "→ Importing corporate CA into JVM truststore: $JVM_CACERTS"
+    chmod u+w "$JVM_CACERTS"
+    "$KEYTOOL" -importcert -noprompt -alias apexpack-corp-ca \
+      -file /home/build/.apexpack-ca.crt \
+      -keystore "$JVM_CACERTS" \
+      -storepass changeit
+    echo "→ Corporate CA imported successfully."
 
   frameworks:
     quarkus:
