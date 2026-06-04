@@ -33,6 +33,9 @@ spec:
       description: "Cloned profiles repo — profiles/*.yaml are patched in-place here."
     - name: output
       description: "Build output workspace — used to locate the SBOM."
+    - name: tls-ca
+      description: "Optional Secret with a corporate CA cert (key: ca-bundle.crt) for SSL inspection proxies."
+      optional: true
 
   results:
     - name: PATCHES_APPLIED
@@ -49,6 +52,10 @@ spec:
         set -e
 
         PROFILES_PATH="$(workspaces.profiles.path)/$(params.PROFILES_SUBDIR)"
+
+        if [ "$(workspaces.tls-ca.bound)" = "true" ]; then
+          export SSL_CERT_FILE="$(workspaces.tls-ca.path)/ca-bundle.crt"
+        fi
 
         echo "=== Applying CVE patches ==="
         echo "SBOM:     $(params.SBOM_PATH)"

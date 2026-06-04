@@ -35,6 +35,9 @@ spec:
       description: "Docker config.json for registry push (optional)."
       optional: true
       mountPath: /home/nonroot/.docker
+    - name: tls-ca
+      description: "Optional Secret with a corporate CA cert (key: ca-bundle.crt) for SSL inspection proxies."
+      optional: true
 
   results:
     - name: IMAGE_TARBALL
@@ -72,6 +75,13 @@ spec:
           NAME_FLAG="--project-name $(params.PROJECT_NAME)"
         fi
 
+        TLS_CA_FLAG=""
+        if [ "$(workspaces.tls-ca.bound)" = "true" ]; then
+          CA_FILE="$(workspaces.tls-ca.path)/ca-bundle.crt"
+          export SSL_CERT_FILE="$CA_FILE"   # Go TLS (apexpack, apko, melange)
+          TLS_CA_FLAG="--tls-extra-ca $CA_FILE"
+        fi
+
         apexpack build \
           $(workspaces.source.path) \
           --tag $(params.IMAGE) \
@@ -79,7 +89,8 @@ spec:
           --output $(workspaces.output.path) \
           --profiles-dir "$PROFILES_DIR" \
           $RUNTIME_FLAG \
-          $NAME_FLAG
+          $NAME_FLAG \
+          $TLS_CA_FLAG
 
         # Emit result paths for downstream tasks.
         SOURCE_BASE=$(basename $(workspaces.source.path))

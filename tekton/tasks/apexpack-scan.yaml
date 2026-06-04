@@ -27,6 +27,9 @@ spec:
   workspaces:
     - name: output
       description: "Where the scan report is written."
+    - name: tls-ca
+      description: "Optional Secret with a corporate CA cert (key: ca-bundle.crt) for SSL inspection proxies."
+      optional: true
 
   results:
     - name: SCAN_RESULT
@@ -43,6 +46,10 @@ spec:
         #!/bin/sh
 
         OUTPUT_FILE="$(workspaces.output.path)/scan-results.$(params.FORMAT)"
+
+        if [ "$(workspaces.tls-ca.bound)" = "true" ]; then
+          export SSL_CERT_FILE="$(workspaces.tls-ca.path)/ca-bundle.crt"
+        fi
 
         # Normalize SBOM version strings before scanning.
         # Grype can only correlate packages when versions are in standard APK

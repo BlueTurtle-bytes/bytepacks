@@ -63,6 +63,12 @@ spec:
         Optional Secret containing a corporate CA certificate (key: ca-bundle.crt).
         Mounted into git-clone so it can verify corporate HTTPS proxies.
       optional: true
+    - name: tls-ca
+      description: >-
+        Optional Secret containing a corporate CA certificate (key: ca-bundle.crt).
+        Mounted into build, scan, and patch steps for Wolfi package fetches and
+        grype CVE DB downloads through SSL-inspecting proxies.
+      optional: true
 
   results:
     - name: RUNTIME
@@ -143,6 +149,8 @@ spec:
           workspace: output
         - name: registry-credentials
           workspace: registry-credentials
+        - name: tls-ca
+          workspace: tls-ca
 
     # ── Step 4: CVE scan ──────────────────────────────────────────────────────
     - name: scan
@@ -162,6 +170,8 @@ spec:
       workspaces:
         - name: output
           workspace: output
+        - name: tls-ca
+          workspace: tls-ca
 
     # ── Step 5: Auto-patch CVEs (only when AUTO_PATCH=true and scan failed) ───
     - name: patch
@@ -192,6 +202,8 @@ spec:
           workspace: profiles
         - name: output
           workspace: output
+        - name: tls-ca
+          workspace: tls-ca
 
     # ── Step 6: Rebuild with patched profiles (only after a successful patch) ─
     - name: rebuild
@@ -225,6 +237,8 @@ spec:
           workspace: output
         - name: registry-credentials
           workspace: registry-credentials
+        - name: tls-ca
+          workspace: tls-ca
 
     # ── Step 7: Re-scan rebuilt image to confirm CVEs resolved ───────────────
     # Only runs when rebuild ran (same when guards). Uses the rebuild SBOM so
@@ -257,6 +271,8 @@ spec:
       workspaces:
         - name: output
           workspace: output
+        - name: tls-ca
+          workspace: tls-ca
 
     # ── Step 8: Push to registry ──────────────────────────────────────────────
     # Runs after rescan (or rebuild if rescan was skipped). Uses the rebuilt
