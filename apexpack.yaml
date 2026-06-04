@@ -11,6 +11,7 @@ image:
     - git
     - melange
     - apko
+    - bubblewrap
     - grype
 scan:
   auto-patch: false
