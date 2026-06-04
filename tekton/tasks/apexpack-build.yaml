@@ -90,7 +90,7 @@ spec:
         exec /tmp/bwrap-real $args
         BWRAP_WRAPPER
         chmod 755 /tmp/bwrap-wrapper
-        cp /tmp/bwrap-wrapper /usr/bin/bwrap
+        rm /usr/bin/bwrap && cp /tmp/bwrap-wrapper /usr/bin/bwrap
 
         if [ -d "$(workspaces.profiles.path)/profiles" ]; then
           PROFILES_DIR="$(workspaces.profiles.path)/profiles"
