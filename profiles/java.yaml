@@ -62,8 +62,8 @@ build:
     - git
   # Default: plain Maven project with no detected framework.
   command: |
-    if [ -f "/home/build/.apexpack-truststore.jks" ]; then
-      export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStorePassword=changeit"
+    if [ -f "/home/build/.apexpack-truststore.p12" ]; then
+      export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
     fi
     mvn package -DskipTests -B -q
     mkdir -p /home/build/output/app
@@ -77,21 +77,33 @@ build:
 
   tls_ca_env: []  # JVM ignores SSL_CERT_FILE; tls_ca_pre_step + build command handle it
   tls_ca_pre_step: |
-    # Build a custom truststore (writable copy of system cacerts + corporate CA).
-    # Written to /home/build so it persists across pipeline steps. Each build command
-    # checks for this file and exports JAVA_TOOL_OPTIONS to point Maven/Gradle at it.
+    # Build a PKCS12 truststore containing system CAs + corporate CA.
+    # Using -importkeystore to convert system cacerts → PKCS12 avoids JKS/PKCS12
+    # format ambiguity: Java 21 defaults to PKCS12 when reading javax.net.ssl.trustStore
+    # without an explicit type, and silently falls back to empty trust anchors if the
+    # file is JKS — causing PKIX failures even though the cert was imported.
     KEYTOOL=$(find /usr/lib/jvm -name "keytool" 2>/dev/null | head -1)
     JVM_CACERTS=$(find /usr/lib/jvm -name "cacerts" 2>/dev/null | head -1)
     if [ -z "$KEYTOOL" ] || [ -z "$JVM_CACERTS" ]; then
       echo "ERROR: keytool or cacerts not found under /usr/lib/jvm" >&2
       exit 1
     fi
-    cp "$JVM_CACERTS" /home/build/.apexpack-truststore.jks
+    STORE=/home/build/.apexpack-truststore.p12
+    # Convert system cacerts (JKS or PKCS12) → new explicit PKCS12 store
+    "$KEYTOOL" -importkeystore \
+      -srckeystore "$JVM_CACERTS" \
+      -srcstorepass changeit \
+      -destkeystore "$STORE" \
+      -deststorepass changeit \
+      -deststoretype PKCS12 \
+      -noprompt 2>/dev/null || true
+    # Add the corporate CA
     "$KEYTOOL" -importcert -noprompt -alias apexpack-corp-ca \
       -file /home/build/.apexpack-ca.crt \
-      -keystore /home/build/.apexpack-truststore.jks \
+      -keystore "$STORE" \
+      -storetype PKCS12 \
       -storepass changeit
-    echo "→ Custom JVM truststore ready at /home/build/.apexpack-truststore.jks"
+    echo "→ PKCS12 truststore ready at $STORE"
 
   frameworks:
     quarkus:
