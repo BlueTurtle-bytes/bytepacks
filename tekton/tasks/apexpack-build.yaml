@@ -63,23 +63,34 @@ spec:
         # (Docker on Colima QEMU). We are already root in a privileged container so
         # user-namespace isolation is redundant. Shadow the real bwrap with a wrapper
         # that strips the user-namespace flags before forwarding the call.
-        cat > /tmp/bwrap << 'BWRAP_WRAPPER'
-        #!/bin/sh
-        args=""
-        skip_next=0
-        for a in "$@"; do
-          if [ "$skip_next" = "1" ]; then skip_next=0; continue; fi
-          case "$a" in
-            --unshare-user) ;;
-            --unshare-all) args="$args --unshare-pid --unshare-net --unshare-uts --unshare-ipc" ;;
-            --uid|--gid)   skip_next=1 ;;
-            *)             args="$args $a" ;;
-          esac
-        done
-        exec /usr/bin/bwrap $args
-        BWRAP_WRAPPER
-        chmod +x /tmp/bwrap
-        export PATH=/tmp:$PATH
+        # melange calls /usr/bin/bwrap by absolute path, so PATH shadowing doesn't work.
+        # Use mount --bind to replace the binary directly.
+        # The wrapper handles two cases:
+        #   1. melange's capability pre-check: bwrap --unshare-user <cmd> with no mounts -> exit 0
+        #   2. real build call: strip user-namespace flags (blocked by Docker userns-remap on Colima)
+        cp /usr/bin/bwrap /tmp/bwrap-real
+        cat > /tmp/bwrap-wrapper << 'BWRAP_WRAPPER'
+#!/bin/sh
+has_mounts=0
+for a in "$@"; do
+  case "$a" in --bind|--ro-bind|--dev-bind|--proc|--dev|--tmpfs) has_mounts=1; break;; esac
+done
+if [ "$has_mounts" = "0" ]; then exit 0; fi
+args=""
+skip_next=0
+for a in "$@"; do
+  if [ "$skip_next" = "1" ]; then skip_next=0; continue; fi
+  case "$a" in
+    --unshare-user) ;;
+    --unshare-all) args="$args --unshare-pid --unshare-net --unshare-uts --unshare-ipc" ;;
+    --uid|--gid) skip_next=1 ;;
+    *) args="$args $a" ;;
+  esac
+done
+exec /tmp/bwrap-real $args
+BWRAP_WRAPPER
+        chmod 755 /tmp/bwrap-wrapper
+        mount --bind /tmp/bwrap-wrapper /usr/bin/bwrap
 
         if [ -d "$(workspaces.profiles.path)/profiles" ]; then
           PROFILES_DIR="$(workspaces.profiles.path)/profiles"
