@@ -6,11 +6,13 @@ go build -o bin/apexpack ./cmd/apexpack
 
 docker load < .apexpack-output/apexpack.tar
 
-# apko tags the image with the arch suffix it used during the build.
-# melangeArch() maps arm64→aarch64, everything else→amd64 — match that here.
+# Docker normalises the arch name when loading an OCI tar:
+#   apko internal name  →  Docker tag suffix
+#   aarch64             →  arm64
+#   x86_64              →  amd64
 case $(uname -m) in
-  arm64|aarch64) ARCH_SUFFIX="aarch64" ;;
-  *)             ARCH_SUFFIX="amd64"   ;;
+  arm64|aarch64) ARCH_SUFFIX="arm64" ;;
+  *)             ARCH_SUFFIX="amd64" ;;
 esac
 docker tag "apexpack:latest-${ARCH_SUFFIX}" apexpack:latest
 
