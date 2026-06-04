@@ -77,33 +77,34 @@ build:
 
   tls_ca_env: []  # JVM ignores SSL_CERT_FILE; tls_ca_pre_step + build command handle it
   tls_ca_pre_step: |
-    # Build a PKCS12 truststore containing system CAs + corporate CA.
-    # Using -importkeystore to convert system cacerts → PKCS12 avoids JKS/PKCS12
-    # format ambiguity: Java 21 defaults to PKCS12 when reading javax.net.ssl.trustStore
-    # without an explicit type, and silently falls back to empty trust anchors if the
-    # file is JKS — causing PKIX failures even though the cert was imported.
+    # Build a PKCS12 truststore from the PEM system CA bundle + corporate CA.
+    # Importing from the PEM bundle (same source SSL_CERT_FILE uses for Go) avoids
+    # relying on java-cacerts format/password, which silently fails with || true and
+    # leaves a truststore containing only the corporate CA — breaking all public connections.
     KEYTOOL=$(find /usr/lib/jvm -name "keytool" 2>/dev/null | head -1)
-    JVM_CACERTS=$(find /usr/lib/jvm -name "cacerts" 2>/dev/null | head -1)
-    if [ -z "$KEYTOOL" ] || [ -z "$JVM_CACERTS" ]; then
-      echo "ERROR: keytool or cacerts not found under /usr/lib/jvm" >&2
-      exit 1
+    PEM_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+    if [ -z "$KEYTOOL" ]; then
+      echo "ERROR: keytool not found under /usr/lib/jvm" >&2; exit 1
+    fi
+    if [ ! -f "$PEM_BUNDLE" ]; then
+      echo "ERROR: $PEM_BUNDLE not found" >&2; exit 1
     fi
     STORE=/home/build/.apexpack-truststore.p12
-    # Convert system cacerts (JKS or PKCS12) → new explicit PKCS12 store
-    "$KEYTOOL" -importkeystore \
-      -srckeystore "$JVM_CACERTS" \
-      -srcstorepass changeit \
-      -destkeystore "$STORE" \
-      -deststorepass changeit \
-      -deststoretype PKCS12 \
-      -noprompt 2>/dev/null || true
-    # Add the corporate CA
+    # Import corporate CA first — this creates the PKCS12 store.
     "$KEYTOOL" -importcert -noprompt -alias apexpack-corp-ca \
       -file /home/build/.apexpack-ca.crt \
-      -keystore "$STORE" \
-      -storetype PKCS12 \
-      -storepass changeit
-    echo "→ PKCS12 truststore ready at $STORE"
+      -keystore "$STORE" -storetype PKCS12 -storepass changeit
+    # Split PEM bundle into individual certs and import each one.
+    awk '/-----BEGIN CERTIFICATE-----/{c++; f="/tmp/pem-ca-"c".pem"} f{print>f} /-----END CERTIFICATE-----/{close(f);f=""}' "$PEM_BUNDLE"
+    COUNT=0
+    for f in /tmp/pem-ca-*.pem; do
+      [ -f "$f" ] || continue
+      "$KEYTOOL" -importcert -noprompt -alias "sys-ca-$COUNT" \
+        -file "$f" -keystore "$STORE" -storetype PKCS12 -storepass changeit 2>/dev/null || true
+      rm -f "$f"
+      COUNT=$((COUNT+1))
+    done
+    echo "→ PKCS12 truststore ready: $COUNT system CAs + corporate CA"
 
   frameworks:
     quarkus:
