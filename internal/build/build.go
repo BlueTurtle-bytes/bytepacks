@@ -440,6 +440,8 @@ func runMelange(configFile string, opts Options) error {
 		return runMelangeInDocker(configFile, keyFile, opts)
 	}
 
+	arch := melangeArch()
+	fmt.Printf("  → melange arch: %s (GOARCH=%s)\n", arch, runtime.GOARCH)
 	env := os.Environ()
 	if opts.TLSExtraCA != "" {
 		absCA, _ := filepath.Abs(opts.TLSExtraCA)
@@ -450,7 +452,7 @@ func runMelange(configFile string, opts Options) error {
 		"--source-dir", opts.SourceDir,
 		"--out-dir", packagesDir,
 		"--signing-key", keyFile,
-		"--arch", melangeArch(),
+		"--arch", arch,
 	}, env)
 }
 
