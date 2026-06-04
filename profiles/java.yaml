@@ -72,6 +72,16 @@ build:
   caches:
     - /home/build/.m2/repository
 
+  tls_ca_env: []  # JVM ignores SSL_CERT_FILE; tls_ca_pre_step handles it via keytool
+  tls_ca_pre_step: |
+    JVM_CACERTS=$(find /usr/lib/jvm -name "cacerts" 2>/dev/null | head -1)
+    if [ -n "$JVM_CACERTS" ] && [ -f "/home/build/.apexpack-ca.crt" ]; then
+      keytool -importcert -noprompt -alias apexpack-corp-ca \
+        -file /home/build/.apexpack-ca.crt \
+        -keystore "$JVM_CACERTS" \
+        -storepass changeit 2>/dev/null || true
+    fi
+
   frameworks:
     quarkus:
       # Quarkus default output is a fast-jar directory — uber-jar gives a single runnable JAR.

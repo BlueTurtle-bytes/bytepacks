@@ -72,6 +72,11 @@ build:
   caches:
     - /home/build/.cache/pip
 
+  tls_ca_env:
+    - SSL_CERT_FILE        # Python ssl module (OpenSSL-linked)
+    - REQUESTS_CA_BUNDLE   # requests library (used by pip, poetry, pipenv)
+    - PIP_CERT             # pip certificate override
+
   frameworks:
     uv:
       dependencies:

@@ -59,6 +59,9 @@ build:
     - /home/build/go/pkg/mod
     - /home/build/.cache/go-build
 
+  tls_ca_env:
+    - SSL_CERT_FILE  # Go crypto/tls reads this for the root CA bundle
+
 image:
   packages:
     - ca-certificates-bundle=20260413-r0

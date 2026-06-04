@@ -132,34 +132,31 @@ func Run(plan *types.BuildPlan, opts Options) error {
 	}
 	fmt.Printf("  → wrote %s\n", apkoFile)
 
-	// For Java builds through a corporate TLS-inspecting proxy, the JVM's own
-	// cacerts keystore needs the corporate CA — SSL_CERT_FILE only covers Go.
-	// Copy the CA cert into the source dir (melange mounts it at /home/build)
-	// and prepend a keytool import step to the pipeline before marshalling.
-	if opts.TLSExtraCA != "" && opts.Profile != nil && strings.EqualFold(opts.Profile.Runtime, "java") {
+	// When a corporate CA is provided, copy it into the source dir so the melange
+	// sandbox (source mounted at /home/build) can access it at /home/build/.apexpack-ca.crt.
+	// If the profile declares a tls_ca_pre_step, prepend it to the pipeline so
+	// runtimes with their own cert stores (JVM keytool, .NET update-ca-certificates)
+	// can import the CA before the main build command runs.
+	if opts.TLSExtraCA != "" {
 		absCA, _ := filepath.Abs(opts.TLSExtraCA)
 		caCopyPath := filepath.Join(opts.SourceDir, ".apexpack-ca.crt")
 		if caData, readErr := os.ReadFile(absCA); readErr == nil {
 			if writeErr := os.WriteFile(caCopyPath, caData, 0o644); writeErr == nil {
 				defer os.Remove(caCopyPath)
-				keytoolStep := types.MelangePipeline{
-					Runs: `JVM_CACERTS=$(find /usr/lib/jvm -name "cacerts" 2>/dev/null | head -1)
-if [ -n "$JVM_CACERTS" ] && [ -f "/home/build/.apexpack-ca.crt" ]; then
-  keytool -importcert -noprompt -alias apexpack-corp-ca \
-    -file /home/build/.apexpack-ca.crt \
-    -keystore "$JVM_CACERTS" \
-    -storepass changeit 2>/dev/null || true
-fi`,
-				}
-				plan.Melange.Pipeline = append([]types.MelangePipeline{keytoolStep}, plan.Melange.Pipeline...)
-				// Re-marshal with the injected step.
-				melangeYAML, err = marshalYAML(&plan.Melange)
-				if err != nil {
-					return fmt.Errorf("marshalling melange config (with CA step): %w", err)
-				}
-				melangeData = []byte(melangeYAML)
-				if err := os.WriteFile(melangeFile, melangeData, 0o644); err != nil {
-					return fmt.Errorf("writing melange.yaml (with CA step): %w", err)
+				if opts.Profile != nil && opts.Profile.Build.TLSCAPreStep != "" {
+					plan.Melange.Pipeline = append(
+						[]types.MelangePipeline{{Runs: opts.Profile.Build.TLSCAPreStep}},
+						plan.Melange.Pipeline...,
+					)
+					// Re-marshal with the injected pre-step.
+					melangeYAML, err = marshalYAML(&plan.Melange)
+					if err != nil {
+						return fmt.Errorf("marshalling melange config (with TLS pre-step): %w", err)
+					}
+					melangeData = []byte(melangeYAML)
+					if err := os.WriteFile(melangeFile, melangeData, 0o644); err != nil {
+						return fmt.Errorf("writing melange.yaml (with TLS pre-step): %w", err)
+					}
 				}
 			}
 		}
@@ -264,6 +261,22 @@ func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
 			}
 			if _, exists := cfg.Environment.Env[key]; !exists {
 				cfg.Environment.Env[key] = val
+			}
+		}
+	}
+
+	// When a corporate CA is provided, inject the env vars declared by the profile
+	// into the melange sandbox. The cert is copied to opts.SourceDir before melange
+	// runs (see Run()), making it accessible inside the sandbox at /home/build/.
+	// The keytool/update-ca-certificates pre-step (if any) is also injected in Run().
+	if opts.TLSExtraCA != "" && len(p.Build.TLSCAEnv) > 0 {
+		if cfg.Environment.Env == nil {
+			cfg.Environment.Env = make(map[string]string)
+		}
+		caPath := "/home/build/.apexpack-ca.crt"
+		for _, key := range p.Build.TLSCAEnv {
+			if _, exists := cfg.Environment.Env[key]; !exists {
+				cfg.Environment.Env[key] = caPath
 			}
 		}
 	}

@@ -157,6 +157,18 @@ type BuildConfig struct {
 	// the matching entry's Command replaces the default, and its Env is merged on top.
 	// Keys must match DetectResult.Framework values exactly.
 	Frameworks map[string]FrameworkBuildOverride `yaml:"frameworks,omitempty"`
+
+	// TLSCAEnv lists environment variable names that should be set to the path of
+	// the corporate CA certificate inside the melange sandbox when --tls-extra-ca
+	// is provided. Each runtime uses different variables (SSL_CERT_FILE for Go/Python,
+	// NODE_EXTRA_CA_CERTS for Node.js, PIP_CERT for pip, etc.).
+	TLSCAEnv []string `yaml:"tls_ca_env,omitempty"`
+
+	// TLSCAPreStep is an optional shell script prepended to the melange pipeline
+	// when --tls-extra-ca is provided. Use this for runtimes that require importing
+	// the CA into their own certificate store (e.g. keytool for JVM, update-ca-certificates for .NET).
+	// The CA cert is available inside the sandbox at /home/build/.apexpack-ca.crt.
+	TLSCAPreStep string `yaml:"tls_ca_pre_step,omitempty"`
 }
 
 // FrameworkBuildOverride lets a specific framework replace or extend the default build.
