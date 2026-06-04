@@ -78,12 +78,11 @@ spec:
         TLS_CA_FLAG=""
         if [ "$(workspaces.tls-ca.bound)" = "true" ]; then
           CA_FILE="$(workspaces.tls-ca.path)/ca-bundle.crt"
-          # Merge system CAs + corporate CA into one bundle.
-          # Go's x509 parser needs the full system chain to reach public registries;
-          # using only the corporate cert causes a nil-pointer SIGSEGV on some CA formats.
-          MERGED_CA="/tmp/apexpack-merged-ca.crt"
-          cat /etc/ssl/certs/ca-certificates.crt "$CA_FILE" > "$MERGED_CA"
-          export SSL_CERT_FILE="$MERGED_CA"
+          # Pass the CA to apexpack so it lands in the build sandbox for the
+          # tls_ca_pre_step (Java JVM truststore, .NET, etc.).
+          # Do NOT set SSL_CERT_FILE here — melange fetches Wolfi packages without
+          # needing it, and corporate CA certs with non-standard ASN.1 encoding
+          # crash Go's Linux x509 PEM parser (SIGSEGV / growslice) when set.
           TLS_CA_FLAG="--tls-extra-ca $CA_FILE"
         fi
 
