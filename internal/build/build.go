@@ -453,6 +453,7 @@ func runMelange(configFile string, opts Options) error {
 		"--out-dir", packagesDir,
 		"--signing-key", keyFile,
 		"--arch", arch,
+		"--runner", "bubblewrap",
 	}, env)
 }
 
