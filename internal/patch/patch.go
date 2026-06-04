@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -64,17 +66,21 @@ func Check(sbomPath, arch string) (*Result, error) {
 	}
 
 	// Step 4: compare installed vs latest for each package.
+	// SBOM versions often use non-APK formats (e.g. "openssl-3.6.2", "v1.2.0",
+	// "releases/gcc-16.1.0"). Normalize before comparing so we don't treat a
+	// version-string-format difference as a "needs update".
 	result := &Result{SBOMPath: sbomPath, IndexArch: arch}
 	for name, currentVer := range installed {
 		latestVer, ok := latest[name]
 		if !ok {
 			continue // not a Wolfi package (e.g. the app itself)
 		}
+		normalizedVer := normalizeSBOMVersion(name, currentVer)
 		update := PackageUpdate{
 			Name:           name,
 			CurrentVersion: currentVer,
 			LatestVersion:  latestVer,
-			NeedsUpdate:    latestVer != currentVer,
+			NeedsUpdate:    compareAPKVersion(latestVer, normalizedVer) > 0,
 			CVEs:           cveMap[name],
 			Severity:       severityMap[name],
 		}
@@ -94,9 +100,15 @@ func Check(sbomPath, arch string) (*Result, error) {
 // (e.g. "ca-certificates-bundle=20260413-r1"). Already-pinned entries have their
 // version bumped to the latest.
 //
+// Transitive packages — those present in the SBOM but not yet in image.packages —
+// are appended as new pinned entries so future rebuilds lock in the latest Wolfi
+// versions for all packages, not just CVE-affected ones.
+//
 // Comments and all other fields in the profile are preserved.
 func ApplyToProfile(profilePath string, updates []PackageUpdate) ([]string, error) {
-	// Build a lookup: package name → latest version.
+	// patchMap covers all packages with a newer Wolfi version available.
+	// Used for both updating existing image.packages entries AND adding new
+	// transitive pins — ensures the rebuilt image is fully at Wolfi-latest.
 	patchMap := make(map[string]string)
 	for _, u := range updates {
 		if u.NeedsUpdate {
@@ -115,51 +127,77 @@ func ApplyToProfile(profilePath string, updates []PackageUpdate) ([]string, erro
 	lines := strings.Split(string(data), "\n")
 	var applied []string
 	inPackages := false
+	lastPackageLine := -1
+	packageIndent := "    " // fallback: 4 spaces
+	alreadyListed := make(map[string]bool)
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		// Detect entry into the image.packages: list.
 		if trimmed == "packages:" {
-			// Check if the previous non-empty line is "image:" context.
-			// Simple heuristic: any "packages:" we find is the image packages.
 			inPackages = true
 			continue
 		}
 
-		// Detect exit from the packages list — a non-list line.
+		// Exit the packages block when we hit a non-list, non-comment line.
 		if inPackages && trimmed != "" && !strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, "#") {
 			inPackages = false
 		}
 
-		if !inPackages {
-			continue
-		}
-		if !strings.HasPrefix(trimmed, "- ") {
+		if !inPackages || !strings.HasPrefix(trimmed, "- ") {
 			continue
 		}
 
-		// Extract the package reference from the list item.
-		// Could be "- pkgname" or "- pkgname=version"
-		pkgRef := strings.TrimPrefix(trimmed, "- ")
-		pkgRef = strings.TrimSpace(pkgRef)
+		lastPackageLine = i
+		indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+		if indent != "" {
+			packageIndent = indent
+		}
 
-		// Strip any existing version pin to get the base name.
+		pkgRef := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
 		pkgName := pkgRef
 		if idx := strings.Index(pkgRef, "="); idx != -1 {
 			pkgName = pkgRef[:idx]
 		}
+		alreadyListed[pkgName] = true
 
 		latestVer, needsPatch := patchMap[pkgName]
 		if !needsPatch {
 			continue
 		}
 
-		// Replace the line with the pinned version.
-		indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 		newLine := fmt.Sprintf("%s- %s=%s", indent, pkgName, latestVer)
 		lines[i] = newLine
 		applied = append(applied, fmt.Sprintf("%s  %s → %s=%s", pkgName, pkgRef, pkgName, latestVer))
+	}
+
+	// Append pinned entries for all transitive packages not yet in image.packages
+	// that have a newer Wolfi version. Pinning everything (not just CVE packages)
+	// makes the rebuilt image fully reproducible and ensures defense-in-depth even
+	// when grype misses a CVE due to SBOM version format differences.
+	if lastPackageLine >= 0 {
+		var newPkgs []string
+		for pkgName := range patchMap {
+			if !alreadyListed[pkgName] {
+				newPkgs = append(newPkgs, pkgName)
+			}
+		}
+		sort.Strings(newPkgs)
+
+		var newLines []string
+		for _, pkgName := range newPkgs {
+			latestVer := patchMap[pkgName]
+			newLines = append(newLines, fmt.Sprintf("%s- %s=%s", packageIndent, pkgName, latestVer))
+			applied = append(applied, fmt.Sprintf("%s  (transitive) → %s=%s", pkgName, pkgName, latestVer))
+		}
+
+		if len(newLines) > 0 {
+			updated := make([]string, 0, len(lines)+len(newLines))
+			updated = append(updated, lines[:lastPackageLine+1]...)
+			updated = append(updated, newLines...)
+			updated = append(updated, lines[lastPackageLine+1:]...)
+			lines = updated
+		}
 	}
 
 	if len(applied) == 0 {
@@ -171,6 +209,59 @@ func ApplyToProfile(profilePath string, updates []PackageUpdate) ([]string, erro
 	}
 
 	return applied, nil
+}
+
+// NormalizeSBOMFile reads an SPDX SBOM, normalizes each package's versionInfo
+// to a standard APK version string (stripping "v", name prefixes, path
+// prefixes), and writes the result to a temp file. Returns the temp path;
+// caller must remove it when done.
+//
+// This is needed before passing the SBOM to grype: grype can only correlate
+// packages against its CVE database when versions look like "3.6.2-r5", not
+// "openssl-3.6.2" or "releases/gcc-16.1.0".
+func NormalizeSBOMFile(sbomPath string) (string, error) {
+	data, err := os.ReadFile(sbomPath)
+	if err != nil {
+		return "", err
+	}
+
+	// Use a generic map so every field we don't touch is preserved verbatim.
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return "", fmt.Errorf("invalid SBOM JSON: %w", err)
+	}
+
+	if pkgs, ok := doc["packages"].([]interface{}); ok {
+		for _, entry := range pkgs {
+			p, ok := entry.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			name, _ := p["name"].(string)
+			ver, _ := p["versionInfo"].(string)
+			if name != "" && ver != "" {
+				p["versionInfo"] = normalizeSBOMVersion(name, ver)
+			}
+		}
+	}
+
+	normalized, err := json.Marshal(doc)
+	if err != nil {
+		return "", fmt.Errorf("serializing normalized SBOM: %w", err)
+	}
+
+	tmp, err := os.CreateTemp("", "sbom-normalized-*.json")
+	if err != nil {
+		return "", err
+	}
+	defer tmp.Close()
+
+	if _, err := tmp.Write(normalized); err != nil {
+		os.Remove(tmp.Name())
+		return "", err
+	}
+
+	return tmp.Name(), nil
 }
 
 // ============================================================================
@@ -248,7 +339,9 @@ func fetchLatestVersions(arch string) (map[string]string, error) {
 
 // parseAPKINDEX reads the APKINDEX file format.
 // Each package entry is a block of "KEY:value" lines separated by blank lines.
-// We keep the LATEST version seen for each package name (last entry wins).
+// We keep the HIGHEST version seen for each package name — the index can contain
+// multiple entries for the same package (e.g. different sub-packages or epochs),
+// and "last entry wins" can produce a stale/older version.
 func parseAPKINDEX(r io.Reader) (map[string]string, error) {
 	latest := make(map[string]string)
 	scanner := bufio.NewScanner(r)
@@ -258,9 +351,11 @@ func parseAPKINDEX(r io.Reader) (map[string]string, error) {
 		line := scanner.Text()
 
 		if line == "" {
-			// End of a package entry — record it.
+			// End of a package entry — keep it only if it's the highest version seen.
 			if currentName != "" && currentVersion != "" {
-				latest[currentName] = currentVersion
+				if existing, ok := latest[currentName]; !ok || compareAPKVersion(currentVersion, existing) > 0 {
+					latest[currentName] = currentVersion
+				}
 			}
 			currentName = ""
 			currentVersion = ""
@@ -276,10 +371,66 @@ func parseAPKINDEX(r io.Reader) (map[string]string, error) {
 	}
 	// Flush last entry.
 	if currentName != "" && currentVersion != "" {
-		latest[currentName] = currentVersion
+		if existing, ok := latest[currentName]; !ok || compareAPKVersion(currentVersion, existing) > 0 {
+			latest[currentName] = currentVersion
+		}
 	}
 
 	return latest, scanner.Err()
+}
+
+// compareAPKVersion returns >0 if a is newer than b, 0 if equal, <0 if older.
+// Handles the Alpine/Wolfi `VERSION-rREVISION` format.
+func compareAPKVersion(a, b string) int {
+	if a == b {
+		return 0
+	}
+	aBase, aRev := splitAPKRev(a)
+	bBase, bRev := splitAPKRev(b)
+	if aBase != bBase {
+		aParts := strings.Split(aBase, ".")
+		bParts := strings.Split(bBase, ".")
+		for i := 0; i < len(aParts) && i < len(bParts); i++ {
+			an, aErr := strconv.Atoi(aParts[i])
+			bn, bErr := strconv.Atoi(bParts[i])
+			if aErr == nil && bErr == nil {
+				if an != bn {
+					return an - bn
+				}
+			} else if cmp := strings.Compare(aParts[i], bParts[i]); cmp != 0 {
+				return cmp
+			}
+		}
+		return len(aParts) - len(bParts)
+	}
+	return aRev - bRev
+}
+
+// splitAPKRev splits "1.2.3-r4" into ("1.2.3", 4). Missing revision → 0.
+func splitAPKRev(ver string) (string, int) {
+	if i := strings.LastIndex(ver, "-r"); i != -1 {
+		if rev, err := strconv.Atoi(ver[i+2:]); err == nil {
+			return ver[:i], rev
+		}
+	}
+	return ver, 0
+}
+
+// normalizeSBOMVersion strips non-APK prefixes that SBOM generators sometimes
+// embed in the version field, so version comparisons work correctly:
+//   - "releases/gcc-16.1.0"  → "16.1.0"  (path + name prefix)
+//   - "openssl-3.6.2"        → "3.6.2"   (name prefix)
+//   - "v1.2.0"               → "1.2.0"   (v-prefix)
+func normalizeSBOMVersion(name, ver string) string {
+	// Strip path prefix (e.g. "releases/")
+	if i := strings.LastIndex(ver, "/"); i != -1 {
+		ver = ver[i+1:]
+	}
+	// Strip leading "v"
+	ver = strings.TrimPrefix(ver, "v")
+	// Strip "<name>-" prefix (e.g. "openssl-" from "openssl-3.6.2")
+	ver = strings.TrimPrefix(ver, name+"-")
+	return ver
 }
 
 // ============================================================================

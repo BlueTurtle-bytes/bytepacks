@@ -4,8 +4,8 @@ metadata:
   name: apexpack-build-and-push
   annotations:
     tekton.dev/description: >-
-      Full apexpack build pipeline: clone-profiles → clone-source → detect → build → scan → push.
-      Profiles are cloned fresh from git on every run — no ConfigMap sync required.
+      Full apexpack build pipeline: clone-source → detect → build → scan → patch → rebuild → rescan → push.
+      Profiles are seeded from the apexpack image on every run.
 spec:
   params:
     - name: GIT_URL
@@ -42,6 +42,11 @@ spec:
         Force patch-persist on for this run regardless of the language profile setting.
         Leave empty to use the profile's scan.patch-persist default.
       default: ""
+    - name: GIT_SSL_VERIFY
+      description: >-
+        Set to "false" to disable TLS verification for git clone (corporate proxies).
+        Prefer mounting a CA cert via the git-ssl-ca workspace instead.
+      default: "true"
 
   workspaces:
     - name: source
@@ -52,6 +57,11 @@ spec:
       description: "Build artifacts: OCI tarball, APK, SBOM, scan results."
     - name: registry-credentials
       description: "Docker config.json for registry auth (optional)."
+      optional: true
+    - name: git-ssl-ca
+      description: >-
+        Optional Secret containing a corporate CA certificate (key: ca-bundle.crt).
+        Mounted into git-clone so it can verify corporate HTTPS proxies.
       optional: true
 
   results:
@@ -71,6 +81,8 @@ spec:
       value: "$(tasks.detect.results.PATCH_PERSIST)"
     - name: PATCHES_APPLIED
       value: "$(tasks.patch.results.PATCHES_APPLIED)"
+    - name: RESCAN_RESULT
+      value: "$(tasks.rescan.results.SCAN_RESULT)"
 
   tasks:
     # ── Step 1: Clone source repo ─────────────────────────────────────────────
@@ -82,9 +94,13 @@ spec:
           value: $(params.GIT_URL)
         - name: revision
           value: $(params.GIT_REVISION)
+        - name: sslVerify
+          value: $(params.GIT_SSL_VERIFY)
       workspaces:
         - name: output
           workspace: source
+        - name: ssl-ca-directory
+          workspace: git-ssl-ca
 
     # ── Step 2: Detect language and framework ─────────────────────────────────
     - name: detect
@@ -190,6 +206,9 @@ spec:
         - input: "$(tasks.detect.results.AUTO_PATCH)"
           operator: in
           values: ["true"]
+        - input: "$(tasks.patch.results.PATCHES_APPLIED)"
+          operator: notin
+          values: ["0", ""]
       params:
         - name: IMAGE
           value: $(params.IMAGE)
@@ -207,14 +226,46 @@ spec:
         - name: registry-credentials
           workspace: registry-credentials
 
-    # ── Step 7: Push to registry ──────────────────────────────────────────────
-    # Runs after rebuild. If rebuild was skipped (no CVEs or AUTO_PATCH=false),
-    # Tekton still proceeds here using the original build's tarball.
+    # ── Step 7: Re-scan rebuilt image to confirm CVEs resolved ───────────────
+    # Only runs when rebuild ran (same when guards). Uses the rebuild SBOM so
+    # we scan the patched image, not the original. Soft-fail keeps the pipeline
+    # alive so push still completes — check logs for the verdict.
+    - name: rescan
+      taskRef:
+        name: apexpack-scan
+      runAfter:
+        - rebuild
+      when:
+        - input: "$(tasks.scan.results.SCAN_RESULT)"
+          operator: in
+          values: ["fail"]
+        - input: "$(tasks.detect.results.AUTO_PATCH)"
+          operator: in
+          values: ["true"]
+        - input: "$(tasks.patch.results.PATCHES_APPLIED)"
+          operator: notin
+          values: ["0", ""]
+      params:
+        - name: SBOM_PATH
+          value: $(tasks.rebuild.results.SBOM_PATH)
+        - name: FAIL_ON
+          value: $(params.FAIL_ON)
+        - name: FORMAT
+          value: table
+        - name: SOFT_FAIL
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: output
+
+    # ── Step 8: Push to registry ──────────────────────────────────────────────
+    # Runs after rescan (or rebuild if rescan was skipped). Uses the rebuilt
+    # tarball when a patch cycle ran, otherwise the original build tarball.
     - name: push
       taskRef:
         name: crane-copy
       runAfter:
-        - rebuild
+        - rescan
       params:
         - name: source
           value: "$(tasks.build.results.IMAGE_TARBALL)"

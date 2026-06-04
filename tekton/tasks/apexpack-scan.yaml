@@ -42,8 +42,14 @@ spec:
       script: |
         #!/bin/sh
 
-        SBOM="sbom:$(params.SBOM_PATH)"
         OUTPUT_FILE="$(workspaces.output.path)/scan-results.$(params.FORMAT)"
+
+        # Normalize SBOM version strings before scanning.
+        # Grype can only correlate packages when versions are in standard APK
+        # format ("3.6.2-r5"). Without this, packages like openssl ("openssl-3.6.2")
+        # or brotli ("v1.2.0") are missed by the CVE database lookup.
+        NORMALIZED=$(apexpack normalize-sbom "$(params.SBOM_PATH)")
+        SBOM="sbom:$NORMALIZED"
 
         echo "=== CVE Scan Results ==="
         grype "$SBOM" --output table 2>&1 || true
@@ -62,6 +68,9 @@ spec:
           if [ "$(params.SOFT_FAIL)" = "true" ]; then
             echo "→ AUTO_PATCH enabled — continuing to apply patches."
           else
+            rm -f "$NORMALIZED"
             exit 1
           fi
         fi
+
+        rm -f "$NORMALIZED"

@@ -47,6 +47,7 @@ Quick start:
 		buildCmd(),
 		scanCmd(),
 		patchCmd(),
+		normalizeSBOMCmd(),
 		profilesCmd(),
 		versionCmd(),
 	)
@@ -394,6 +395,7 @@ func patchCmd() *cobra.Command {
 		profilesDir string
 		apply       bool
 		arch        string
+		runtime     string
 	)
 
 	cmd := &cobra.Command{
@@ -492,6 +494,9 @@ Examples:
 
 			totalApplied := 0
 			for _, p := range profiles {
+				if runtime != "" && p.Runtime != runtime {
+					continue // scope patch to the detected runtime only
+				}
 				profilePath := filepath.Join(profilesDir, p.Runtime+".yaml")
 				applied, applyErr := patch.ApplyToProfile(profilePath, result.Updates)
 				if applyErr != nil {
@@ -524,7 +529,34 @@ Examples:
 	cmd.Flags().StringVar(&profilesDir, "profiles-dir", profile.DefaultProfilesDir, "Directory containing language profile YAML files")
 	cmd.Flags().BoolVar(&apply, "apply", false, "Update profile YAML files with pinned patched versions")
 	cmd.Flags().StringVar(&arch, "arch", "x86_64", "Architecture to check against the Wolfi index")
+	cmd.Flags().StringVar(&runtime, "runtime", "", "Only patch the profile for this runtime (e.g. java). Empty = patch all profiles.")
 	return cmd
+}
+
+// --- normalize-sbom command ---
+
+func normalizeSBOMCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "normalize-sbom <sbom-path>",
+		Short: "Normalize SBOM version strings for accurate grype scanning",
+		Long: `Rewrites an SPDX SBOM to a temp file with normalized versionInfo fields.
+Strips non-APK prefixes (e.g. "openssl-3.6.2" → "3.6.2", "v1.2.0" → "1.2.0")
+so grype can match packages against its CVE database correctly.
+
+Prints the temp file path (no newline) — designed for shell substitution:
+  NORMALIZED=$(apexpack normalize-sbom sbom.json)
+  grype sbom:$NORMALIZED ...
+  rm -f "$NORMALIZED"`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			tmpPath, err := patch.NormalizeSBOMFile(args[0])
+			if err != nil {
+				return err
+			}
+			fmt.Print(tmpPath) // no trailing newline — safe for $(...) capture
+			return nil
+		},
+	}
 }
 
 // findTool looks for a binary in PATH.

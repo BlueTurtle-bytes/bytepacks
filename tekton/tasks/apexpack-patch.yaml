@@ -42,6 +42,8 @@ spec:
     - name: patch
       image: apexpack:latest
       imagePullPolicy: IfNotPresent
+      securityContext:
+        runAsUser: 0
       script: |
         #!/bin/sh
         set -e
@@ -57,10 +59,14 @@ spec:
           --sbom "$(params.SBOM_PATH)" \
           --apply \
           --profiles-dir "$PROFILES_PATH" \
+          --runtime "$(params.RUNTIME)" \
           2>&1 | tee /tmp/patch-output.txt
 
         # Count pinned lines (lines starting with "↑") as a rough patch count.
-        COUNT=$(grep -c "^    ↑" /tmp/patch-output.txt 2>/dev/null || echo "0")
+        # NOTE: do NOT use $(grep ... || echo "0") — grep -c outputs "0" on no
+        # matches AND exits 1, so the subshell captures grep's "0" + echo's "0"
+        # giving "0\n0", which the pipeline's when-condition treats as non-zero.
+        COUNT=$(grep -c "^    ↑" /tmp/patch-output.txt 2>/dev/null) || COUNT=0
         printf "%s" "$COUNT" > $(results.PATCHES_APPLIED.path)
 
         echo ""
