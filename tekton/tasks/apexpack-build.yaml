@@ -70,25 +70,25 @@ spec:
         #   2. real build call: strip user-namespace flags (blocked by Docker userns-remap on Colima)
         cp /usr/bin/bwrap /tmp/bwrap-real
         cat > /tmp/bwrap-wrapper << 'BWRAP_WRAPPER'
-#!/bin/sh
-has_mounts=0
-for a in "$@"; do
-  case "$a" in --bind|--ro-bind|--dev-bind|--proc|--dev|--tmpfs) has_mounts=1; break;; esac
-done
-if [ "$has_mounts" = "0" ]; then exit 0; fi
-args=""
-skip_next=0
-for a in "$@"; do
-  if [ "$skip_next" = "1" ]; then skip_next=0; continue; fi
-  case "$a" in
-    --unshare-user) ;;
-    --unshare-all) args="$args --unshare-pid --unshare-net --unshare-uts --unshare-ipc" ;;
-    --uid|--gid) skip_next=1 ;;
-    *) args="$args $a" ;;
-  esac
-done
-exec /tmp/bwrap-real $args
-BWRAP_WRAPPER
+        #!/bin/sh
+        has_mounts=0
+        for a in "$@"; do
+          case "$a" in --bind|--ro-bind|--dev-bind|--proc|--dev|--tmpfs) has_mounts=1; break;; esac
+        done
+        if [ "$has_mounts" = "0" ]; then exit 0; fi
+        args=""
+        skip_next=0
+        for a in "$@"; do
+          if [ "$skip_next" = "1" ]; then skip_next=0; continue; fi
+          case "$a" in
+            --unshare-user) ;;
+            --unshare-all) args="$args --unshare-pid --unshare-net --unshare-uts --unshare-ipc" ;;
+            --uid|--gid) skip_next=1 ;;
+            *) args="$args $a" ;;
+          esac
+        done
+        exec /tmp/bwrap-real $args
+        BWRAP_WRAPPER
         chmod 755 /tmp/bwrap-wrapper
         mount --bind /tmp/bwrap-wrapper /usr/bin/bwrap
 
