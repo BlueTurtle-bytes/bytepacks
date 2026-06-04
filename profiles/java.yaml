@@ -63,7 +63,7 @@ build:
   # Default: plain Maven project with no detected framework.
   command: |
     if [ -f "/home/build/.apexpack-truststore.p12" ]; then
-      export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
+      export MAVEN_OPTS="${MAVEN_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
     fi
     mvn package -DskipTests -B -q
     mkdir -p /home/build/output/app
@@ -77,49 +77,38 @@ build:
 
   tls_ca_env: []  # JVM ignores SSL_CERT_FILE; tls_ca_pre_step + build command handle it
   tls_ca_pre_step: |
-    # Build a PKCS12 truststore from the PEM system CA bundle + corporate CA.
-    # Importing from the PEM bundle (same source SSL_CERT_FILE uses for Go) avoids
-    # relying on java-cacerts format/password, which silently fails with || true and
-    # leaves a truststore containing only the corporate CA — breaking all public connections.
+    # Copy the JVM's own cacerts (already PKCS12 in Java 21) and add the corporate CA.
+    # This is more reliable than splitting the PEM bundle — cacerts is the authoritative
+    # source of trusted CAs for this JVM and avoids any awk/import edge cases.
     KEYTOOL=$(find /usr/lib/jvm -name "keytool" 2>/dev/null | head -1)
-    PEM_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+    JAVA_CACERTS=$(find /usr/lib/jvm -name "cacerts" 2>/dev/null | head -1)
     if [ -z "$KEYTOOL" ]; then
       echo "ERROR: keytool not found under /usr/lib/jvm" >&2; exit 1
     fi
-    if [ ! -f "$PEM_BUNDLE" ]; then
-      echo "ERROR: $PEM_BUNDLE not found" >&2; exit 1
+    if [ -z "$JAVA_CACERTS" ]; then
+      echo "ERROR: cacerts not found under /usr/lib/jvm" >&2; exit 1
     fi
     STORE=/home/build/.apexpack-truststore.p12
-    # Import corporate CA first — this creates the PKCS12 store.
+    cp "$JAVA_CACERTS" "$STORE"
     "$KEYTOOL" -importcert -noprompt -alias apexpack-corp-ca \
       -file /home/build/.apexpack-ca.crt \
       -keystore "$STORE" -storetype PKCS12 -storepass changeit
-    # Split PEM bundle into individual certs and import each one.
-    awk '/-----BEGIN CERTIFICATE-----/{c++; f="/tmp/pem-ca-"c".pem"} f{print>f} /-----END CERTIFICATE-----/{close(f);f=""}' "$PEM_BUNDLE"
-    COUNT=0
-    for f in /tmp/pem-ca-*.pem; do
-      [ -f "$f" ] || continue
-      "$KEYTOOL" -importcert -noprompt -alias "sys-ca-$COUNT" \
-        -file "$f" -keystore "$STORE" -storetype PKCS12 -storepass changeit 2>/dev/null || true
-      rm -f "$f"
-      COUNT=$((COUNT+1))
-    done
-    echo "→ PKCS12 truststore ready: $COUNT system CAs + corporate CA"
+    echo "→ Truststore ready ($(basename $JAVA_CACERTS)): Java default CAs + corporate CA"
 
   frameworks:
     quarkus:
       # Quarkus default output is a fast-jar directory — uber-jar gives a single runnable JAR.
       command: |
-        if [ -f "/home/build/.apexpack-truststore.jks" ]; then
-          export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStorePassword=changeit"
+        if [ -f "/home/build/.apexpack-truststore.p12" ]; then
+          export MAVEN_OPTS="${MAVEN_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
         fi
         mvn package -DskipTests -B -q -Dquarkus.package.jar.type=uber-jar
         mkdir -p /home/build/output/app
         cp target/*-runner.jar /home/build/output/app/app.jar
     spring-boot-gradle:
       command: |
-        if [ -f "/home/build/.apexpack-truststore.jks" ]; then
-          export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStorePassword=changeit"
+        if [ -f "/home/build/.apexpack-truststore.p12" ]; then
+          export GRADLE_OPTS="${GRADLE_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
         fi
         chmod +x ./gradlew
         ./gradlew build -x test --no-daemon -q
@@ -129,8 +118,8 @@ build:
         - /home/build/.gradle
     quarkus-gradle:
       command: |
-        if [ -f "/home/build/.apexpack-truststore.jks" ]; then
-          export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStorePassword=changeit"
+        if [ -f "/home/build/.apexpack-truststore.p12" ]; then
+          export GRADLE_OPTS="${GRADLE_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
         fi
         chmod +x ./gradlew
         ./gradlew build -Dquarkus.package.jar.type=uber-jar -x test --no-daemon -q
@@ -140,8 +129,8 @@ build:
         - /home/build/.gradle
     micronaut-gradle:
       command: |
-        if [ -f "/home/build/.apexpack-truststore.jks" ]; then
-          export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStorePassword=changeit"
+        if [ -f "/home/build/.apexpack-truststore.p12" ]; then
+          export GRADLE_OPTS="${GRADLE_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
         fi
         chmod +x ./gradlew
         ./gradlew build -x test --no-daemon -q
