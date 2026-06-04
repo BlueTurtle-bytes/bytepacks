@@ -169,6 +169,14 @@ type BuildConfig struct {
 	// the CA into their own certificate store (e.g. keytool for JVM, update-ca-certificates for .NET).
 	// The CA cert is available inside the sandbox at /home/build/.apexpack-ca.crt.
 	TLSCAPreStep string `yaml:"tls_ca_pre_step,omitempty"`
+
+	// MavenMirrorURL is the URL of a corporate Artifactory (or Nexus) Maven proxy.
+	// When set, apexpack injects a ~/.m2/settings.xml into every build that mirrors
+	// all Maven repository requests through this URL instead of hitting Maven Central
+	// directly. This is the standard fix for corporate networks that block or
+	// SSL-inspect outbound connections to repo1.maven.org.
+	// Example: "https://artifactory.corp.example.com/artifactory/libs-release"
+	MavenMirrorURL string `yaml:"maven_mirror_url,omitempty"`
 }
 
 // FrameworkBuildOverride lets a specific framework replace or extend the default build.

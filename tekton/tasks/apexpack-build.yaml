@@ -78,7 +78,12 @@ spec:
         TLS_CA_FLAG=""
         if [ "$(workspaces.tls-ca.bound)" = "true" ]; then
           CA_FILE="$(workspaces.tls-ca.path)/ca-bundle.crt"
-          export SSL_CERT_FILE="$CA_FILE"   # Go TLS (apexpack, apko, melange)
+          # Merge system CAs + corporate CA into one bundle.
+          # Go's x509 parser needs the full system chain to reach public registries;
+          # using only the corporate cert causes a nil-pointer SIGSEGV on some CA formats.
+          MERGED_CA="/tmp/apexpack-merged-ca.crt"
+          cat /etc/ssl/certs/ca-certificates.crt "$CA_FILE" > "$MERGED_CA"
+          export SSL_CERT_FILE="$MERGED_CA"
           TLS_CA_FLAG="--tls-extra-ca $CA_FILE"
         fi
 
@@ -94,9 +99,10 @@ spec:
 
         # Emit result paths for downstream tasks.
         SOURCE_BASE=$(basename $(workspaces.source.path))
-        printf "%s" "$(workspaces.output.path)/${SOURCE_BASE}.tar"      > $(results.IMAGE_TARBALL.path)
-        printf "%s" "$(workspaces.output.path)/sbom-x86_64.spdx.json"   > $(results.SBOM_PATH.path)
-        printf "%s" "$(workspaces.output.path)/packages/x86_64/*.apk"   > $(results.APK_PATH.path)
+        ARCH=$(uname -m)
+        printf "%s" "$(workspaces.output.path)/${SOURCE_BASE}.tar"                   > $(results.IMAGE_TARBALL.path)
+        printf "%s" "$(workspaces.output.path)/sbom-${ARCH}.spdx.json"              > $(results.SBOM_PATH.path)
+        printf "%s" "$(workspaces.output.path)/packages/${ARCH}/*.apk"              > $(results.APK_PATH.path)
 
         echo ""
         echo "Build complete:"

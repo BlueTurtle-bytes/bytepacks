@@ -75,6 +75,10 @@ build:
   caches:
     - /home/build/.m2/repository
 
+  # Route all Maven downloads through the corporate Artifactory mirror.
+  # Replace with your actual Artifactory URL before rebuilding the image.
+  maven_mirror_url: "https://artifactory.corp.example.com/artifactory/libs-release"
+
   tls_ca_env: []  # JVM ignores SSL_CERT_FILE; tls_ca_pre_step + build command handle it
   tls_ca_pre_step: |
     # Copy the JVM's own cacerts (already PKCS12 in Java 21) and add the corporate CA.

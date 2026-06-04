@@ -250,6 +250,52 @@ func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
 		}
 	}
 
+	// Inject a Maven settings.xml step for corporate Artifactory mirrors.
+	// Prepended unconditionally when the profile declares maven_mirror_url.
+	// Credentials are never stored in the profile — they are read from
+	// MAVEN_MIRROR_USER / MAVEN_MIRROR_PASSWORD env vars on the host (set by a
+	// Kubernetes secret in Tekton) and forwarded into the melange sandbox here.
+	// The unquoted heredoc lets the shell expand those vars at step runtime.
+	if p.Build.MavenMirrorURL != "" {
+		if cfg.Environment.Env == nil {
+			cfg.Environment.Env = make(map[string]string)
+		}
+		for _, key := range []string{"MAVEN_MIRROR_USER", "MAVEN_MIRROR_PASSWORD"} {
+			if val := os.Getenv(key); val != "" {
+				if _, exists := cfg.Environment.Env[key]; !exists {
+					cfg.Environment.Env[key] = val
+				}
+			}
+		}
+		mirrorStep := fmt.Sprintf(
+			"mkdir -p /home/build/.m2\n"+
+				"cat > /home/build/.m2/settings.xml << APEXPACK_SETTINGS_EOF\n"+
+				"<settings>\n"+
+				"  <mirrors>\n"+
+				"    <mirror>\n"+
+				"      <id>apexpack-mirror</id>\n"+
+				"      <mirrorOf>*</mirrorOf>\n"+
+				"      <url>%s</url>\n"+
+				"    </mirror>\n"+
+				"  </mirrors>\n"+
+				"  <servers>\n"+
+				"    <server>\n"+
+				"      <id>apexpack-mirror</id>\n"+
+				"      <username>$MAVEN_MIRROR_USER</username>\n"+
+				"      <password>$MAVEN_MIRROR_PASSWORD</password>\n"+
+				"    </server>\n"+
+				"  </servers>\n"+
+				"</settings>\n"+
+				"APEXPACK_SETTINGS_EOF\n"+
+				"echo \"→ Maven mirror configured: %s\"",
+			p.Build.MavenMirrorURL, p.Build.MavenMirrorURL,
+		)
+		cfg.Pipeline = append(
+			[]types.MelangePipeline{{Runs: mirrorStep}},
+			cfg.Pipeline...,
+		)
+	}
+
 	// Propagate Go module env vars from the host into the melange.yaml environment
 	// block. Melange explicitly passes these into the bubblewrap sandbox, so the
 	// go build command running inside the sandbox uses the same proxy and TLS
@@ -404,7 +450,7 @@ func runMelange(configFile string, opts Options) error {
 		"--source-dir", opts.SourceDir,
 		"--out-dir", packagesDir,
 		"--signing-key", keyFile,
-		"--arch", "x86_64",
+		"--arch", melangeArch(),
 	}, env)
 }
 
@@ -488,7 +534,7 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 		"--source-dir", "/work/src",
 		"--out-dir", "/work/output/packages",
 		"--signing-key", containerKey,
-		"--arch", "x86_64",
+		"--arch", melangeArch(),
 	)
 
 	return runTool("docker", args)
@@ -519,7 +565,7 @@ func runApko(configFile string, opts Options) error {
 		"build", configFile,
 		imageTag,
 		outputTar,
-		"--arch", "x86_64",
+		"--arch", melangeArch(),
 	})
 }
 
@@ -560,10 +606,20 @@ func runApkoInDocker(configFile, imageTag, outputTar string, opts Options) error
 		"build", containerConfig,
 		imageTag,
 		containerTar,
-		"--arch", "x86_64",
+		"--arch", melangeArch(),
 	)
 
 	return runTool("docker", args)
+}
+
+// melangeArch maps GOARCH values to the architecture names melange and apko expect.
+func melangeArch() string {
+	switch runtime.GOARCH {
+	case "arm64":
+		return "aarch64"
+	default:
+		return "x86_64"
+	}
 }
 
 // runTool runs an external binary, streaming output to stdout/stderr.
