@@ -63,6 +63,7 @@ spec:
         # (Docker on Colima QEMU). We are already root in a privileged container so
         # user-namespace isolation is redundant. Shadow the real bwrap with a wrapper
         # that strips the user-namespace flags before forwarding the call.
+        mkdir -p /usr/local/bin
         cat > /usr/local/bin/bwrap << 'BWRAP_WRAPPER'
         #!/bin/sh
         args=""
