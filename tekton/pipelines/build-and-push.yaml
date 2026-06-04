@@ -169,6 +169,8 @@ spec:
           value: $(tasks.detect.results.PATCH_PERSIST)
         - name: GIT_REVISION
           value: $(params.PROFILES_GIT_REVISION)
+        - name: RUNTIME
+          value: $(tasks.detect.results.RUNTIME)
       workspaces:
         - name: profiles
           workspace: profiles
@@ -219,5 +221,7 @@ spec:
         - name: destination
           value: $(params.IMAGE)
       workspaces:
+        - name: output
+          workspace: output
         - name: credentials
           workspace: registry-credentials

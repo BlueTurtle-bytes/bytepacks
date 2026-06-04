@@ -333,7 +333,25 @@ image:
     - "3000"
   env:
     NODE_ENV: "production"
+
+# ── CVE Auto-patch ──────────────────────────────────────────────────────────
+scan:
+  auto-patch: false      # when true, CVE failures in the pipeline trigger auto-patch + rebuild
+  patch-persist: false   # when true, patched profiles are committed back to git
 ```
+
+---
+
+### The `scan` section
+
+Each profile carries a `scan` block that controls CVE auto-patching behaviour in the Tekton pipeline:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `auto-patch` | `false` | When `true`, a CVE scan failure is treated as soft — the pipeline continues to apply patches and rebuild instead of failing hard |
+| `patch-persist` | `false` | When `true`, the updated profile YAML (with pinned package versions) is committed back to git after patching so future builds start already fixed |
+
+These are read from the matched profile by the `apexpack-detect` Tekton task and emitted as pipeline results (`AUTO_PATCH`, `PATCH_PERSIST`). Pipeline params `AUTO_PATCH` and `PATCH_PERSIST` can override the profile values for a single run.
 
 ---
 
@@ -459,9 +477,10 @@ build:
 2. Define `runtime`, `detect`, `build`, `image` (all required)
 3. Add `package-managers` rules if the language supports multiple build tools
 4. Add `frameworks` entries only for cases that need different `command`, `dependencies`, `env`, or `caches`
-5. Run `apexpack profiles` to verify it loads
-6. Run `apexpack detect /path/to/sample-project` to test detection
-7. Run `apexpack build /path/to/sample-project --dry-run` to verify generated configs
+5. Add a `scan` block to configure CVE auto-patch behaviour (optional, defaults to disabled)
+6. Run `apexpack profiles` to verify it loads
+7. Run `apexpack detect /path/to/sample-project` to test detection
+8. Run `apexpack build /path/to/sample-project --dry-run` to verify generated configs
 
 Example — Rust:
 
@@ -506,6 +525,10 @@ image:
   run-as: 65532
   ports:
     - "8080"
+
+scan:
+  auto-patch: false
+  patch-persist: false
 ```
 
 ---
@@ -535,7 +558,7 @@ apexpack/
 │
 ├── internal/
 │   ├── types/
-│   │   └── types.go         ALL data structures — Profile, DetectResult, BuildPlan, etc.
+│   │   └── types.go         ALL data structures — Profile, DetectResult, BuildPlan, ScanConfig, etc.
 │   │                        Read this first to understand the shape of everything.
 │   │
 │   ├── profile/
@@ -554,9 +577,9 @@ apexpack/
 │   │                        Run()  → executes melange then apko
 │   │
 │   └── patch/
-│       └── patch.go         Checks Wolfi index for updates, applies pins to profiles.
+│       └── patch.go         Checks Wolfi index for updates, applies version pins to profiles.
 │
-├── profiles/                Language profile YAML files
+├── profiles/                Language profile YAML files (baked into apexpack:latest at build time)
 │   ├── golang.yaml
 │   ├── java.yaml
 │   ├── dotnet.yaml
@@ -565,16 +588,17 @@ apexpack/
 │   └── webserver.yaml
 │
 ├── apexpack.yaml            Per-project overrides for building apexpack itself
-│                            (binary name, extra image packages: busybox, melange, apko, grype)
+│                            (binary name, extra packages: busybox, git, melange, apko, grype)
 │
 ├── rebuild-image.sh         Rebuilds apexpack:latest and loads it into the kind cluster
 │
 └── tekton/
     ├── install/             Tekton install manifests (pipeline + dashboard)
-    ├── tasks/               apexpack-detect, apexpack-build, apexpack-scan, git-clone, crane-copy
+    ├── tasks/               apexpack-detect, apexpack-build, apexpack-scan,
+    │                        apexpack-patch, git-clone, crane-copy
     ├── pipelines/           build-and-push Pipeline
     ├── pipelinerun/         Example PipelineRun (spring-petclinic)
-    └── config/              ConfigMap and supporting config
+    └── config/              Supporting cluster config
 ```
 
 ### Data Flow
@@ -623,8 +647,8 @@ On macOS, each declared cache path becomes a persistent named Docker volume. The
 **6. Plan and Run are separated**
 `build.Plan()` generates config content. `build.Run()` writes files and runs tools. The `--dry-run` flag uses Plan without Run, so you can inspect exactly what will be built — including which package manager override fired — before committing.
 
-**7. Profiles directory is runtime — not embedded**
-Profiles live on disk in `profiles/`, not compiled into the binary. Add, edit, or override profiles without recompiling. Teams can maintain a shared profiles repo and point `--profiles-dir` at it.
+**7. Profiles are baked into the `apexpack:latest` image**
+Profiles are embedded at `/etc/apexpack/profiles/` when the image is built (`cp profiles/*.yaml` runs as part of the Go build step in `apexpack.yaml`). The Tekton detect task seeds the profiles PVC from the image on every run — no manual `kubectl cp` or separate profiles repository is needed. Updating profiles requires only a rebuild of `apexpack:latest`.
 
 ---
 
@@ -667,7 +691,7 @@ The flag takes precedence over the environment variable. Both the system CAs and
 
 ## Tekton Pipeline Integration
 
-apexpack ships Tekton Tasks and a Pipeline that clone the source, detect the language, build the image, scan for CVEs, and push — all driven by the YAML profiles.
+apexpack ships Tekton Tasks and a Pipeline that clone the source, detect the language, build the image, scan for CVEs — and when CVEs are found, automatically patch and rebuild before pushing.
 
 ### Installing Tekton
 
@@ -678,6 +702,44 @@ kubectl apply -f tekton/install/tekton-dashboard.yaml
 
 > The bundled `tekton-pipeline.yaml` sets `coschedule: disabled` in `feature-flags`. This is required because the build task binds two PVCs (`source` and `output`) simultaneously, which is incompatible with the default `coschedule: workspaces` mode. On a single-node cluster (kind, k3d) this has no scheduling impact.
 
+### Creating the PVCs
+
+The pipeline uses three PVCs. Create them once:
+
+```bash
+kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: apexpack-source
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: apexpack-profiles
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: apexpack-output
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+EOF
+```
+
 ### Applying Tasks and Pipeline
 
 ```bash
@@ -687,14 +749,11 @@ kubectl apply -f tekton/pipelines/
 
 ### Running the Pipeline
 
-The `profiles` workspace is served from a ConfigMap — no PVC needed. Create it once from the bundled profiles:
-
 ```bash
-kubectl create configmap apexpack-profiles --from-file=profiles/
 kubectl create -f tekton/pipelinerun/pipelinerun.yaml
 ```
 
-`tekton/pipelinerun/pipelinerun.yaml` is a ready-to-use example that builds `spring-petclinic`. Edit the `GIT_URL`, `IMAGE`, and `GIT_REVISION` params before running:
+`tekton/pipelinerun/pipelinerun.yaml` is a ready-to-use example that builds `spring-petclinic`. Edit `GIT_URL`, `IMAGE`, and `GIT_REVISION` before running:
 
 ```yaml
 apiVersion: tekton.dev/v1
@@ -718,52 +777,100 @@ spec:
       persistentVolumeClaim:
         claimName: apexpack-source
     - name: profiles
-      configMap:
-        name: apexpack-profiles
+      persistentVolumeClaim:
+        claimName: apexpack-profiles
     - name: output
       persistentVolumeClaim:
         claimName: apexpack-output
 ```
 
-### Pipeline steps
+For quick testing without a registry account, use `ttl.sh` (anonymous, ephemeral):
+```yaml
+    - name: IMAGE
+      value: ttl.sh/myapp:1h
+```
 
-| Step | Task | Image | Description |
-|------|------|-------|-------------|
-| 1 | `git-clone` | `alpine/git` | Clone the source repo |
-| 2 | `apexpack-detect` | `apexpack:latest` | Detect language, framework, and package manager |
-| 3 | `apexpack-build` | `apexpack:latest` | Build OCI image (privileged — melange uses bubblewrap) |
-| 4 | `apexpack-scan` | `apexpack:latest` | Scan SBOM for CVEs with grype; prints table to log, writes SARIF to output workspace |
-| 5 | `crane-copy` | `gcr.io/go-containerregistry/crane` | Push image tarball to registry |
+### Pipeline Steps
 
-### The `apexpack:latest` tool image
+| Step | Task | Description |
+|------|------|-------------|
+| 1 | `git-clone` | Clone the source repo into the `source` workspace |
+| 2 | `apexpack-detect` | Detect language and framework; seed profiles from the baked-in image; emit `RUNTIME`, `AUTO_PATCH`, `PATCH_PERSIST` results |
+| 3 | `apexpack-build` | Build OCI image with melange + apko; emit `IMAGE_TARBALL`, `SBOM_PATH` results |
+| 4 | `apexpack-scan` | Scan SBOM for CVEs with grype; when `AUTO_PATCH=true` exits 0 on failure (soft-fail) so the pipeline continues |
+| 5 | `apexpack-patch` | _(when scan failed AND AUTO_PATCH=true)_ Run `apexpack patch --apply` to pin patched versions in the profile YAML; optionally commit back to git when `PATCH_PERSIST=true` |
+| 6 | `apexpack-build` | _(when scan failed AND AUTO_PATCH=true)_ Rebuild the image using the patched profile |
+| 7 | `crane-copy` | Push the image tarball to the registry (runs whether or not steps 5–6 were skipped) |
 
-All pipeline tasks run inside `apexpack:latest` — a self-hosted image that bundles the CLI together with melange, apko, and grype. On Linux (inside the pod) these tools are called natively, not via Docker.
+### CVE Auto-patch Loop
 
-The image is built by apexpack building itself. `apexpack.yaml` in the repo root defines the overrides from the default golang profile:
+The pipeline implements a detect-patch-rebuild loop controlled entirely by the language profile:
+
+```
+scan (CVEs found, soft-fail)
+    │
+    ▼
+patch (apexpack patch --apply → pins updated Wolfi packages in profile YAML)
+    │  optionally: git commit + push if patch-persist: true
+    ▼
+rebuild (apexpack build with patched profile → clean image)
+    │
+    ▼
+push (crane push → registry)
+```
+
+**Enabling auto-patch for a language:** set `scan.auto-patch: true` in the profile file:
+
+```yaml
+# profiles/java.yaml
+scan:
+  auto-patch: true      # CVE failures trigger patch + rebuild
+  patch-persist: false  # set true to commit pinned versions back to git
+```
+
+**Overriding per-run** (without changing the profile):
+
+```yaml
+# pipelinerun.yaml
+params:
+  - name: AUTO_PATCH
+    value: "true"
+  - name: PATCH_PERSIST
+    value: "true"
+```
+
+**How soft-fail works:** when `AUTO_PATCH=true`, the scan task writes `SCAN_RESULT=fail` to its result but exits with code 0 instead of 1. The patch and rebuild tasks have `when:` conditions that check both `SCAN_RESULT=fail` and `AUTO_PATCH=true` — so they only run when there are actual CVEs to fix. The push task uses `runAfter: [rebuild]` and runs regardless of whether rebuild was skipped.
+
+### The `apexpack:latest` Tool Image
+
+All pipeline tasks run inside `apexpack:latest` — a self-built image that bundles the CLI together with melange, apko, grype, busybox, and git. On Linux (inside pods) these tools are called natively, not via Docker.
+
+The image builds itself using `apexpack.yaml` at the repo root:
 
 ```yaml
 runtime: golang
 build:
   command: |
     mkdir -p ${{targets.destdir}}/usr/bin
+    mkdir -p ${{targets.destdir}}/etc/apexpack/profiles
     go build -o ${{targets.destdir}}/usr/bin/{APP_NAME} ./cmd/apexpack
+    cp profiles/*.yaml ${{targets.destdir}}/etc/apexpack/profiles/
 image:
   packages:
-    - busybox    # provides /bin/sh for Tekton script execution
-    - melange    # APK builder — runs natively on Linux
-    - apko       # OCI assembler — runs natively on Linux
-    - grype      # CVE scanner
+    - busybox    # /bin/sh for Tekton script steps
+    - git        # required by the patch persist step
+    - melange
+    - apko
+    - grype
 ```
 
-`{APP_NAME}` is substituted with the project name (`apexpack`) at build time, so no explicit `entrypoint` override is needed.
+The `detect` task seeds the profiles PVC from `/etc/apexpack/profiles/` on every run, so updating profiles only requires rebuilding the image — no manual file copying to the cluster.
 
 To rebuild and reload into a kind cluster:
 
 ```bash
 ./rebuild-image.sh
 ```
-
-This script runs `apexpack build`, loads the resulting tarball into Docker, and imports it into the kind cluster.
 
 ---
 
@@ -775,9 +882,11 @@ This script runs `apexpack build`, loads the resulting tarball into Docker, and 
 2. Define `runtime`, `detect`, `build`, `image` (all required)
 3. Add `package-managers` rules if the language has multiple build tools (pnpm, uv, etc.)
 4. Add `frameworks` entries for any cases that need a different `command`, `dependencies`, `env`, or `caches`
-5. Run `apexpack profiles` to verify it loads
-6. Run `apexpack detect /path/to/sample-project` to test detection
-7. Run `apexpack build /path/to/sample-project --dry-run` to verify generated configs
+5. Add a `scan` block (`auto-patch: false`, `patch-persist: false` is a safe default)
+6. Run `apexpack profiles` to verify it loads
+7. Run `apexpack detect /path/to/sample-project` to test detection
+8. Run `apexpack build /path/to/sample-project --dry-run` to verify generated configs
+9. Rebuild `apexpack:latest` so the new profile is baked in: `./rebuild-image.sh`
 
 ### Modifying the Go code
 
@@ -798,3 +907,4 @@ The four internal packages have a strict one-way dependency: `types` ← `profil
 - **[Wolfi](https://github.com/wolfi-dev/os)** — supply chain-hardened Linux undistro, by Chainguard
 - **[cobra](https://github.com/spf13/cobra)** — CLI framework for Go
 - **[grype](https://github.com/anchore/grype)** — vulnerability scanner for container images, by Anchore
+- **[crane](https://github.com/google/go-containerregistry)** — OCI registry client for pushing images, by Google

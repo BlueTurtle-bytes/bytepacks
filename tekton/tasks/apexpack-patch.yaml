@@ -24,6 +24,9 @@ spec:
     - name: GIT_REVISION
       description: "Branch to push the patched profiles to (only used when PERSIST=true)."
       default: "main"
+    - name: RUNTIME
+      description: "Detected runtime (e.g. java, golang). Used to print the patched profile."
+      default: ""
 
   workspaces:
     - name: profiles
@@ -62,6 +65,15 @@ spec:
 
         echo ""
         echo "✓ $COUNT package(s) patched."
+
+        if [ -n "$(params.RUNTIME)" ]; then
+          PROFILE_FILE="$PROFILES_PATH/$(params.RUNTIME).yaml"
+          if [ -f "$PROFILE_FILE" ]; then
+            echo ""
+            echo "=== $(params.RUNTIME).yaml ==="
+            cat "$PROFILE_FILE"
+          fi
+        fi
 
     - name: persist
       image: apexpack:latest

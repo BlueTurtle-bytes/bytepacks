@@ -9,6 +9,8 @@ spec:
     - name: destination
       description: "Full OCI image reference to push to (e.g. ghcr.io/myorg/myapp:v1.0)."
   workspaces:
+    - name: output
+      description: "Build artifacts workspace containing the image tarball."
     - name: credentials
       description: "Docker config.json for registry auth."
       optional: true
