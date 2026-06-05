@@ -9,7 +9,6 @@ metadata:
     tekton.dev/description: >-
       Builds a minimal, secure OCI image from source using melange and apko.
       Reads language profiles from a cloned git workspace.
-      Requires a privileged security context for melange's bubblewrap sandbox.
 spec:
   params:
     - name: IMAGE
@@ -49,7 +48,8 @@ spec:
 
   stepTemplate:
     securityContext:
-      privileged: true   # melange needs bubblewrap; remove if node has user namespaces enabled
+      privileged: true   # melange needs bubblewrap
+      runAsUser: 0       # must be root to retain effective capabilities (Wolfi image defaults to nonroot)
 
   steps:
     - name: build
@@ -58,45 +58,6 @@ spec:
       script: |
         #!/bin/sh
         set -e
-        trap 'echo "=== /tmp/bwrap-calls.log ==="; cat /tmp/bwrap-calls.log 2>/dev/null || echo "(empty)"; echo "==="' EXIT
-
-        # bwrap --unshare-user fails when the container runtime uses userns-remap
-        # (Docker on Colima QEMU). We are root in a privileged container so user-namespace
-        # isolation is redundant. Shadow /usr/bin/bwrap via mount --bind so both the
-        # capability pre-check AND absolute-path build invocations hit the wrapper.
-        # The wrapper handles two cases:
-        #   1. capability pre-check (no mount flags): exit 0
-        #   2. real build call: strip user-namespace flags, forward to real bwrap
-        cat > /tmp/bwrap << 'BWRAP_WRAPPER'
-        #!/bin/sh
-        echo "bwrap-wrapper called: $@" >> /tmp/bwrap-calls.log
-        n=0
-        for a in "$@"; do n=$((n+1)); eval "arg_$n=\$a"; done
-        has_mounts=0
-        i=1
-        while [ $i -le $n ]; do
-          eval "a=\$arg_$i"; i=$((i+1))
-          case "$a" in --bind|--ro-bind|--dev-bind|--proc|--dev|--tmpfs) has_mounts=1; break;; esac
-        done
-        if [ "$has_mounts" = "0" ]; then echo "capability check -> exit 0" >> /tmp/bwrap-calls.log; exit 0; fi
-        set --
-        skip_next=0
-        i=1
-        while [ $i -le $n ]; do
-          eval "a=\$arg_$i"; i=$((i+1))
-          if [ "$skip_next" = "1" ]; then skip_next=0; continue; fi
-          case "$a" in
-            --unshare-*) ;;
-            --uid|--gid) skip_next=1 ;;
-            *) set -- "$@" "$a" ;;
-          esac
-        done
-        echo "exec /usr/bin/bwrap $@" >> /tmp/bwrap-calls.log
-        exec /usr/bin/bwrap "$@"
-        BWRAP_WRAPPER
-        chmod 755 /tmp/bwrap
-        export PATH=/tmp:$PATH
-        echo "bwrap wrapper active (PATH)"
 
         if [ -d "$(workspaces.profiles.path)/profiles" ]; then
           PROFILES_DIR="$(workspaces.profiles.path)/profiles"
@@ -117,11 +78,6 @@ spec:
         TLS_CA_FLAG=""
         if [ "$(workspaces.tls-ca.bound)" = "true" ]; then
           CA_FILE="$(workspaces.tls-ca.path)/ca-bundle.crt"
-          # Pass the CA to apexpack so it lands in the build sandbox for the
-          # tls_ca_pre_step (Java JVM truststore, .NET, etc.).
-          # Do NOT set SSL_CERT_FILE here — melange fetches Wolfi packages without
-          # needing it, and corporate CA certs with non-standard ASN.1 encoding
-          # crash Go's Linux x509 PEM parser (SIGSEGV / growslice) when set.
           TLS_CA_FLAG="--tls-extra-ca $CA_FILE"
         fi
 
@@ -135,7 +91,6 @@ spec:
           $NAME_FLAG \
           $TLS_CA_FLAG
 
-        # Emit result paths for downstream tasks.
         SOURCE_BASE=$(basename $(workspaces.source.path))
         ARCH=$(uname -m)
         printf "%s" "$(workspaces.output.path)/${SOURCE_BASE}.tar"                   > $(results.IMAGE_TARBALL.path)

@@ -7,7 +7,7 @@ spec:
     name: apexpack-build-and-push
   params:
     - name: GIT_URL
-      value: https://github.com/spring-projects/spring-petclinic
+      value: https://github.com/Nimbostack/nimbopacks
     - name: GIT_REVISION
       value: main
     - name: IMAGE

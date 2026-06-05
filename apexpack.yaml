@@ -13,7 +13,6 @@ image:
     - apko
     - bubblewrap
     - grype
-    - util-linux
 scan:
   auto-patch: false
   patch-persist: false

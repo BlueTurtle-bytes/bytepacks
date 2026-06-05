@@ -702,6 +702,8 @@ kubectl apply -f tekton/install/tekton-dashboard.yaml
 
 > The bundled `tekton-pipeline.yaml` sets `coschedule: disabled` in `feature-flags`. This is required because the build task binds two PVCs (`source` and `output`) simultaneously, which is incompatible with the default `coschedule: workspaces` mode. On a single-node cluster (kind, k3d) this has no scheduling impact.
 
+> **Privileged build pods:** the `apexpack-build` task runs with `privileged: true` and `runAsUser: 0`. Both are required: melange uses bubblewrap for build sandboxing, and bubblewrap needs to set up user namespace mappings which requires effective capabilities — capabilities that are only retained when the process runs as uid 0, even inside a privileged pod (Wolfi images default to a non-root user).
+
 ### Creating the PVCs
 
 The pipeline uses three PVCs. Create them once:
@@ -857,10 +859,11 @@ build:
     cp profiles/*.yaml ${{targets.destdir}}/etc/apexpack/profiles/
 image:
   packages:
-    - busybox    # /bin/sh for Tekton script steps
-    - git        # required by the patch persist step
+    - busybox      # /bin/sh for Tekton script steps
+    - git          # required by the patch persist step
     - melange
     - apko
+    - bubblewrap   # melange's sandbox runner
     - grype
 ```
 

@@ -17,4 +17,4 @@ esac
 docker tag "apexpack:latest-${ARCH_SUFFIX}" apexpack:latest
 
 docker save apexpack:latest -o /tmp/apexpack-latest.tar
-kind load image-archive /tmp/apexpack-latest.tar --name kind-cluster
+kind load image-archive /tmp/apexpack-latest.tar --name dev-local
