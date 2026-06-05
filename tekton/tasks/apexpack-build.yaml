@@ -67,8 +67,6 @@ spec:
         # The wrapper handles two cases:
         #   1. capability pre-check (no mount flags): exit 0
         #   2. real build call: strip user-namespace flags, forward to real bwrap
-        cp /usr/bin/bwrap /tmp/bwrap-real
-        chmod 755 /tmp/bwrap-real
         cat > /tmp/bwrap << 'BWRAP_WRAPPER'
         #!/bin/sh
         echo "bwrap-wrapper called: $@" >> /tmp/bwrap-calls.log
@@ -88,26 +86,17 @@ spec:
           eval "a=\$arg_$i"; i=$((i+1))
           if [ "$skip_next" = "1" ]; then skip_next=0; continue; fi
           case "$a" in
-            --unshare-user|--unshare-user-try) ;;
-            --unshare-all) set -- "$@" --unshare-pid --unshare-net --unshare-uts --unshare-ipc ;;
+            --unshare-*) ;;
             --uid|--gid) skip_next=1 ;;
             *) set -- "$@" "$a" ;;
           esac
         done
-        echo "exec /tmp/bwrap-real $@" >> /tmp/bwrap-calls.log
-        exec /tmp/bwrap-real "$@"
+        echo "exec /usr/bin/bwrap $@" >> /tmp/bwrap-calls.log
+        exec /usr/bin/bwrap "$@"
         BWRAP_WRAPPER
         chmod 755 /tmp/bwrap
-        # Bind-mount replaces /usr/bin/bwrap so both PATH and absolute-path callers hit
-        # the wrapper. Requires util-linux in the image (see apexpack.yaml). While that
-        # image is being rebuilt, fall back to PATH shadowing — this intercepts the
-        # capability check but may miss melange's real build call if it uses an absolute path.
-        if mount --bind /tmp/bwrap /usr/bin/bwrap 2>/dev/null; then
-          echo "bwrap wrapper bind-mounted at /usr/bin/bwrap"
-        else
-          export PATH=/tmp:$PATH
-          echo "bwrap wrapper in PATH (rebuild image with util-linux for full coverage)"
-        fi
+        export PATH=/tmp:$PATH
+        echo "bwrap wrapper active (PATH)"
 
         if [ -d "$(workspaces.profiles.path)/profiles" ]; then
           PROFILES_DIR="$(workspaces.profiles.path)/profiles"
