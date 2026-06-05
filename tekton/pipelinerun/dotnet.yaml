@@ -1,0 +1,28 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: apexpack-dotnet-
+spec:
+  pipelineRef:
+    name: apexpack-build-and-push
+  params:
+    - name: GIT_URL
+      value: https://github.com/jasontaylordev/CleanArchitecture
+    - name: GIT_REVISION
+      value: main
+    - name: IMAGE
+      value: ttl.sh/clean-architecture:1h
+    - name: RUNTIME
+      value: dotnet
+    - name: FAIL_ON
+      value: high
+  workspaces:
+    - name: source
+      persistentVolumeClaim:
+        claimName: apexpack-source
+    - name: profiles
+      persistentVolumeClaim:
+        claimName: apexpack-profiles
+    - name: output
+      persistentVolumeClaim:
+        claimName: apexpack-output

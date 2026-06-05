@@ -1,0 +1,28 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: apexpack-webserver-
+spec:
+  pipelineRef:
+    name: apexpack-build-and-push
+  params:
+    - name: GIT_URL
+      value: https://github.com/gothinkster/angular-realworld-example-app
+    - name: GIT_REVISION
+      value: main
+    - name: IMAGE
+      value: ttl.sh/angular-realworld:1h
+    - name: RUNTIME
+      value: webserver
+    - name: FAIL_ON
+      value: high
+  workspaces:
+    - name: source
+      persistentVolumeClaim:
+        claimName: apexpack-source
+    - name: profiles
+      persistentVolumeClaim:
+        claimName: apexpack-profiles
+    - name: output
+      persistentVolumeClaim:
+        claimName: apexpack-output

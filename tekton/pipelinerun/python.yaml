@@ -1,0 +1,28 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: apexpack-python-
+spec:
+  pipelineRef:
+    name: apexpack-build-and-push
+  params:
+    - name: GIT_URL
+      value: https://github.com/miguelgrinberg/flasky
+    - name: GIT_REVISION
+      value: main
+    - name: IMAGE
+      value: ttl.sh/flasky:1h
+    - name: RUNTIME
+      value: python
+    - name: FAIL_ON
+      value: high
+  workspaces:
+    - name: source
+      persistentVolumeClaim:
+        claimName: apexpack-source
+    - name: profiles
+      persistentVolumeClaim:
+        claimName: apexpack-profiles
+    - name: output
+      persistentVolumeClaim:
+        claimName: apexpack-output
