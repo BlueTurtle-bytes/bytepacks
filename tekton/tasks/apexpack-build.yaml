@@ -71,11 +71,12 @@ spec:
         cp /usr/bin/bwrap /tmp/bwrap-real
         cat > /tmp/bwrap-wrapper << 'BWRAP_WRAPPER'
         #!/bin/sh
+        echo "bwrap-wrapper: $@" >> /tmp/bwrap-calls.log
         has_mounts=0
         for a in "$@"; do
           case "$a" in --bind|--ro-bind|--dev-bind|--proc|--dev|--tmpfs) has_mounts=1; break;; esac
         done
-        if [ "$has_mounts" = "0" ]; then exit 0; fi
+        if [ "$has_mounts" = "0" ]; then echo "bwrap-wrapper: capability check -> exit 0" >> /tmp/bwrap-calls.log; exit 0; fi
         args=""
         skip_next=0
         for a in "$@"; do
@@ -87,10 +88,13 @@ spec:
             *) args="$args $a" ;;
           esac
         done
+        echo "bwrap-wrapper: exec bwrap $args" >> /tmp/bwrap-calls.log
         exec /tmp/bwrap-real $args
         BWRAP_WRAPPER
         chmod 755 /tmp/bwrap-wrapper
-        rm /usr/bin/bwrap && cp /tmp/bwrap-wrapper /usr/bin/bwrap
+        cat /tmp/bwrap-wrapper > /usr/bin/bwrap
+        chmod 755 /usr/bin/bwrap
+        echo "bwrap wrapper installed: $(head -1 /usr/bin/bwrap)"
 
         if [ -d "$(workspaces.profiles.path)/profiles" ]; then
           PROFILES_DIR="$(workspaces.profiles.path)/profiles"
