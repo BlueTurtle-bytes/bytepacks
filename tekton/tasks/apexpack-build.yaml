@@ -68,7 +68,7 @@ spec:
         #   2. real build call: strip user-namespace flags, forward to real bwrap
         cp /usr/bin/bwrap /tmp/bwrap-real
         chmod 755 /tmp/bwrap-real
-        cat > /tmp/bwrap-wrapper << 'BWRAP_WRAPPER'
+        cat > /tmp/bwrap << 'BWRAP_WRAPPER'
         #!/bin/sh
         echo "bwrap-wrapper called: $@" >> /tmp/bwrap-calls.log
         n=0
@@ -96,12 +96,17 @@ spec:
         echo "exec /tmp/bwrap-real $@" >> /tmp/bwrap-calls.log
         exec /tmp/bwrap-real "$@"
         BWRAP_WRAPPER
-        chmod 755 /tmp/bwrap-wrapper
-        # util-linux provides mount; fall back to the busybox applet if not in PATH yet
-        if ! mount --bind /tmp/bwrap-wrapper /usr/bin/bwrap 2>/dev/null; then
-          busybox mount -o bind /tmp/bwrap-wrapper /usr/bin/bwrap
+        chmod 755 /tmp/bwrap
+        # Bind-mount replaces /usr/bin/bwrap so both PATH and absolute-path callers hit
+        # the wrapper. Requires util-linux in the image (see apexpack.yaml). While that
+        # image is being rebuilt, fall back to PATH shadowing — this intercepts the
+        # capability check but may miss melange's real build call if it uses an absolute path.
+        if mount --bind /tmp/bwrap /usr/bin/bwrap 2>/dev/null; then
+          echo "bwrap wrapper bind-mounted at /usr/bin/bwrap"
+        else
+          export PATH=/tmp:$PATH
+          echo "bwrap wrapper in PATH (rebuild image with util-linux for full coverage)"
         fi
-        echo "bwrap wrapper mounted at /usr/bin/bwrap"
 
         if [ -d "$(workspaces.profiles.path)/profiles" ]; then
           PROFILES_DIR="$(workspaces.profiles.path)/profiles"
