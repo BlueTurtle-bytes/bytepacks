@@ -12,8 +12,6 @@ spec:
       value: main
     - name: IMAGE
       value: ttl.sh/nimbopacks:1h
-    - name: RUNTIME
-      value: golang
     - name: FAIL_ON
       value: high
   workspaces:

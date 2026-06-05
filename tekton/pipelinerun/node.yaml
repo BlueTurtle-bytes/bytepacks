@@ -12,8 +12,6 @@ spec:
       value: master
     - name: IMAGE
       value: ttl.sh/node-sample:1h
-    - name: RUNTIME
-      value: node
     - name: FAIL_ON
       value: high
   workspaces:

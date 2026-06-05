@@ -12,8 +12,6 @@ spec:
       value: main
     - name: IMAGE
       value: ttl.sh/angular-realworld:1h
-    - name: RUNTIME
-      value: webserver
     - name: FAIL_ON
       value: high
   workspaces:
