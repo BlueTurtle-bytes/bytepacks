@@ -564,12 +564,28 @@ func runApko(configFile string, opts Options) error {
 		return runApkoInDocker(configFile, imageTag, outputTar, opts)
 	}
 
-	return runToolInDir(opts.OutputDir, "apko", []string{
+	args := []string{
 		"build", configFile,
 		imageTag,
 		outputTar,
 		"--arch", melangeArch(),
-	})
+	}
+
+	if opts.TLSExtraCA == "" {
+		return runToolInDir(opts.OutputDir, "apko", args)
+	}
+
+	// Corporate proxy: merge the system CA bundle with the extra CA into a temp
+	// file and expose it via SSL_CERT_FILE so apko's Go TLS stack trusts it.
+	absCA, _ := filepath.Abs(opts.TLSExtraCA)
+	merged, err := mergeCABundles(absCA)
+	if err != nil {
+		fmt.Printf("  → WARN: could not prepare merged CA bundle (%v); apko may fail on TLS\n", err)
+		return runToolInDir(opts.OutputDir, "apko", args)
+	}
+	defer os.Remove(merged)
+
+	return runToolInDirEnv(opts.OutputDir, "apko", args, append(os.Environ(), "SSL_CERT_FILE="+merged))
 }
 
 // runApkoInDocker runs apko inside a Linux container on macOS.
@@ -676,6 +692,64 @@ func runToolEnv(name string, args []string, env []string) error {
 		return fmt.Errorf("%s exited with error: %w", name, err)
 	}
 	return nil
+}
+
+// runToolInDirEnv is like runToolInDir but uses the provided environment
+// instead of inheriting the process environment.
+func runToolInDirEnv(dir, name string, args []string, env []string) error {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return fmt.Errorf("%s not found in PATH", name)
+	}
+
+	cmd := exec.Command(path, args...)
+	cmd.Dir = dir
+	cmd.Env = env
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	fmt.Printf("  → %s %s\n", name, strings.Join(args, " "))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s exited with error: %w", name, err)
+	}
+	return nil
+}
+
+// mergeCABundles concatenates the system CA bundle with an extra CA certificate
+// into a temp PEM file so a single SSL_CERT_FILE covers both.
+func mergeCABundles(extraCAPath string) (string, error) {
+	systemBundles := []string{
+		"/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu
+		"/etc/pki/tls/certs/ca-bundle.crt",   // RHEL/CentOS
+		"/etc/ssl/ca-bundle.pem",              // SUSE
+		"/etc/ssl/cert.pem",                   // Alpine/Wolfi
+	}
+
+	var systemCerts []byte
+	for _, p := range systemBundles {
+		if data, err := os.ReadFile(p); err == nil {
+			systemCerts = data
+			break
+		}
+	}
+
+	extraCerts, err := os.ReadFile(extraCAPath)
+	if err != nil {
+		return "", fmt.Errorf("reading extra CA: %w", err)
+	}
+
+	f, err := os.CreateTemp("", "apexpack-ca-*.pem")
+	if err != nil {
+		return "", fmt.Errorf("creating temp CA bundle: %w", err)
+	}
+	defer f.Close()
+
+	if len(systemCerts) > 0 {
+		f.Write(systemCerts)
+		f.Write([]byte("\n"))
+	}
+	f.Write(extraCerts)
+
+	return f.Name(), nil
 }
 
 // applyDefaults fills in zero-value options.
