@@ -7,9 +7,9 @@ spec:
     name: apexpack-build-and-push
   params:
     - name: GIT_URL
-      value: https://github.com/heroku/node-js-sample
+      value: https://github.com/expressjs/express
     - name: GIT_REVISION
-      value: main
+      value: master
     - name: IMAGE
       value: ttl.sh/node-sample:1h
     - name: RUNTIME
