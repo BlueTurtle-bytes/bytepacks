@@ -97,7 +97,10 @@ spec:
         exec /tmp/bwrap-real "$@"
         BWRAP_WRAPPER
         chmod 755 /tmp/bwrap-wrapper
-        mount --bind /tmp/bwrap-wrapper /usr/bin/bwrap
+        # util-linux provides mount; fall back to the busybox applet if not in PATH yet
+        if ! mount --bind /tmp/bwrap-wrapper /usr/bin/bwrap 2>/dev/null; then
+          busybox mount -o bind /tmp/bwrap-wrapper /usr/bin/bwrap
+        fi
         echo "bwrap wrapper mounted at /usr/bin/bwrap"
 
         if [ -d "$(workspaces.profiles.path)/profiles" ]; then
