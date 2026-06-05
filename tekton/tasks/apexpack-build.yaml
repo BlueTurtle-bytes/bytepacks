@@ -87,7 +87,7 @@ spec:
           eval "a=\$arg_$i"; i=$((i+1))
           if [ "$skip_next" = "1" ]; then skip_next=0; continue; fi
           case "$a" in
-            --unshare-user) ;;
+            --unshare-user|--unshare-user-try) ;;
             --unshare-all) set -- "$@" --unshare-pid --unshare-net --unshare-uts --unshare-ipc ;;
             --uid|--gid) skip_next=1 ;;
             *) set -- "$@" "$a" ;;
@@ -99,6 +99,9 @@ spec:
         chmod 755 /tmp/bwrap
         export PATH=/tmp:$PATH
         echo "bwrap wrapper ready: $(head -1 /tmp/bwrap)"
+        # Allow bwrap uid mapping inside Docker userns-remap containers
+        echo "root:0:65536" > /etc/subuid
+        echo "root:0:65536" > /etc/subgid
 
         if [ -d "$(workspaces.profiles.path)/profiles" ]; then
           PROFILES_DIR="$(workspaces.profiles.path)/profiles"
