@@ -60,15 +60,15 @@ spec:
         set -e
 
         # bwrap --unshare-user fails when the container runtime uses userns-remap
-        # (Docker on Colima QEMU). We are already root in a privileged container so
-        # user-namespace isolation is redundant. Shadow the real bwrap with a wrapper
-        # that strips the user-namespace flags before forwarding the call.
-        # melange calls /usr/bin/bwrap by absolute path, so PATH shadowing doesn't work.
-        # Use mount --bind to replace the binary directly.
+        # (Docker on Colima QEMU). We are root in a privileged container so user-namespace
+        # isolation is redundant. Shadow /usr/bin/bwrap via mount --bind so both the
+        # capability pre-check AND absolute-path build invocations hit the wrapper.
         # The wrapper handles two cases:
-        #   1. melange's capability pre-check: bwrap --unshare-user <cmd> with no mounts -> exit 0
-        #   2. real build call: strip user-namespace flags (blocked by Docker userns-remap on Colima)
-        cat > /tmp/bwrap << 'BWRAP_WRAPPER'
+        #   1. capability pre-check (no mount flags): exit 0
+        #   2. real build call: strip user-namespace flags, forward to real bwrap
+        cp /usr/bin/bwrap /tmp/bwrap-real
+        chmod 755 /tmp/bwrap-real
+        cat > /tmp/bwrap-wrapper << 'BWRAP_WRAPPER'
         #!/bin/sh
         echo "bwrap-wrapper called: $@" >> /tmp/bwrap-calls.log
         n=0
@@ -93,15 +93,12 @@ spec:
             *) set -- "$@" "$a" ;;
           esac
         done
-        echo "exec /usr/bin/bwrap $@" >> /tmp/bwrap-calls.log
-        exec /usr/bin/bwrap "$@"
+        echo "exec /tmp/bwrap-real $@" >> /tmp/bwrap-calls.log
+        exec /tmp/bwrap-real "$@"
         BWRAP_WRAPPER
-        chmod 755 /tmp/bwrap
-        export PATH=/tmp:$PATH
-        echo "bwrap wrapper ready: $(head -1 /tmp/bwrap)"
-        # Allow bwrap uid mapping inside Docker userns-remap containers
-        echo "root:0:65536" > /etc/subuid
-        echo "root:0:65536" > /etc/subgid
+        chmod 755 /tmp/bwrap-wrapper
+        mount --bind /tmp/bwrap-wrapper /usr/bin/bwrap
+        echo "bwrap wrapper mounted at /usr/bin/bwrap"
 
         if [ -d "$(workspaces.profiles.path)/profiles" ]; then
           PROFILES_DIR="$(workspaces.profiles.path)/profiles"
