@@ -58,6 +58,7 @@ spec:
       script: |
         #!/bin/sh
         set -e
+        trap 'echo "=== /tmp/bwrap-calls.log ==="; cat /tmp/bwrap-calls.log 2>/dev/null || echo "(empty)"; echo "==="' EXIT
 
         # bwrap --unshare-user fails when the container runtime uses userns-remap
         # (Docker on Colima QEMU). We are root in a privileged container so user-namespace
