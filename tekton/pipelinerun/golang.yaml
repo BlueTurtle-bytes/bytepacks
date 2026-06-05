@@ -7,11 +7,11 @@ spec:
     name: apexpack-build-and-push
   params:
     - name: GIT_URL
-      value: https://github.com/Nimbostack/nimbopacks
+      value: https://github.com/prometheus/node_exporter
     - name: GIT_REVISION
       value: main
     - name: IMAGE
-      value: ttl.sh/nimbopacks:1h
+      value: ttl.sh/node-exporter:1h
     - name: FAIL_ON
       value: high
   workspaces:

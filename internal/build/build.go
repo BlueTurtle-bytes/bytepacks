@@ -251,12 +251,12 @@ func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
 	}
 
 	// Inject a Maven settings.xml step for corporate Artifactory mirrors.
-	// Prepended unconditionally when the profile declares maven_mirror_url.
-	// Credentials are never stored in the profile — they are read from
-	// MAVEN_MIRROR_USER / MAVEN_MIRROR_PASSWORD env vars on the host (set by a
-	// Kubernetes secret in Tekton) and forwarded into the melange sandbox here.
-	// The unquoted heredoc lets the shell expand those vars at step runtime.
-	if p.Build.MavenMirrorURL != "" {
+	// Only active when maven_mirror_url is set AND MAVEN_MIRROR_USER is present in the
+	// environment (sourced from the Kubernetes secret via the Tekton task).
+	// Without credentials the mirror step is skipped and Maven resolves from Maven Central
+	// directly — this keeps local/CI-without-Artifactory builds working.
+	// Credentials are never stored in the profile; they arrive via env vars only.
+	if p.Build.MavenMirrorURL != "" && os.Getenv("MAVEN_MIRROR_USER") != "" {
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)
 		}

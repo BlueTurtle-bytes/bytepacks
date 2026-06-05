@@ -55,6 +55,24 @@ spec:
     - name: build
       image: apexpack:latest
       imagePullPolicy: IfNotPresent
+      env:
+        # Maven Artifactory mirror credentials. Sourced from the 'artifactory-creds' secret
+        # when it exists; optional so pods run fine without Artifactory (local / OSS builds).
+        # Create: kubectl create secret generic artifactory-creds \
+        #           --from-literal=MAVEN_MIRROR_USER=<user> \
+        #           --from-literal=MAVEN_MIRROR_PASSWORD=<token>
+        - name: MAVEN_MIRROR_USER
+          valueFrom:
+            secretKeyRef:
+              name: artifactory-creds
+              key: MAVEN_MIRROR_USER
+              optional: true
+        - name: MAVEN_MIRROR_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: artifactory-creds
+              key: MAVEN_MIRROR_PASSWORD
+              optional: true
       script: |
         #!/bin/sh
         set -e

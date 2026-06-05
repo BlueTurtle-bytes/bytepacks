@@ -75,9 +75,11 @@ build:
   caches:
     - /home/build/.m2/repository
 
-  # Route all Maven downloads through the corporate Artifactory mirror.
-  # Replace with your actual Artifactory URL before rebuilding the image.
-  maven_mirror_url: "https://artifactory.corp.example.com/artifactory/libs-release"
+  # Corporate Artifactory / Nexus mirror for Maven.
+  # Set to your actual URL; leave empty ("") to resolve directly from Maven Central.
+  # settings.xml is only injected when this is non-empty AND the 'artifactory-creds'
+  # Kubernetes secret is present (MAVEN_MIRROR_USER env var must be set).
+  maven_mirror_url: ""
 
   tls_ca_env: []  # JVM ignores SSL_CERT_FILE; tls_ca_pre_step + build command handle it
   tls_ca_pre_step: |
