@@ -68,33 +68,37 @@ spec:
         # The wrapper handles two cases:
         #   1. melange's capability pre-check: bwrap --unshare-user <cmd> with no mounts -> exit 0
         #   2. real build call: strip user-namespace flags (blocked by Docker userns-remap on Colima)
-        cp /usr/bin/bwrap /tmp/bwrap-real
-        cat > /tmp/bwrap-wrapper << 'BWRAP_WRAPPER'
+        cat > /tmp/bwrap << 'BWRAP_WRAPPER'
         #!/bin/sh
-        echo "bwrap-wrapper: $@" >> /tmp/bwrap-calls.log
+        echo "bwrap-wrapper called: $@" >> /tmp/bwrap-calls.log
+        n=0
+        for a in "$@"; do n=$((n+1)); eval "arg_$n=\$a"; done
         has_mounts=0
-        for a in "$@"; do
+        i=1
+        while [ $i -le $n ]; do
+          eval "a=\$arg_$i"; i=$((i+1))
           case "$a" in --bind|--ro-bind|--dev-bind|--proc|--dev|--tmpfs) has_mounts=1; break;; esac
         done
-        if [ "$has_mounts" = "0" ]; then echo "bwrap-wrapper: capability check -> exit 0" >> /tmp/bwrap-calls.log; exit 0; fi
-        args=""
+        if [ "$has_mounts" = "0" ]; then echo "capability check -> exit 0" >> /tmp/bwrap-calls.log; exit 0; fi
+        set --
         skip_next=0
-        for a in "$@"; do
+        i=1
+        while [ $i -le $n ]; do
+          eval "a=\$arg_$i"; i=$((i+1))
           if [ "$skip_next" = "1" ]; then skip_next=0; continue; fi
           case "$a" in
             --unshare-user) ;;
-            --unshare-all) args="$args --unshare-pid --unshare-net --unshare-uts --unshare-ipc" ;;
+            --unshare-all) set -- "$@" --unshare-pid --unshare-net --unshare-uts --unshare-ipc ;;
             --uid|--gid) skip_next=1 ;;
-            *) args="$args $a" ;;
+            *) set -- "$@" "$a" ;;
           esac
         done
-        echo "bwrap-wrapper: exec bwrap $args" >> /tmp/bwrap-calls.log
-        exec /tmp/bwrap-real $args
+        echo "exec /usr/bin/bwrap $@" >> /tmp/bwrap-calls.log
+        exec /usr/bin/bwrap "$@"
         BWRAP_WRAPPER
-        chmod 755 /tmp/bwrap-wrapper
-        cat /tmp/bwrap-wrapper > /usr/bin/bwrap
-        chmod 755 /usr/bin/bwrap
-        echo "bwrap wrapper installed: $(head -1 /usr/bin/bwrap)"
+        chmod 755 /tmp/bwrap
+        export PATH=/tmp:$PATH
+        echo "bwrap wrapper ready: $(head -1 /tmp/bwrap)"
 
         if [ -d "$(workspaces.profiles.path)/profiles" ]; then
           PROFILES_DIR="$(workspaces.profiles.path)/profiles"
