@@ -79,6 +79,8 @@ build:
   # Set to your actual URL; leave empty to resolve directly from Maven Central.
   # settings.xml is only injected when this is non-empty AND the 'artifactory-creds'
   # Kubernetes secret is present (MAVEN_MIRROR_USER env var must be set).
+  # Replace with your Artifactory virtual repo URL, e.g.:
+  # https://<host>/artifactory/maven-virtual
   maven_mirror_url: ""
 
   # settings.xml template to use. Built-ins: "default" (mirrors+servers only),
