@@ -601,8 +601,12 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 		// apk, curl, and any other TLS-using tool inside the container.
 		// SSL_CERT_DIR is not used because CGO-linked binaries (like some melange
 		// builds) read only SSL_CERT_FILE / system cert store, not SSL_CERT_DIR.
+		// Merge system CAs (try known Wolfi/Alpine/Debian locations) + corporate CA
+		// into a single file, then exec melange with SSL_CERT_FILE pointing to it.
+		// The subshell (cat ... 2>/dev/null; ...) means a missing system bundle is
+		// non-fatal — we still get at least the corporate CA in the merged file.
 		shellCmd := fmt.Sprintf(
-			"cat /etc/ssl/certs/ca-certificates.crt /extra-certs/%s > /tmp/apexpack-ca.pem && export SSL_CERT_FILE=/tmp/apexpack-ca.pem && exec melange %s",
+			"(for f in /etc/ssl/certs/ca-certificates.crt /etc/ssl/cert.pem /etc/pki/tls/certs/ca-bundle.crt; do [ -f \"$f\" ] && cat \"$f\" && break; done; cat /extra-certs/%s) > /tmp/apexpack-ca.pem && echo '→ merged corporate CA into /tmp/apexpack-ca.pem' && export SSL_CERT_FILE=/tmp/apexpack-ca.pem && exec melange %s",
 			caName,
 			strings.Join(melangeCmdArgs, " "),
 		)
