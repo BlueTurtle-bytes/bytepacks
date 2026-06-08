@@ -169,21 +169,48 @@ func Run(plan *types.BuildPlan, opts Options) error {
 
 	// When a corporate CA is provided, copy it into the source dir so the melange
 	// sandbox (source mounted at /home/build) can access it at /home/build/.apexpack-ca.crt.
-	// If the profile declares a tls_ca_pre_step, prepend it to the pipeline so
-	// runtimes with their own cert stores (JVM keytool, .NET update-ca-certificates)
-	// can import the CA before the main build command runs.
+	// Two kinds of TLS pipeline steps may be injected, in this order (first = outermost):
+	//   1. Bundle step — for profiles using tls_ca_env (Go, Node, Python): merges system CAs
+	//      + corp CA into .apexpack-ca-bundle.pem so SSL_CERT_FILE doesn't drop system CAs.
+	//   2. Profile pre-step — for runtimes with their own cert stores (JVM keytool, .NET).
 	if opts.TLSExtraCA != "" {
 		absCA, _ := filepath.Abs(opts.TLSExtraCA)
 		caCopyPath := filepath.Join(opts.SourceDir, ".apexpack-ca.crt")
 		if caData, readErr := os.ReadFile(absCA); readErr == nil {
 			if writeErr := os.WriteFile(caCopyPath, caData, 0o644); writeErr == nil {
 				defer os.Remove(caCopyPath)
+				pipelineModified := false
+
+				// Prepend the profile's runtime-specific pre-step (e.g. keytool for JVM).
 				if opts.Profile != nil && opts.Profile.Build.TLSCAPreStep != "" {
 					plan.Melange.Pipeline = append(
 						[]types.MelangePipeline{{Runs: opts.Profile.Build.TLSCAPreStep}},
 						plan.Melange.Pipeline...,
 					)
-					// Re-marshal with the injected pre-step.
+					pipelineModified = true
+				}
+
+				// Prepend a bundle-creation step for profiles that use tls_ca_env.
+				// Setting SSL_CERT_FILE to only the corp CA drops all system CAs, which
+				// breaks connections to public endpoints (e.g. proxy.golang.org, pypi.org).
+				// This step merges system CAs + corp CA into a single bundle file that
+				// tls_ca_env vars are pointed at (see buildMelangeConfig).
+				if opts.Profile != nil && len(opts.Profile.Build.TLSCAEnv) > 0 {
+					const bundleStep = `if [ -f "/home/build/.apexpack-ca.crt" ]; then
+  if [ -f "/etc/ssl/certs/ca-certificates.crt" ]; then
+    cat /etc/ssl/certs/ca-certificates.crt /home/build/.apexpack-ca.crt > /home/build/.apexpack-ca-bundle.pem
+  else
+    cp /home/build/.apexpack-ca.crt /home/build/.apexpack-ca-bundle.pem
+  fi
+fi`
+					plan.Melange.Pipeline = append(
+						[]types.MelangePipeline{{Runs: bundleStep}},
+						plan.Melange.Pipeline...,
+					)
+					pipelineModified = true
+				}
+
+				if pipelineModified {
 					melangeYAML, err = marshalYAML(&plan.Melange)
 					if err != nil {
 						return fmt.Errorf("marshalling melange config (with TLS pre-step): %w", err)
@@ -350,7 +377,7 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)
 		}
-		caPath := "/home/build/.apexpack-ca.crt"
+		caPath := "/home/build/.apexpack-ca-bundle.pem"
 		for _, key := range p.Build.TLSCAEnv {
 			if _, exists := cfg.Environment.Env[key]; !exists {
 				cfg.Environment.Env[key] = caPath
