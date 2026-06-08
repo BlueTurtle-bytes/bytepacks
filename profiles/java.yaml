@@ -65,7 +65,9 @@ build:
     if [ -f "/home/build/.apexpack-truststore.p12" ]; then
       export MAVEN_OPTS="${MAVEN_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
     fi
-    mvn package -DskipTests -B -q
+    MVN_SETTINGS=""
+    if [ -f "/home/build/.m2/settings.xml" ]; then MVN_SETTINGS="-s /home/build/.m2/settings.xml"; fi
+    mvn package -DskipTests -B -q $MVN_SETTINGS
     mkdir -p /home/build/output/app
     cp target/*.jar /home/build/output/app/app.jar
   env:
@@ -115,7 +117,9 @@ build:
         if [ -f "/home/build/.apexpack-truststore.p12" ]; then
           export MAVEN_OPTS="${MAVEN_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
         fi
-        mvn package -DskipTests -B -q -Dquarkus.package.jar.type=uber-jar
+        MVN_SETTINGS=""
+        if [ -f "/home/build/.m2/settings.xml" ]; then MVN_SETTINGS="-s /home/build/.m2/settings.xml"; fi
+        mvn package -DskipTests -B -q -Dquarkus.package.jar.type=uber-jar $MVN_SETTINGS
         mkdir -p /home/build/output/app
         cp target/*-runner.jar /home/build/output/app/app.jar
     spring-boot-gradle:
