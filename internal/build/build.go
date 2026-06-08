@@ -562,6 +562,19 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 		}
 	}
 
+	// APEXPACK_DOCKER_EXTRA_HOSTS: comma-separated host:ip pairs injected as
+	// --add-host flags. Use this to make corporate hostnames resolvable inside
+	// the melange container on macOS where --network=host is not supported.
+	// Example: export APEXPACK_DOCKER_EXTRA_HOSTS="artifactory.corp:10.0.0.5"
+	if extraHosts := os.Getenv("APEXPACK_DOCKER_EXTRA_HOSTS"); extraHosts != "" {
+		for _, entry := range strings.Split(extraHosts, ",") {
+			entry = strings.TrimSpace(entry)
+			if entry != "" {
+				args = append(args, "--add-host", entry)
+			}
+		}
+	}
+
 	args = append(args,
 		"cgr.dev/chainguard/melange",
 		"build", containerConfig,
