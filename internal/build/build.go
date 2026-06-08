@@ -555,26 +555,13 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 		}
 	}
 
-	// Inject corporate CA cert so melange can reach Wolfi repositories through
-	// a TLS-intercepting proxy. SSL_CERT_DIR adds the cert directory alongside
-	// the container's existing system certs — both are trusted.
-	if opts.TLSExtraCA != "" {
-		absCA, err := filepath.Abs(opts.TLSExtraCA)
-		if err != nil {
-			return fmt.Errorf("resolving TLS CA path: %w", err)
-		}
-		args = append(args,
-			"-v", absCA+":/extra-certs/"+filepath.Base(absCA)+":ro",
-			"-e", "SSL_CERT_DIR=/etc/ssl/certs:/extra-certs",
-		)
-	}
-
 	// Forward Go toolchain env vars from the host into the build container.
-	// This ensures the container's go build uses the same proxy, CA, and
-	// checksum settings as the host — essential in corporate proxy environments.
+	// SSL_CERT_FILE/SSL_CERT_DIR are intentionally excluded here — when a
+	// corporate CA is set we manage them ourselves via the shell wrapper below;
+	// when not set, forwarding host SSL paths (macOS-specific) into a Linux
+	// container breaks TLS entirely.
 	for _, key := range []string{
-		"GOPROXY", "GONOSUMDB", "GONOSUMCHECK", "GOINSECURE", "GOPRIVATE",
-		"GOFLAGS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+		"GOPROXY", "GONOSUMDB", "GONOSUMCHECK", "GOINSECURE", "GOPRIVATE", "GOFLAGS",
 	} {
 		if val := os.Getenv(key); val != "" {
 			args = append(args, "-e", key+"="+val)
@@ -594,14 +581,41 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 		}
 	}
 
-	args = append(args,
-		"cgr.dev/chainguard/melange",
+	melangeCmdArgs := []string{
 		"build", containerConfig,
 		"--source-dir", "/work/src",
 		"--out-dir", "/work/output/packages",
 		"--signing-key", containerKey,
 		"--arch", melangeArch(),
-	)
+	}
+
+	if opts.TLSExtraCA != "" {
+		absCA, err := filepath.Abs(opts.TLSExtraCA)
+		if err != nil {
+			return fmt.Errorf("resolving TLS CA path: %w", err)
+		}
+		caName := filepath.Base(absCA)
+		// Mount the corporate CA and use a shell wrapper to merge it with the
+		// container's system CA bundle before exec-ing melange. This creates a
+		// single SSL_CERT_FILE that covers both CGO and non-CGO Go binaries,
+		// apk, curl, and any other TLS-using tool inside the container.
+		// SSL_CERT_DIR is not used because CGO-linked binaries (like some melange
+		// builds) read only SSL_CERT_FILE / system cert store, not SSL_CERT_DIR.
+		shellCmd := fmt.Sprintf(
+			"cat /etc/ssl/certs/ca-certificates.crt /extra-certs/%s > /tmp/apexpack-ca.pem && export SSL_CERT_FILE=/tmp/apexpack-ca.pem && exec melange %s",
+			caName,
+			strings.Join(melangeCmdArgs, " "),
+		)
+		args = append(args,
+			"-v", absCA+":/extra-certs/"+caName+":ro",
+			"--entrypoint", "/bin/sh",
+			"cgr.dev/chainguard/melange",
+			"-c", shellCmd,
+		)
+	} else {
+		args = append(args, "cgr.dev/chainguard/melange")
+		args = append(args, melangeCmdArgs...)
+	}
 
 	return runTool("docker", args)
 }
