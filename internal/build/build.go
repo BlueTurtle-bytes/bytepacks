@@ -167,43 +167,31 @@ func Run(plan *types.BuildPlan, opts Options) error {
 	}
 	fmt.Printf("  → wrote %s\n", apkoFile)
 
-	// When a corporate CA is provided:
-	// 1. Copy the raw cert into the source dir so the melange sandbox can read it
-	//    at /home/build/.apexpack-ca.crt.
-	// 2. Prepend a universal step that merges system CAs + corporate CA into a
-	//    single PEM bundle at /home/build/.apexpack-ca-bundle.pem. SSL_CERT_FILE
-	//    is set to this path (see buildMelangeConfig) so Go, .NET, Python, Rust,
-	//    and curl all pick it up without any per-profile configuration.
-	// 3. If the profile also declares a tls_ca_pre_step (e.g. Java keytool), inject
-	//    it after the universal step so the bundle exists when keytool runs.
+	// When a corporate CA is provided, copy it into the source dir so the melange
+	// sandbox (source mounted at /home/build) can access it at /home/build/.apexpack-ca.crt.
+	// If the profile declares a tls_ca_pre_step, prepend it to the pipeline so
+	// runtimes with their own cert stores (JVM keytool, .NET update-ca-certificates)
+	// can import the CA before the main build command runs.
 	if opts.TLSExtraCA != "" {
 		absCA, _ := filepath.Abs(opts.TLSExtraCA)
 		caCopyPath := filepath.Join(opts.SourceDir, ".apexpack-ca.crt")
 		if caData, readErr := os.ReadFile(absCA); readErr == nil {
 			if writeErr := os.WriteFile(caCopyPath, caData, 0o644); writeErr == nil {
 				defer os.Remove(caCopyPath)
-
-				universalStep := `CA_BUNDLE=/home/build/.apexpack-ca-bundle.pem
-if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
-  cat /etc/ssl/certs/ca-certificates.crt > "$CA_BUNDLE"
-  printf '\n' >> "$CA_BUNDLE"
-fi
-cat /home/build/.apexpack-ca.crt >> "$CA_BUNDLE"
-echo "→ CA bundle ready: system CAs + corporate CA"`
-
-				preSteps := []types.MelangePipeline{{Runs: universalStep}}
 				if opts.Profile != nil && opts.Profile.Build.TLSCAPreStep != "" {
-					preSteps = append(preSteps, types.MelangePipeline{Runs: opts.Profile.Build.TLSCAPreStep})
-				}
-				plan.Melange.Pipeline = append(preSteps, plan.Melange.Pipeline...)
-
-				melangeYAML, err = marshalYAML(&plan.Melange)
-				if err != nil {
-					return fmt.Errorf("marshalling melange config (with TLS pre-step): %w", err)
-				}
-				melangeData = []byte(melangeYAML)
-				if err := os.WriteFile(melangeFile, melangeData, 0o644); err != nil {
-					return fmt.Errorf("writing melange.yaml (with TLS pre-step): %w", err)
+					plan.Melange.Pipeline = append(
+						[]types.MelangePipeline{{Runs: opts.Profile.Build.TLSCAPreStep}},
+						plan.Melange.Pipeline...,
+					)
+					// Re-marshal with the injected pre-step.
+					melangeYAML, err = marshalYAML(&plan.Melange)
+					if err != nil {
+						return fmt.Errorf("marshalling melange config (with TLS pre-step): %w", err)
+					}
+					melangeData = []byte(melangeYAML)
+					if err := os.WriteFile(melangeFile, melangeData, 0o644); err != nil {
+						return fmt.Errorf("writing melange.yaml (with TLS pre-step): %w", err)
+					}
 				}
 			}
 		}
@@ -354,25 +342,18 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 		}
 	}
 
-	// When a corporate CA is provided, set standard env vars so all runtimes that
-	// respect SSL_CERT_FILE (Go, .NET, Python, Rust, curl) trust the merged bundle.
-	// The bundle (system CAs + corporate CA) is created by the universal pre-step
-	// injected in Run() before the build executes.
-	// Java is the exception — it does not respect SSL_CERT_FILE and needs the
-	// keytool pre-step declared in java.yaml instead.
-	if opts.TLSExtraCA != "" {
+	// When a corporate CA is provided, inject the env vars declared by the profile
+	// into the melange sandbox. The cert is copied to opts.SourceDir before melange
+	// runs (see Run()), making it accessible inside the sandbox at /home/build/.
+	// The keytool/update-ca-certificates pre-step (if any) is also injected in Run().
+	if opts.TLSExtraCA != "" && len(p.Build.TLSCAEnv) > 0 {
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)
 		}
-		bundle := "/home/build/.apexpack-ca-bundle.pem"
-		for key, val := range map[string]string{
-			"SSL_CERT_FILE":       bundle,
-			"NODE_EXTRA_CA_CERTS": bundle,
-			"REQUESTS_CA_BUNDLE":  bundle,
-			"CURL_CA_BUNDLE":      bundle,
-		} {
+		caPath := "/home/build/.apexpack-ca.crt"
+		for _, key := range p.Build.TLSCAEnv {
 			if _, exists := cfg.Environment.Env[key]; !exists {
-				cfg.Environment.Env[key] = val
+				cfg.Environment.Env[key] = caPath
 			}
 		}
 	}
@@ -555,13 +536,26 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 		}
 	}
 
+	// Inject corporate CA cert so melange can reach Wolfi repositories through
+	// a TLS-intercepting proxy. SSL_CERT_DIR adds the cert directory alongside
+	// the container's existing system certs — both are trusted.
+	if opts.TLSExtraCA != "" {
+		absCA, err := filepath.Abs(opts.TLSExtraCA)
+		if err != nil {
+			return fmt.Errorf("resolving TLS CA path: %w", err)
+		}
+		args = append(args,
+			"-v", absCA+":/extra-certs/"+filepath.Base(absCA)+":ro",
+			"-e", "SSL_CERT_DIR=/etc/ssl/certs:/extra-certs",
+		)
+	}
+
 	// Forward Go toolchain env vars from the host into the build container.
-	// SSL_CERT_FILE/SSL_CERT_DIR are intentionally excluded here — when a
-	// corporate CA is set we manage them ourselves via the shell wrapper below;
-	// when not set, forwarding host SSL paths (macOS-specific) into a Linux
-	// container breaks TLS entirely.
+	// This ensures the container's go build uses the same proxy, CA, and
+	// checksum settings as the host — essential in corporate proxy environments.
 	for _, key := range []string{
-		"GOPROXY", "GONOSUMDB", "GONOSUMCHECK", "GOINSECURE", "GOPRIVATE", "GOFLAGS",
+		"GOPROXY", "GONOSUMDB", "GONOSUMCHECK", "GOINSECURE", "GOPRIVATE",
+		"GOFLAGS", "SSL_CERT_FILE", "SSL_CERT_DIR",
 	} {
 		if val := os.Getenv(key); val != "" {
 			args = append(args, "-e", key+"="+val)
@@ -581,45 +575,14 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 		}
 	}
 
-	melangeCmdArgs := []string{
+	args = append(args,
+		"cgr.dev/chainguard/melange",
 		"build", containerConfig,
 		"--source-dir", "/work/src",
 		"--out-dir", "/work/output/packages",
 		"--signing-key", containerKey,
 		"--arch", melangeArch(),
-	}
-
-	if opts.TLSExtraCA != "" {
-		absCA, err := filepath.Abs(opts.TLSExtraCA)
-		if err != nil {
-			return fmt.Errorf("resolving TLS CA path: %w", err)
-		}
-		caName := filepath.Base(absCA)
-		// Mount the corporate CA and use a shell wrapper to merge it with the
-		// container's system CA bundle before exec-ing melange. This creates a
-		// single SSL_CERT_FILE that covers both CGO and non-CGO Go binaries,
-		// apk, curl, and any other TLS-using tool inside the container.
-		// SSL_CERT_DIR is not used because CGO-linked binaries (like some melange
-		// builds) read only SSL_CERT_FILE / system cert store, not SSL_CERT_DIR.
-		// Merge system CAs (try known Wolfi/Alpine/Debian locations) + corporate CA
-		// into a single file, then exec melange with SSL_CERT_FILE pointing to it.
-		// The subshell (cat ... 2>/dev/null; ...) means a missing system bundle is
-		// non-fatal — we still get at least the corporate CA in the merged file.
-		shellCmd := fmt.Sprintf(
-			"(for f in /etc/ssl/certs/ca-certificates.crt /etc/ssl/cert.pem /etc/pki/tls/certs/ca-bundle.crt; do [ -f \"$f\" ] && cat \"$f\" && break; done; cat /extra-certs/%s) > /tmp/apexpack-ca.pem && echo '→ merged corporate CA into /tmp/apexpack-ca.pem' && export SSL_CERT_FILE=/tmp/apexpack-ca.pem && exec melange %s",
-			caName,
-			strings.Join(melangeCmdArgs, " "),
-		)
-		args = append(args,
-			"-v", absCA+":/extra-certs/"+caName+":ro",
-			"--entrypoint", "/bin/sh",
-			"cgr.dev/chainguard/melange",
-			"-c", shellCmd,
-		)
-	} else {
-		args = append(args, "cgr.dev/chainguard/melange")
-		args = append(args, melangeCmdArgs...)
-	}
+	)
 
 	return runTool("docker", args)
 }

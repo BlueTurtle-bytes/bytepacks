@@ -47,6 +47,12 @@ build:
     DOTNET_NOLOGO: "1"
     NUGET_PACKAGES: "/home/build/.nuget/packages"
 
+  tls_ca_pre_step: |
+    if [ -f "/home/build/.apexpack-ca.crt" ]; then
+      cp /home/build/.apexpack-ca.crt /usr/local/share/ca-certificates/apexpack-corp-ca.crt
+      update-ca-certificates 2>/dev/null || true
+    fi
+
 image:
   # aspnetcore-8-runtime is the ASP.NET Core runtime — no SDK, no compiler.
   # Much smaller than dotnet-8-sdk and has a smaller CVE surface.
