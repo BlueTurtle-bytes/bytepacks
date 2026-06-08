@@ -167,31 +167,43 @@ func Run(plan *types.BuildPlan, opts Options) error {
 	}
 	fmt.Printf("  → wrote %s\n", apkoFile)
 
-	// When a corporate CA is provided, copy it into the source dir so the melange
-	// sandbox (source mounted at /home/build) can access it at /home/build/.apexpack-ca.crt.
-	// If the profile declares a tls_ca_pre_step, prepend it to the pipeline so
-	// runtimes with their own cert stores (JVM keytool, .NET update-ca-certificates)
-	// can import the CA before the main build command runs.
+	// When a corporate CA is provided:
+	// 1. Copy the raw cert into the source dir so the melange sandbox can read it
+	//    at /home/build/.apexpack-ca.crt.
+	// 2. Prepend a universal step that merges system CAs + corporate CA into a
+	//    single PEM bundle at /home/build/.apexpack-ca-bundle.pem. SSL_CERT_FILE
+	//    is set to this path (see buildMelangeConfig) so Go, .NET, Python, Rust,
+	//    and curl all pick it up without any per-profile configuration.
+	// 3. If the profile also declares a tls_ca_pre_step (e.g. Java keytool), inject
+	//    it after the universal step so the bundle exists when keytool runs.
 	if opts.TLSExtraCA != "" {
 		absCA, _ := filepath.Abs(opts.TLSExtraCA)
 		caCopyPath := filepath.Join(opts.SourceDir, ".apexpack-ca.crt")
 		if caData, readErr := os.ReadFile(absCA); readErr == nil {
 			if writeErr := os.WriteFile(caCopyPath, caData, 0o644); writeErr == nil {
 				defer os.Remove(caCopyPath)
+
+				universalStep := `CA_BUNDLE=/home/build/.apexpack-ca-bundle.pem
+if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+  cat /etc/ssl/certs/ca-certificates.crt > "$CA_BUNDLE"
+  printf '\n' >> "$CA_BUNDLE"
+fi
+cat /home/build/.apexpack-ca.crt >> "$CA_BUNDLE"
+echo "→ CA bundle ready: system CAs + corporate CA"`
+
+				preSteps := []types.MelangePipeline{{Runs: universalStep}}
 				if opts.Profile != nil && opts.Profile.Build.TLSCAPreStep != "" {
-					plan.Melange.Pipeline = append(
-						[]types.MelangePipeline{{Runs: opts.Profile.Build.TLSCAPreStep}},
-						plan.Melange.Pipeline...,
-					)
-					// Re-marshal with the injected pre-step.
-					melangeYAML, err = marshalYAML(&plan.Melange)
-					if err != nil {
-						return fmt.Errorf("marshalling melange config (with TLS pre-step): %w", err)
-					}
-					melangeData = []byte(melangeYAML)
-					if err := os.WriteFile(melangeFile, melangeData, 0o644); err != nil {
-						return fmt.Errorf("writing melange.yaml (with TLS pre-step): %w", err)
-					}
+					preSteps = append(preSteps, types.MelangePipeline{Runs: opts.Profile.Build.TLSCAPreStep})
+				}
+				plan.Melange.Pipeline = append(preSteps, plan.Melange.Pipeline...)
+
+				melangeYAML, err = marshalYAML(&plan.Melange)
+				if err != nil {
+					return fmt.Errorf("marshalling melange config (with TLS pre-step): %w", err)
+				}
+				melangeData = []byte(melangeYAML)
+				if err := os.WriteFile(melangeFile, melangeData, 0o644); err != nil {
+					return fmt.Errorf("writing melange.yaml (with TLS pre-step): %w", err)
 				}
 			}
 		}
@@ -342,18 +354,25 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 		}
 	}
 
-	// When a corporate CA is provided, inject the env vars declared by the profile
-	// into the melange sandbox. The cert is copied to opts.SourceDir before melange
-	// runs (see Run()), making it accessible inside the sandbox at /home/build/.
-	// The keytool/update-ca-certificates pre-step (if any) is also injected in Run().
-	if opts.TLSExtraCA != "" && len(p.Build.TLSCAEnv) > 0 {
+	// When a corporate CA is provided, set standard env vars so all runtimes that
+	// respect SSL_CERT_FILE (Go, .NET, Python, Rust, curl) trust the merged bundle.
+	// The bundle (system CAs + corporate CA) is created by the universal pre-step
+	// injected in Run() before the build executes.
+	// Java is the exception — it does not respect SSL_CERT_FILE and needs the
+	// keytool pre-step declared in java.yaml instead.
+	if opts.TLSExtraCA != "" {
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)
 		}
-		caPath := "/home/build/.apexpack-ca.crt"
-		for _, key := range p.Build.TLSCAEnv {
+		bundle := "/home/build/.apexpack-ca-bundle.pem"
+		for key, val := range map[string]string{
+			"SSL_CERT_FILE":       bundle,
+			"NODE_EXTRA_CA_CERTS": bundle,
+			"REQUESTS_CA_BUNDLE":  bundle,
+			"CURL_CA_BUNDLE":      bundle,
+		} {
 			if _, exists := cfg.Environment.Env[key]; !exists {
-				cfg.Environment.Env[key] = caPath
+				cfg.Environment.Env[key] = val
 			}
 		}
 	}
