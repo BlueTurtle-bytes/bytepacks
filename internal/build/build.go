@@ -385,13 +385,17 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 	}
 
 	// Inject a NuGet.Config for corporate Artifactory NuGet feeds.
-	// Fires when nuget_mirror_url is set AND NUGET_MIRROR_USER is present.
-	// Without both, skipped so builds work locally and in OSS CI without Artifactory.
+	// Fires when nuget_mirror_url is set AND either:
+	//   a) NUGET_MIRROR_USER is present (credentials from Kubernetes secret), or
+	//   b) a custom template exists in the profiles dir (template supplies its own auth).
+	// Without either, skipped so builds work locally and in OSS CI without Artifactory.
 	nugetTmplName := p.Build.NuGetSettingsTemplate
 	if nugetTmplName == "" {
 		nugetTmplName = "default"
 	}
-	if p.Build.NuGetMirrorURL != "" && os.Getenv("NUGET_MIRROR_USER") != "" {
+	nugetCustomTemplatePath := filepath.Join(opts.ProfilesDir, "templates", "nuget", nugetTmplName+".xml")
+	_, nugetCustomTemplateExists := os.Stat(nugetCustomTemplatePath)
+	if p.Build.NuGetMirrorURL != "" && (os.Getenv("NUGET_MIRROR_USER") != "" || nugetCustomTemplateExists == nil) {
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)
 		}
