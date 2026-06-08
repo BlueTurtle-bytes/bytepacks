@@ -3,6 +3,7 @@
 package build
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,36 @@ import (
 
 	"github.com/apexpack/apexpack/internal/types"
 )
+
+//go:embed templates/maven/default.xml
+var mavenTemplateDefault string
+
+//go:embed templates/maven/corporate.xml
+var mavenTemplateCorporate string
+
+// loadMavenTemplate returns the settings.xml template for the given name.
+// Lookup order:
+//  1. <profilesDir>/templates/maven/<name>.xml  (user-supplied, wins over built-ins)
+//  2. Built-in embedded template (default / corporate)
+func loadMavenTemplate(name, profilesDir string) (string, error) {
+	if name == "" {
+		name = "default"
+	}
+	if profilesDir != "" {
+		custom := filepath.Join(profilesDir, "templates", "maven", name+".xml")
+		if data, err := os.ReadFile(custom); err == nil {
+			return string(data), nil
+		}
+	}
+	switch name {
+	case "default":
+		return mavenTemplateDefault, nil
+	case "corporate":
+		return mavenTemplateCorporate, nil
+	default:
+		return "", fmt.Errorf("maven settings template %q not found (built-ins: default, corporate; custom: place at <profiles-dir>/templates/maven/%s.xml)", name, name)
+	}
+}
 
 // Options controls the build.
 type Options struct {
@@ -63,6 +94,10 @@ type Options struct {
 func Plan(p *types.Profile, opts Options) (*types.BuildPlan, error) {
 	opts = applyDefaults(opts)
 
+	melangeCfg, err := buildMelangeConfig(p, opts)
+	if err != nil {
+		return nil, err
+	}
 	return &types.BuildPlan{
 		ProjectName:    opts.ProjectName,
 		Version:        opts.Version,
@@ -70,7 +105,7 @@ func Plan(p *types.Profile, opts Options) (*types.BuildPlan, error) {
 		Framework:      opts.Framework,
 		PackageManager: opts.PackageManager,
 		ProcfileCmd:    readProcfileCmd(opts.SourceDir),
-		Melange:        buildMelangeConfig(p, opts),
+		Melange:        melangeCfg,
 		Apko:           buildApkoConfig(p, opts),
 	}, nil
 }
@@ -208,7 +243,7 @@ func marshalYAML(v any) (string, error) {
 
 // buildMelangeConfig constructs a MelangeConfig from a profile and options.
 // The struct is later marshalled to YAML by yaml.Marshal.
-func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
+func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, error) {
 	packages := append([]string{"wolfi-baselayout"}, p.Build.Dependencies...)
 
 	cfg := types.MelangeConfig{
@@ -251,12 +286,18 @@ func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
 	}
 
 	// Inject a Maven settings.xml step for corporate Artifactory mirrors.
-	// Only active when maven_mirror_url is set AND MAVEN_MIRROR_USER is present in the
-	// environment (sourced from the Kubernetes secret via the Tekton task).
-	// Without credentials the mirror step is skipped and Maven resolves from Maven Central
-	// directly — this keeps local/CI-without-Artifactory builds working.
-	// Credentials are never stored in the profile; they arrive via env vars only.
-	if p.Build.MavenMirrorURL != "" && os.Getenv("MAVEN_MIRROR_USER") != "" {
+	// Fires when maven_mirror_url is set AND either:
+	//   a) MAVEN_MIRROR_USER is present (credentials from Kubernetes secret), or
+	//   b) a custom template exists in the profiles dir (template supplies its own auth).
+	// Without either, the mirror step is skipped so Maven resolves from Maven Central
+	// directly — keeps local/CI-without-Artifactory builds working.
+	tmplName := p.Build.MavenSettingsTemplate
+	if tmplName == "" {
+		tmplName = "default"
+	}
+	customTemplatePath := filepath.Join(opts.ProfilesDir, "templates", "maven", tmplName+".xml")
+	_, customTemplateExists := os.Stat(customTemplatePath)
+	if p.Build.MavenMirrorURL != "" && (os.Getenv("MAVEN_MIRROR_USER") != "" || customTemplateExists == nil) {
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)
 		}
@@ -267,28 +308,18 @@ func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
 				}
 			}
 		}
+		tmpl, err := loadMavenTemplate(tmplName, opts.ProfilesDir)
+		if err != nil {
+			return types.MelangeConfig{}, fmt.Errorf("maven settings template: %w", err)
+		}
+		settingsXML := strings.ReplaceAll(tmpl, "{{MAVEN_MIRROR_URL}}", p.Build.MavenMirrorURL)
 		mirrorStep := fmt.Sprintf(
 			"mkdir -p /home/build/.m2\n"+
 				"cat > /home/build/.m2/settings.xml << APEXPACK_SETTINGS_EOF\n"+
-				"<settings>\n"+
-				"  <mirrors>\n"+
-				"    <mirror>\n"+
-				"      <id>apexpack-mirror</id>\n"+
-				"      <mirrorOf>*</mirrorOf>\n"+
-				"      <url>%s</url>\n"+
-				"    </mirror>\n"+
-				"  </mirrors>\n"+
-				"  <servers>\n"+
-				"    <server>\n"+
-				"      <id>apexpack-mirror</id>\n"+
-				"      <username>$MAVEN_MIRROR_USER</username>\n"+
-				"      <password>$MAVEN_MIRROR_PASSWORD</password>\n"+
-				"    </server>\n"+
-				"  </servers>\n"+
-				"</settings>\n"+
+				"%s"+
 				"APEXPACK_SETTINGS_EOF\n"+
-				"echo \"→ Maven mirror configured: %s\"",
-			p.Build.MavenMirrorURL, p.Build.MavenMirrorURL,
+				"echo \"→ Maven settings: %s template, mirror: %s\"",
+			settingsXML, tmplName, p.Build.MavenMirrorURL,
 		)
 		cfg.Pipeline = append(
 			[]types.MelangePipeline{{Runs: mirrorStep}},
@@ -327,7 +358,7 @@ func buildMelangeConfig(p *types.Profile, opts Options) types.MelangeConfig {
 		}
 	}
 
-	return cfg
+	return cfg, nil
 }
 
 // resolveOverride finds the most specific FrameworkBuildOverride for the detected

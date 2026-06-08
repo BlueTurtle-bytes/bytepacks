@@ -76,10 +76,15 @@ build:
     - /home/build/.m2/repository
 
   # Corporate Artifactory / Nexus mirror for Maven.
-  # Set to your actual URL; leave empty ("") to resolve directly from Maven Central.
+  # Set to your actual URL; leave empty to resolve directly from Maven Central.
   # settings.xml is only injected when this is non-empty AND the 'artifactory-creds'
   # Kubernetes secret is present (MAVEN_MIRROR_USER env var must be set).
   maven_mirror_url: ""
+
+  # settings.xml template to use. Built-ins: "default" (mirrors+servers only),
+  # "corporate" (adds pluginRepositories + profiles + activeProfiles).
+  # Custom: drop <profiles-dir>/templates/maven/<name>.xml into your profiles repo.
+  maven_settings_template: "corporate"
 
   tls_ca_env: []  # JVM ignores SSL_CERT_FILE; tls_ca_pre_step + build command handle it
   tls_ca_pre_step: |

@@ -177,6 +177,15 @@ type BuildConfig struct {
 	// SSL-inspect outbound connections to repo1.maven.org.
 	// Example: "https://artifactory.corp.example.com/artifactory/libs-release"
 	MavenMirrorURL string `yaml:"maven_mirror_url,omitempty"`
+
+	// MavenSettingsTemplate selects which settings.xml template to inject.
+	// Built-in templates: "default" (mirrors + servers only) and "corporate"
+	// (adds pluginRepositories + profiles + activeProfiles for Artifactory setups
+	// that serve plugins from a separate repo group).
+	// Custom templates can be placed at <profiles-dir>/templates/maven/<name>.xml
+	// and will take precedence over the built-in ones.
+	// Defaults to "default" when empty.
+	MavenSettingsTemplate string `yaml:"maven_settings_template,omitempty"`
 }
 
 // FrameworkBuildOverride lets a specific framework replace or extend the default build.
