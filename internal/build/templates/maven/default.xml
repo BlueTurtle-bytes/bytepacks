@@ -1,0 +1,16 @@
+<settings>
+  <mirrors>
+    <mirror>
+      <id>apexpack-mirror</id>
+      <mirrorOf>*</mirrorOf>
+      <url>{{MAVEN_MIRROR_URL}}</url>
+    </mirror>
+  </mirrors>
+  <servers>
+    <server>
+      <id>apexpack-mirror</id>
+      <username>$MAVEN_MIRROR_USER</username>
+      <password>$MAVEN_MIRROR_PASSWORD</password>
+    </server>
+  </servers>
+</settings>
