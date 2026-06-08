@@ -46,6 +46,36 @@ func loadMavenTemplate(name, profilesDir string) (string, error) {
 	}
 }
 
+//go:embed templates/nuget/default.xml
+var nugetTemplateDefault string
+
+//go:embed templates/nuget/corporate.xml
+var nugetTemplateCorporate string
+
+// loadNuGetTemplate returns the NuGet.Config template for the given name.
+// Lookup order:
+//  1. <profilesDir>/templates/nuget/<name>.xml  (user-supplied, wins over built-ins)
+//  2. Built-in embedded template (default / corporate)
+func loadNuGetTemplate(name, profilesDir string) (string, error) {
+	if name == "" {
+		name = "default"
+	}
+	if profilesDir != "" {
+		custom := filepath.Join(profilesDir, "templates", "nuget", name+".xml")
+		if data, err := os.ReadFile(custom); err == nil {
+			return string(data), nil
+		}
+	}
+	switch name {
+	case "default":
+		return nugetTemplateDefault, nil
+	case "corporate":
+		return nugetTemplateCorporate, nil
+	default:
+		return "", fmt.Errorf("nuget config template %q not found (built-ins: default, corporate; custom: place at <profiles-dir>/templates/nuget/%s.xml)", name, name)
+	}
+}
+
 // Options controls the build.
 type Options struct {
 	// SourceDir is the root of the project to build.
@@ -350,6 +380,43 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 		)
 		cfg.Pipeline = append(
 			[]types.MelangePipeline{{Runs: mirrorStep}},
+			cfg.Pipeline...,
+		)
+	}
+
+	// Inject a NuGet.Config for corporate Artifactory NuGet feeds.
+	// Fires when nuget_mirror_url is set AND NUGET_MIRROR_USER is present.
+	// Without both, skipped so builds work locally and in OSS CI without Artifactory.
+	nugetTmplName := p.Build.NuGetSettingsTemplate
+	if nugetTmplName == "" {
+		nugetTmplName = "default"
+	}
+	if p.Build.NuGetMirrorURL != "" && os.Getenv("NUGET_MIRROR_USER") != "" {
+		if cfg.Environment.Env == nil {
+			cfg.Environment.Env = make(map[string]string)
+		}
+		for _, key := range []string{"NUGET_MIRROR_USER", "NUGET_MIRROR_PASSWORD"} {
+			if val := os.Getenv(key); val != "" {
+				if _, exists := cfg.Environment.Env[key]; !exists {
+					cfg.Environment.Env[key] = val
+				}
+			}
+		}
+		nugetTmpl, err := loadNuGetTemplate(nugetTmplName, opts.ProfilesDir)
+		if err != nil {
+			return types.MelangeConfig{}, fmt.Errorf("nuget config template: %w", err)
+		}
+		nugetConfigXML := strings.ReplaceAll(nugetTmpl, "{{NUGET_MIRROR_URL}}", p.Build.NuGetMirrorURL)
+		nugetConfigStep := fmt.Sprintf(
+			"mkdir -p /home/build/.nuget/NuGet\n"+
+				"cat > /home/build/.nuget/NuGet/NuGet.Config << APEXPACK_NUGET_EOF\n"+
+				"%s"+
+				"APEXPACK_NUGET_EOF\n"+
+				"echo \"→ NuGet config: %s template, mirror: %s\"",
+			nugetConfigXML, nugetTmplName, p.Build.NuGetMirrorURL,
+		)
+		cfg.Pipeline = append(
+			[]types.MelangePipeline{{Runs: nugetConfigStep}},
 			cfg.Pipeline...,
 		)
 	}

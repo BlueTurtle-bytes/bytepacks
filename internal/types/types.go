@@ -186,6 +186,20 @@ type BuildConfig struct {
 	// and will take precedence over the built-in ones.
 	// Defaults to "default" when empty.
 	MavenSettingsTemplate string `yaml:"maven_settings_template,omitempty"`
+
+	// NuGetMirrorURL is the URL of a corporate Artifactory (or Nexus) NuGet proxy.
+	// When set, apexpack injects a NuGet.Config into every build that replaces
+	// nuget.org with this feed. Fires only when NUGET_MIRROR_USER is also present.
+	// Example: "https://artifactory.corp.example.com/artifactory/api/nuget/nuget-virtual"
+	NuGetMirrorURL string `yaml:"nuget_mirror_url,omitempty"`
+
+	// NuGetSettingsTemplate selects which NuGet.Config template to inject.
+	// Built-in templates: "default" (source + credentials) and "corporate"
+	// (adds globalPackagesFolder and request tuning for Artifactory setups).
+	// Custom templates can be placed at <profiles-dir>/templates/nuget/<name>.xml
+	// and will take precedence over the built-in ones.
+	// Defaults to "default" when empty.
+	NuGetSettingsTemplate string `yaml:"nuget_settings_template,omitempty"`
 }
 
 // FrameworkBuildOverride lets a specific framework replace or extend the default build.

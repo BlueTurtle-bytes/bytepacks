@@ -73,6 +73,22 @@ spec:
               name: artifactory-creds
               key: MAVEN_MIRROR_PASSWORD
               optional: true
+        # NuGet Artifactory feed credentials. Sourced from the 'nuget-creds' secret when present.
+        # Create: kubectl create secret generic nuget-creds \
+        #           --from-literal=NUGET_MIRROR_USER=<user> \
+        #           --from-literal=NUGET_MIRROR_PASSWORD=<token>
+        - name: NUGET_MIRROR_USER
+          valueFrom:
+            secretKeyRef:
+              name: nuget-creds
+              key: NUGET_MIRROR_USER
+              optional: true
+        - name: NUGET_MIRROR_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: nuget-creds
+              key: NUGET_MIRROR_PASSWORD
+              optional: true
       script: |
         #!/bin/sh
         set -e
