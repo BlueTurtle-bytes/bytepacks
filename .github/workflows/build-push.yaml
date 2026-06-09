@@ -1,0 +1,183 @@
+# Reusable workflow — call this from any project repo that uses apexpack.
+#
+# Example caller (.github/workflows/build.yaml in your project repo):
+#
+#   on:
+#     push:
+#       branches: [main]
+#
+#   jobs:
+#     build:
+#       uses: <your-org>/apexpack/.github/workflows/build-push.yaml@main
+#       with:
+#         image-name: myteam/myapp          # path inside Artifactory
+#         version: ${{ github.sha }}
+#         runtime: java                      # or dotnet, golang, nodejs, python — omit to auto-detect
+#       secrets: inherit
+#
+# Required secrets (set at org or repo level):
+#   ARTIFACTORY_REGISTRY    — Artifactory Docker registry host  (e.g. registry.corp.com)
+#   ARTIFACTORY_USER        — Artifactory username
+#   ARTIFACTORY_PASSWORD    — Artifactory token / password
+#
+# Optional secrets:
+#   CORP_CA_CERT            — base64-encoded corporate CA PEM  (base64 < corp-ca.crt)
+#   MAVEN_MIRROR_USER       — Artifactory Maven credentials (java builds)
+#   MAVEN_MIRROR_PASSWORD
+#   NUGET_MIRROR_USER       — Artifactory NuGet credentials  (.NET builds)
+#   NUGET_MIRROR_PASSWORD
+
+name: Build and Push Image
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: "Image path in Artifactory without the registry prefix (e.g. myteam/myapp)"
+        required: true
+        type: string
+      version:
+        description: "Version tag to apply (e.g. 1.2.3 or the git SHA)"
+        required: false
+        type: string
+        default: "0.0.1"
+      runtime:
+        description: "Override language detection: java | dotnet | golang | nodejs | python. Leave empty to auto-detect."
+        required: false
+        type: string
+        default: ""
+      push-latest:
+        description: "Also tag and push as :latest"
+        required: false
+        type: boolean
+        default: true
+      apexpack-ref:
+        description: "apexpack branch or tag to build from"
+        required: false
+        type: string
+        default: "main"
+    secrets:
+      ARTIFACTORY_REGISTRY:
+        description: "Artifactory Docker registry hostname"
+        required: true
+      ARTIFACTORY_USER:
+        required: true
+      ARTIFACTORY_PASSWORD:
+        required: true
+      CORP_CA_CERT:
+        description: "Base64-encoded corporate CA PEM — needed when a TLS-intercepting proxy rewrites certs"
+        required: false
+      MAVEN_MIRROR_USER:
+        required: false
+      MAVEN_MIRROR_PASSWORD:
+        required: false
+      NUGET_MIRROR_USER:
+        required: false
+      NUGET_MIRROR_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Check out the calling project's source code ──────────────────────
+      - name: Checkout project
+        uses: actions/checkout@v4
+        with:
+          path: project
+
+      # ── 2. Check out apexpack to build the CLI binary ───────────────────────
+      # github.action_repository resolves to the repo that contains this
+      # workflow file (i.e. the apexpack repo), regardless of which project
+      # called it — so this always clones the right repo.
+      - name: Checkout apexpack
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.action_repository }}
+          ref: ${{ inputs.apexpack-ref }}
+          path: apexpack
+
+      # ── 3. Build the apexpack Go binary ─────────────────────────────────────
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+          cache-dependency-path: apexpack/go.sum
+
+      - name: Build apexpack binary
+        working-directory: apexpack
+        run: go build -o ${{ github.workspace }}/bin/apexpack ./cmd/apexpack
+
+      # ── 4. Install melange, apko, and crane ─────────────────────────────────
+      - name: Install melange
+        uses: chainguard-dev/actions/setup-melange@main
+
+      - name: Install apko
+        uses: chainguard-dev/actions/setup-apko@main
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
+      # ── 5. Write corporate CA cert ───────────────────────────────────────────
+      # Decoded to a temp file; APEXPACK_EXTRA_CA tells apexpack where to find it.
+      # Skipped silently when the secret is empty (local / OSS builds).
+      - name: Write corporate CA cert
+        run: |
+          if [ -n "$CORP_CA_CERT" ]; then
+            echo "$CORP_CA_CERT" | base64 -d > /tmp/corp-ca.crt
+            echo "APEXPACK_EXTRA_CA=/tmp/corp-ca.crt" >> $GITHUB_ENV
+          fi
+        env:
+          CORP_CA_CERT: ${{ secrets.CORP_CA_CERT }}
+
+      # ── 6. Log in to Artifactory via crane ──────────────────────────────────
+      - name: Log in to Artifactory
+        run: |
+          crane auth login "${{ secrets.ARTIFACTORY_REGISTRY }}" \
+            --username "${{ secrets.ARTIFACTORY_USER }}" \
+            --password "${{ secrets.ARTIFACTORY_PASSWORD }}"
+
+      # ── 7. Build the OCI image ───────────────────────────────────────────────
+      # Profiles are read from the checked-out apexpack repo (not embedded in
+      # the binary), so --profiles-dir must point there explicitly.
+      # Mirror URLs come from the project's apexpack.yaml or profile YAML.
+      # Credentials are forwarded here so build.go injects them into the
+      # melange sandbox environment.
+      - name: Build image with apexpack
+        working-directory: project
+        run: |
+          RUNTIME_FLAG=""
+          [ -n "${{ inputs.runtime }}" ] && RUNTIME_FLAG="--runtime ${{ inputs.runtime }}"
+
+          ${{ github.workspace }}/bin/apexpack build . \
+            --tag "${{ secrets.ARTIFACTORY_REGISTRY }}/${{ inputs.image-name }}:${{ inputs.version }}" \
+            --version "${{ inputs.version }}" \
+            --profiles-dir ${{ github.workspace }}/apexpack/profiles \
+            --output /tmp/apexpack-output \
+            $RUNTIME_FLAG
+        env:
+          MAVEN_MIRROR_USER: ${{ secrets.MAVEN_MIRROR_USER }}
+          MAVEN_MIRROR_PASSWORD: ${{ secrets.MAVEN_MIRROR_PASSWORD }}
+          NUGET_MIRROR_USER: ${{ secrets.NUGET_MIRROR_USER }}
+          NUGET_MIRROR_PASSWORD: ${{ secrets.NUGET_MIRROR_PASSWORD }}
+
+      # ── 8. Push to Artifactory via crane ────────────────────────────────────
+      # crane push handles the OCI tarball directly — no docker daemon needed,
+      # no arch suffix to strip. crane tag adds the :latest alias in-registry
+      # without re-uploading layers.
+      - name: Push to Artifactory
+        run: |
+          IMAGE="${{ secrets.ARTIFACTORY_REGISTRY }}/${{ inputs.image-name }}"
+          VERSION_TAG="${IMAGE}:${{ inputs.version }}"
+
+          TAR_FILE=$(ls /tmp/apexpack-output/*.tar | head -1)
+          crane push "$TAR_FILE" "$VERSION_TAG"
+
+          if [ "${{ inputs.push-latest }}" = "true" ]; then
+            crane tag "$VERSION_TAG" latest
+          fi

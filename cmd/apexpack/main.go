@@ -134,6 +134,7 @@ func buildCmd() *cobra.Command {
 		runtime     string
 		projectName string
 		tlsExtraCA  string
+		arch        string
 		dryRun      bool
 	)
 
@@ -228,6 +229,7 @@ Examples:
 				Framework:      detectedFramework,
 				PackageManager: detectedPM,
 				TLSExtraCA:     tlsExtraCA,
+				Arch:           arch,
 			}
 
 			plan, err := build.Plan(matchedProfile, opts)
@@ -285,6 +287,8 @@ Examples:
 		"Print generated melange.yaml and apko.yaml without building")
 	cmd.Flags().StringVar(&tlsExtraCA, "tls-extra-ca", "",
 		"Path to an extra CA certificate (PEM) to trust — use in corporate proxy environments (env: APEXPACK_EXTRA_CA)")
+	cmd.Flags().StringVar(&arch, "arch", "",
+		"Target build architecture: x86_64 or aarch64 (default: host arch). Use x86_64 when building on Apple Silicon for a Linux cluster.")
 
 	return cmd
 }

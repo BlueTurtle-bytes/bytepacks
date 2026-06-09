@@ -116,6 +116,11 @@ type Options struct {
 	// The cert is mounted into the melange container and added to SSL_CERT_DIR.
 	// Falls back to the APEXPACK_EXTRA_CA environment variable if not set.
 	TLSExtraCA string
+
+	// Arch overrides the target build architecture passed to melange and apko.
+	// Accepted values: "x86_64", "aarch64". Defaults to the host architecture.
+	// Set to "x86_64" when building on Apple Silicon for a Linux x86_64 cluster.
+	Arch string
 }
 
 // Plan builds a MelangeConfig and ApkoConfig from the profile and options.
@@ -569,7 +574,7 @@ func runMelange(configFile string, opts Options) error {
 		return runMelangeInDocker(configFile, keyFile, opts)
 	}
 
-	arch := melangeArch()
+	arch := melangeArch(opts.Arch)
 	fmt.Printf("  → melange arch: %s (GOARCH=%s)\n", arch, runtime.GOARCH)
 	env := os.Environ()
 	if opts.TLSExtraCA != "" {
@@ -615,9 +620,11 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 	containerConfig := "/work/output/" + filepath.Base(configFile)
 	containerKey := "/work/output/" + filepath.Base(keyFile)
 
+	arch := melangeArch(opts.Arch)
 	args := []string{
 		"run", "--rm",
 		"--privileged",
+		"--platform", archToDockerPlatform(arch),
 		"-v", absSrc + ":/work/src:ro",
 		"-v", absOut + ":/work/output",
 	}
@@ -679,7 +686,7 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 		"--source-dir", "/work/src",
 		"--out-dir", "/work/output/packages",
 		"--signing-key", containerKey,
-		"--arch", melangeArch(),
+		"--arch", arch,
 	)
 
 	return runTool("docker", args)
@@ -710,7 +717,7 @@ func runApko(configFile string, opts Options) error {
 		"build", configFile,
 		imageTag,
 		outputTar,
-		"--arch", melangeArch(),
+		"--arch", melangeArch(opts.Arch),
 	}
 
 	if opts.TLSExtraCA == "" {
@@ -745,8 +752,10 @@ func runApkoInDocker(configFile, imageTag, outputTar string, opts Options) error
 	containerConfig := "/work/output/" + filepath.Base(configFile)
 	containerTar := "/work/output/" + filepath.Base(outputTar)
 
+	apkoArch := melangeArch(opts.Arch)
 	args := []string{
 		"run", "--rm",
+		"--platform", archToDockerPlatform(apkoArch),
 		"-w", "/work/output",
 		"-v", absOut + ":/work/output",
 	}
@@ -767,20 +776,32 @@ func runApkoInDocker(configFile, imageTag, outputTar string, opts Options) error
 		"build", containerConfig,
 		imageTag,
 		containerTar,
-		"--arch", melangeArch(),
+		"--arch", apkoArch,
 	)
 
 	return runTool("docker", args)
 }
 
-// melangeArch maps GOARCH values to the architecture names melange and apko expect.
-func melangeArch() string {
+// melangeArch returns the architecture name melange and apko expect.
+// archOverride (e.g. "x86_64", "aarch64") takes precedence over the host GOARCH.
+func melangeArch(archOverride string) string {
+	if archOverride != "" {
+		return archOverride
+	}
 	switch runtime.GOARCH {
 	case "arm64":
 		return "aarch64"
 	default:
 		return "x86_64"
 	}
+}
+
+// archToDockerPlatform maps a melange arch name to a Docker --platform value.
+func archToDockerPlatform(arch string) string {
+	if arch == "aarch64" {
+		return "linux/arm64"
+	}
+	return "linux/amd64"
 }
 
 // runTool runs an external binary, streaming output to stdout/stderr.

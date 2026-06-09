@@ -12,7 +12,7 @@ metadata:
 spec:
   params:
     - name: IMAGE
-      description: "Full OCI image reference to produce (e.g. ghcr.io/myorg/myapp:v1.0.0)."
+      description: "Full OCI image reference to produce (e.g. registry.corp.com/myteam/myapp:v1.0.0)."
     - name: VERSION
       description: "Version string embedded in the APK package."
       default: "0.0.1"
@@ -22,6 +22,9 @@ spec:
     - name: PROJECT_NAME
       description: "Override the project name. Defaults to the source directory basename."
       default: ""
+    - name: APEXPACK_IMAGE
+      description: "apexpack container image to use as the build step. Override to pin a specific version or use your Artifactory mirror."
+      default: "apexpack:latest"
 
   workspaces:
     - name: source
@@ -53,8 +56,8 @@ spec:
 
   steps:
     - name: build
-      image: apexpack:latest
-      imagePullPolicy: IfNotPresent
+      image: $(params.APEXPACK_IMAGE)
+      imagePullPolicy: Always
       env:
         # Maven Artifactory mirror credentials. Sourced from the 'artifactory-creds' secret
         # when it exists; optional so pods run fine without Artifactory (local / OSS builds).
