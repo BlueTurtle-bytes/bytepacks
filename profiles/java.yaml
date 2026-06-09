@@ -72,6 +72,7 @@ build:
     cp target/*.jar /home/build/output/app/app.jar
   env:
     JAVA_HOME: "/usr/lib/jvm/java-21-openjdk"
+    PATH: "/usr/lib/jvm/java-21-openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     MAVEN_OPTS: "-Xmx512m -XX:+UseContainerSupport"
     GRADLE_OPTS: "-Xmx512m -XX:+UseContainerSupport"
   caches:
@@ -162,7 +163,7 @@ image:
     - openjdk-21-jre
     - ca-certificates-bundle=20260413-r0
   # java -jar is the entrypoint. The JAR path is passed via cmd.
-  entrypoint: java
+  entrypoint: /usr/lib/jvm/java-21-openjdk/bin/java
   cmd:
     - "-jar"
     - "/app/app.jar"
@@ -171,6 +172,7 @@ image:
     - "8080"
   env:
     JAVA_HOME: "/usr/lib/jvm/java-21-openjdk"
+    PATH: "/usr/lib/jvm/java-21-openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     JAVA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
 scan:
