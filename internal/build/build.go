@@ -121,6 +121,13 @@ type Options struct {
 	// Accepted values: "x86_64", "aarch64". Defaults to the host architecture.
 	// Set to "x86_64" when building on Apple Silicon for a Linux x86_64 cluster.
 	Arch string
+
+	// LanguageVersion is the detected language version (e.g. "17" for Java 17,
+	// "20" for Node 20, "3.12" for Python 3.12, "8" for .NET 8).
+	// Substituted for {JAVA_VERSION}, {NODE_VERSION}, {PYTHON_VERSION}, {DOTNET_VERSION}
+	// tokens in profile package lists, env values, and build commands.
+	// Empty string falls back to the built-in default for the runtime.
+	LanguageVersion string
 }
 
 // Plan builds a MelangeConfig and ApkoConfig from the profile and options.
@@ -306,7 +313,10 @@ func marshalYAML(v any) (string, error) {
 // buildMelangeConfig constructs a MelangeConfig from a profile and options.
 // The struct is later marshalled to YAML by yaml.Marshal.
 func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, error) {
-	packages := append([]string{"wolfi-baselayout"}, p.Build.Dependencies...)
+	token := langVersionToken(p.Runtime)
+	version := resolveVersion(p.Runtime, opts.LanguageVersion)
+
+	packages := vsubSlice(append([]string{"wolfi-baselayout"}, p.Build.Dependencies...), token, version)
 
 	cfg := types.MelangeConfig{
 		Package: types.MelangePackage{
@@ -322,9 +332,9 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 				Repositories: []string{"https://packages.wolfi.dev/os"},
 				Packages:     packages,
 			},
-			Env: p.Build.Env,
+			Env: vsubMap(p.Build.Env, token, version),
 		},
-		Pipeline: []types.MelangePipeline{{Runs: applyProjectTemplates(p.Build.Command, opts.ProjectName)}},
+		Pipeline: []types.MelangePipeline{{Runs: vsub(applyProjectTemplates(p.Build.Command, opts.ProjectName), token, version)}},
 	}
 
 	// Resolve the framework override using a three-level fallback:
@@ -334,16 +344,16 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 	override, found := resolveOverride(p, opts.Framework, opts.PackageManager)
 	if found {
 		if len(override.Dependencies) > 0 {
-			cfg.Environment.Contents.Packages = append([]string{"wolfi-baselayout"}, override.Dependencies...)
+			cfg.Environment.Contents.Packages = vsubSlice(append([]string{"wolfi-baselayout"}, override.Dependencies...), token, version)
 		}
 		if override.Command != "" {
-			cfg.Pipeline = []types.MelangePipeline{{Runs: applyProjectTemplates(override.Command, opts.ProjectName)}}
+			cfg.Pipeline = []types.MelangePipeline{{Runs: vsub(applyProjectTemplates(override.Command, opts.ProjectName), token, version)}}
 		}
 		for k, v := range override.Env {
 			if cfg.Environment.Env == nil {
 				cfg.Environment.Env = make(map[string]string)
 			}
-			cfg.Environment.Env[k] = v
+			cfg.Environment.Env[k] = vsub(v, token, version)
 		}
 	}
 
@@ -491,15 +501,19 @@ func resolveOverride(p *types.Profile, framework, pm string) (types.FrameworkBui
 // buildApkoConfig constructs an ApkoConfig from a profile and options.
 // The struct is later marshalled to YAML by yaml.Marshal.
 func buildApkoConfig(p *types.Profile, opts Options) types.ApkoConfig {
-	packages := append([]string{"wolfi-baselayout", opts.ProjectName}, p.Image.Packages...)
+	token := langVersionToken(p.Runtime)
+	version := resolveVersion(p.Runtime, opts.LanguageVersion)
+
+	packages := vsubSlice(append([]string{"wolfi-baselayout", opts.ProjectName}, p.Image.Packages...), token, version)
 
 	runAs := p.Image.RunAs
 	if runAs == 0 {
 		runAs = 65532
 	}
 
-	// Entrypoint: profile wins (with {APP_NAME} substituted); fall back to Procfile "web:" command.
-	entrypoint := applyProjectTemplates(p.Image.Entrypoint, opts.ProjectName)
+	// Entrypoint: profile wins (with {APP_NAME} and version token substituted);
+	// fall back to Procfile "web:" command.
+	entrypoint := vsub(applyProjectTemplates(p.Image.Entrypoint, opts.ProjectName), token, version)
 	cmd := p.Image.Cmd
 	if entrypoint == "" {
 		if procCmd := readProcfileCmd(opts.SourceDir); procCmd != "" {
@@ -529,11 +543,24 @@ func buildApkoConfig(p *types.Profile, opts Options) types.ApkoConfig {
 			Users: []types.ApkoUser{{Username: "nonroot", UID: runAs, GID: runAs}},
 			Groups: []types.ApkoGroup{{Groupname: "nonroot", GID: runAs}},
 		},
-		Environment: p.Image.Env,
+		Environment: vsubMap(p.Image.Env, token, version),
 	}
 
 	if len(cmd) > 0 {
 		cfg.Cmd = strings.Join(cmd, " ")
+	}
+
+	// If JAVA_HOME is set in the image env, derive PATH and resolve the bare
+	// "java" entrypoint to a full path. This keeps JAVA_HOME as the single
+	// version-pinned value — changing openjdk-21 → openjdk-17 only requires
+	// updating JAVA_HOME; PATH and entrypoint follow automatically.
+	if javaHome, ok := cfg.Environment["JAVA_HOME"]; ok && javaHome != "" {
+		if _, hasPath := cfg.Environment["PATH"]; !hasPath {
+			cfg.Environment["PATH"] = javaHome + "/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+		}
+		if cfg.Entrypoint.Command == "java" {
+			cfg.Entrypoint.Command = javaHome + "/bin/java"
+		}
 	}
 
 	return cfg
@@ -544,6 +571,72 @@ func buildApkoConfig(p *types.Profile, opts Options) types.ApkoConfig {
 // binaries and entrypoints named after the project rather than a fixed "app".
 func applyProjectTemplates(s, projectName string) string {
 	return strings.ReplaceAll(s, "{APP_NAME}", projectName)
+}
+
+// defaultLangVersions maps runtimes to their built-in fallback version.
+// Used when no version is detected from source files.
+var defaultLangVersions = map[string]string{
+	"java":   "21",
+	"node":   "20",
+	"python": "3.12",
+	"dotnet": "8",
+}
+
+// langVersionToken returns the substitution token for a given runtime.
+func langVersionToken(runtime string) string {
+	switch runtime {
+	case "java":
+		return "{JAVA_VERSION}"
+	case "node":
+		return "{NODE_VERSION}"
+	case "python":
+		return "{PYTHON_VERSION}"
+	case "dotnet":
+		return "{DOTNET_VERSION}"
+	case "golang":
+		return "{GO_VERSION}"
+	}
+	return ""
+}
+
+// resolveVersion returns the detected version, falling back to the built-in default.
+func resolveVersion(runtime, detected string) string {
+	if detected != "" {
+		return detected
+	}
+	return defaultLangVersions[runtime]
+}
+
+// vsub replaces the language version token in s.
+func vsub(s, token, version string) string {
+	if token == "" || version == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, token, version)
+}
+
+// vsubSlice applies vsub to every element of a string slice, returning a new slice.
+func vsubSlice(ss []string, token, version string) []string {
+	if token == "" || version == "" {
+		return ss
+	}
+	out := make([]string, len(ss))
+	for i, s := range ss {
+		out[i] = vsub(s, token, version)
+	}
+	return out
+}
+
+// vsubMap applies vsub to every value in a map, returning a new map.
+func vsubMap(m map[string]string, token, version string) map[string]string {
+	if token == "" || version == "" || len(m) == 0 {
+		return m
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = vsub(v, token, version)
+	}
+	return out
 }
 
 // cacheVolumeName returns a stable Docker volume name for a build cache path.

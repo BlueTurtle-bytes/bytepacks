@@ -341,6 +341,12 @@ type DetectResult struct {
 	// Examples: "pnpm", "bun", "yarn", "yarn-berry", "uv", "poetry"
 	// Empty string means the default package manager for the runtime is used.
 	PackageManager string
+
+	// LanguageVersion is the detected language version extracted from source files
+	// (.java-version, pom.xml, .nvmrc, .python-version, *.csproj, go.mod, etc.).
+	// Format is runtime-specific: Java → "21", Node → "20", Python → "3.12", .NET → "8".
+	// Empty string means no version was detected (build.go uses the profile default).
+	LanguageVersion string
 }
 
 // ============================================================================

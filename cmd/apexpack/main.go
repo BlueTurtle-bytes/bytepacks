@@ -103,11 +103,16 @@ Examples:
 				if fw == "" {
 					fw = "unknown framework"
 				}
-				fmt.Printf("%s%-12s  %.0f%%  framework: %-14s  (matched: %v)\n",
+				ver := r.LanguageVersion
+				if ver == "" {
+					ver = "-"
+				}
+				fmt.Printf("%s%-12s  %.0f%%  framework: %-14s  version: %-8s  (matched: %v)\n",
 					marker,
 					r.Profile.Runtime,
 					r.Confidence*100,
 					fw,
+					ver,
 					r.MatchedFiles,
 				)
 			}
@@ -186,12 +191,18 @@ Examples:
 			var matchedProfile *types.Profile
 			var detectedFramework string
 			var detectedPM string
+			var detectedLangVersion string
 			if runtime != "" {
 				matchedProfile = profile.GetByRuntime(profiles, runtime)
 				if matchedProfile == nil {
 					return fmt.Errorf("profile for runtime %q not found in %s", runtime, profilesDir)
 				}
-				fmt.Printf("  → Using profile: %s (specified via --runtime)\n", runtime)
+				detectedLangVersion = detect.LanguageVersion(matchedProfile.Runtime, absSrcDir)
+				versionSuffix := ""
+				if detectedLangVersion != "" {
+					versionSuffix = " — version " + detectedLangVersion
+				}
+				fmt.Printf("  → Using profile: %s (specified via --runtime)%s\n", runtime, versionSuffix)
 			} else {
 				fmt.Printf("[2/3] Detecting language in %s...\n", absSrcDir)
 				result := detect.Best(profiles, absSrcDir)
@@ -201,12 +212,17 @@ Examples:
 				matchedProfile = result.Profile
 				detectedFramework = result.Framework
 				detectedPM = result.PackageManager
+				detectedLangVersion = result.LanguageVersion
 				fw := detectedFramework
 				if fw == "" {
 					fw = "no framework identified"
 				}
-				fmt.Printf("  → Detected: %s (%.0f%% confidence) — %s\n",
-					result.Profile.Runtime, result.Confidence*100, fw)
+				versionSuffix := ""
+				if detectedLangVersion != "" {
+					versionSuffix = " — version " + detectedLangVersion
+				}
+				fmt.Printf("  → Detected: %s (%.0f%% confidence) — %s%s\n",
+					result.Profile.Runtime, result.Confidence*100, fw, versionSuffix)
 			}
 
 			// Load optional per-project apexpack.yaml from the source directory.
@@ -220,16 +236,17 @@ Examples:
 			}
 
 			opts := build.Options{
-				SourceDir:      absSrcDir,
-				ProfilesDir:    profilesDir,
-				OutputDir:      outputDir,
-				ProjectName:    projectName,
-				Version:        version,
-				Tag:            tag,
-				Framework:      detectedFramework,
-				PackageManager: detectedPM,
-				TLSExtraCA:     tlsExtraCA,
-				Arch:           arch,
+				SourceDir:       absSrcDir,
+				ProfilesDir:     profilesDir,
+				OutputDir:       outputDir,
+				ProjectName:     projectName,
+				Version:         version,
+				Tag:             tag,
+				Framework:       detectedFramework,
+				PackageManager:  detectedPM,
+				LanguageVersion: detectedLangVersion,
+				TLSExtraCA:      tlsExtraCA,
+				Arch:            arch,
 			}
 
 			plan, err := build.Plan(matchedProfile, opts)

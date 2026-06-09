@@ -52,7 +52,7 @@ detect:
 build:
   dependencies:
     - busybox
-    - nodejs
+    - nodejs-{NODE_VERSION}
     - npm
     - python3
     - build-base
@@ -80,7 +80,7 @@ build:
     pnpm:
       dependencies:
         - busybox
-        - nodejs
+        - nodejs-{NODE_VERSION}
         - npm
         - python3
         - build-base
@@ -152,7 +152,7 @@ build:
 
 image:
   packages:
-    - nodejs
+    - nodejs-{NODE_VERSION}
     - ca-certificates-bundle=20260413-r0
   entrypoint: node
   cmd:

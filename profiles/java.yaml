@@ -52,16 +52,17 @@ detect:
   confidence: 0.85
 
 build:
-  # openjdk-21 provides the JDK needed to compile.
+  # openjdk-{JAVA_VERSION} provides the JDK needed to compile.
   # maven is the build tool. build-base provides make, gcc etc.
   dependencies:
     - busybox
-    - openjdk-21
+    - openjdk-{JAVA_VERSION}
     - maven
     - build-base
     - git
   # Default: plain Maven project with no detected framework.
   command: |
+    export PATH="$JAVA_HOME/bin:$PATH"
     if [ -f "/home/build/.apexpack-truststore.p12" ]; then
       export MAVEN_OPTS="${MAVEN_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
     fi
@@ -71,8 +72,7 @@ build:
     mkdir -p /home/build/output/app
     cp target/*.jar /home/build/output/app/app.jar
   env:
-    JAVA_HOME: "/usr/lib/jvm/java-21-openjdk"
-    PATH: "/usr/lib/jvm/java-21-openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    JAVA_HOME: "/usr/lib/jvm/java-{JAVA_VERSION}-openjdk"
     MAVEN_OPTS: "-Xmx512m -XX:+UseContainerSupport"
     GRADLE_OPTS: "-Xmx512m -XX:+UseContainerSupport"
   caches:
@@ -115,6 +115,7 @@ build:
     quarkus:
       # Quarkus default output is a fast-jar directory — uber-jar gives a single runnable JAR.
       command: |
+        export PATH="$JAVA_HOME/bin:$PATH"
         if [ -f "/home/build/.apexpack-truststore.p12" ]; then
           export MAVEN_OPTS="${MAVEN_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
         fi
@@ -125,6 +126,7 @@ build:
         cp target/*-runner.jar /home/build/output/app/app.jar
     spring-boot-gradle:
       command: |
+        export PATH="$JAVA_HOME/bin:$PATH"
         if [ -f "/home/build/.apexpack-truststore.p12" ]; then
           export GRADLE_OPTS="${GRADLE_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
         fi
@@ -136,6 +138,7 @@ build:
         - /home/build/.gradle
     quarkus-gradle:
       command: |
+        export PATH="$JAVA_HOME/bin:$PATH"
         if [ -f "/home/build/.apexpack-truststore.p12" ]; then
           export GRADLE_OPTS="${GRADLE_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
         fi
@@ -147,6 +150,7 @@ build:
         - /home/build/.gradle
     micronaut-gradle:
       command: |
+        export PATH="$JAVA_HOME/bin:$PATH"
         if [ -f "/home/build/.apexpack-truststore.p12" ]; then
           export GRADLE_OPTS="${GRADLE_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
         fi
@@ -160,10 +164,10 @@ build:
 image:
   # JRE only — not JDK. No compiler in the final image reduces attack surface.
   packages:
-    - openjdk-21-jre
+    - openjdk-{JAVA_VERSION}-jre
     - ca-certificates-bundle=20260413-r0
   # java -jar is the entrypoint. The JAR path is passed via cmd.
-  entrypoint: /usr/lib/jvm/java-21-openjdk/bin/java
+  entrypoint: java
   cmd:
     - "-jar"
     - "/app/app.jar"
@@ -171,8 +175,7 @@ image:
   ports:
     - "8080"
   env:
-    JAVA_HOME: "/usr/lib/jvm/java-21-openjdk"
-    PATH: "/usr/lib/jvm/java-21-openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    JAVA_HOME: "/usr/lib/jvm/java-{JAVA_VERSION}-openjdk"
     JAVA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
 scan:

@@ -56,7 +56,7 @@ detect:
 build:
   dependencies:
     - busybox
-    - python-3
+    - python-{PYTHON_VERSION}
     - py3-pip
     - build-base
     - git
@@ -82,7 +82,7 @@ build:
     uv:
       dependencies:
         - busybox
-        - python-3
+        - python-{PYTHON_VERSION}
         - uv
         - build-base
         - git
@@ -100,7 +100,7 @@ build:
     poetry:
       dependencies:
         - busybox
-        - python-3
+        - python-{PYTHON_VERSION}
         - py3-pip
         - py3-poetry
         - build-base
@@ -136,7 +136,7 @@ build:
 
 image:
   packages:
-    - python-3
+    - python-{PYTHON_VERSION}
     - ca-certificates-bundle=20260413-r0
   entrypoint: python3
   cmd:
