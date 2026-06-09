@@ -63,8 +63,8 @@ build:
     - postgresql-dev  # pg_config for psycopg2/psycopg2-binary source builds on aarch64
   # Default: pip from requirements.txt
   command: |
-    pip install --no-cache-dir -r requirements.txt --target /home/build/output/app/deps
-    cp -r . /home/build/output/app/src
+    pip install --no-cache-dir -r requirements.txt --target ${{targets.destdir}}/app/deps
+    cp -r . ${{targets.destdir}}/app/src
   env:
     PYTHONDONTWRITEBYTECODE: "1"
     PYTHONUNBUFFERED: "1"
@@ -88,8 +88,8 @@ build:
         - git
         - postgresql-dev
       command: |
-        uv pip install -r requirements.txt --target /home/build/output/app/deps
-        cp -r . /home/build/output/app/src
+        uv pip install -r requirements.txt --target ${{targets.destdir}}/app/deps
+        cp -r . ${{targets.destdir}}/app/src
       env:
         PYTHONDONTWRITEBYTECODE: "1"
         PYTHONUNBUFFERED: "1"
@@ -108,8 +108,8 @@ build:
         - postgresql-dev
       command: |
         poetry export -f requirements.txt --output /tmp/requirements.txt --without-hashes --without dev
-        pip install --no-cache-dir -r /tmp/requirements.txt --target /home/build/output/app/deps
-        cp -r . /home/build/output/app/src
+        pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
+        cp -r . ${{targets.destdir}}/app/src
       env:
         PYTHONDONTWRITEBYTECODE: "1"
         PYTHONUNBUFFERED: "1"
@@ -123,8 +123,8 @@ build:
       command: |
         pip install pipenv
         pipenv requirements > /tmp/requirements.txt
-        pip install --no-cache-dir -r /tmp/requirements.txt --target /home/build/output/app/deps
-        cp -r . /home/build/output/app/src
+        pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
+        cp -r . ${{targets.destdir}}/app/src
       env:
         PYTHONDONTWRITEBYTECODE: "1"
         PYTHONUNBUFFERED: "1"

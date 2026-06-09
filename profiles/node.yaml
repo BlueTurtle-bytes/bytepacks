@@ -61,10 +61,10 @@ build:
   command: |
     npm ci --prefer-offline
     npm run build --if-present
-    mkdir -p /home/build/output/app
-    cp -r . /home/build/output/app/
-    rm -rf /home/build/output/app/node_modules
-    cd /home/build/output/app && npm ci --omit=dev --prefer-offline
+    mkdir -p ${{targets.destdir}}/app
+    cp -r . ${{targets.destdir}}/app/
+    rm -rf ${{targets.destdir}}/app/node_modules
+    cd ${{targets.destdir}}/app && npm ci --omit=dev --prefer-offline
   env:
     NODE_ENV: "production"
     NPM_CONFIG_CACHE: "/home/build/.npm"
@@ -89,10 +89,10 @@ build:
         npm install -g pnpm
         pnpm install --frozen-lockfile
         pnpm run build --if-present
-        mkdir -p /home/build/output/app
-        cp -r . /home/build/output/app/
-        rm -rf /home/build/output/app/node_modules
-        cd /home/build/output/app && pnpm install --frozen-lockfile --prod
+        mkdir -p ${{targets.destdir}}/app
+        cp -r . ${{targets.destdir}}/app/
+        rm -rf ${{targets.destdir}}/app/node_modules
+        cd ${{targets.destdir}}/app && pnpm install --frozen-lockfile --prod
       env:
         NODE_ENV: "production"
         PNPM_HOME: "/home/build/.local/share/pnpm"
@@ -110,10 +110,10 @@ build:
       command: |
         bun install --frozen-lockfile
         bun run build --if-present
-        mkdir -p /home/build/output/app
-        cp -r . /home/build/output/app/
-        rm -rf /home/build/output/app/node_modules
-        cd /home/build/output/app && bun install --frozen-lockfile --production
+        mkdir -p ${{targets.destdir}}/app
+        cp -r . ${{targets.destdir}}/app/
+        rm -rf ${{targets.destdir}}/app/node_modules
+        cd ${{targets.destdir}}/app && bun install --frozen-lockfile --production
       env:
         NODE_ENV: "production"
         BUN_INSTALL_CACHE_DIR: "/home/build/.bun/install/cache"
@@ -125,10 +125,10 @@ build:
       command: |
         yarn install --frozen-lockfile
         yarn build --if-present
-        mkdir -p /home/build/output/app
-        cp -r . /home/build/output/app/
-        rm -rf /home/build/output/app/node_modules
-        cd /home/build/output/app && yarn install --frozen-lockfile --production
+        mkdir -p ${{targets.destdir}}/app
+        cp -r . ${{targets.destdir}}/app/
+        rm -rf ${{targets.destdir}}/app/node_modules
+        cd ${{targets.destdir}}/app && yarn install --frozen-lockfile --production
       env:
         NODE_ENV: "production"
         YARN_CACHE_FOLDER: "/home/build/.yarn/cache"
@@ -140,9 +140,9 @@ build:
       command: |
         yarn install --immutable
         yarn build --if-present
-        mkdir -p /home/build/output/app
-        cp -r . /home/build/output/app/
-        cd /home/build/output/app && yarn workspaces focus --production
+        mkdir -p ${{targets.destdir}}/app
+        cp -r . ${{targets.destdir}}/app/
+        cd ${{targets.destdir}}/app && yarn workspaces focus --production
       env:
         NODE_ENV: "production"
         YARN_CACHE_FOLDER: "/home/build/.yarn/cache"

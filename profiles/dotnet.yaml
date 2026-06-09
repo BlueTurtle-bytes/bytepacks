@@ -39,12 +39,12 @@ build:
     - git
     - ca-certificates-bundle
   # dotnet publish produces a self-contained output directory.
-  # /home/build/output/app is where apko will pick up the published files.
+  # ${{targets.destdir}}/app is the melange staging path — files here get packaged into the APK.
   command: |
     NUGET_CONFIG=""
     if [ -f "/home/build/.nuget/NuGet/NuGet.Config" ]; then NUGET_CONFIG="--configfile /home/build/.nuget/NuGet/NuGet.Config"; fi
     dotnet restore $NUGET_CONFIG
-    dotnet publish -c Release -o /home/build/output/app --no-restore
+    dotnet publish -c Release -o ${{targets.destdir}}/app --no-restore
   env:
     DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     DOTNET_NOLOGO: "1"

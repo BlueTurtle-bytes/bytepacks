@@ -69,8 +69,8 @@ build:
     MVN_SETTINGS=""
     if [ -f "/home/build/.m2/settings.xml" ]; then MVN_SETTINGS="-s /home/build/.m2/settings.xml"; fi
     mvn package -DskipTests -B -q $MVN_SETTINGS
-    mkdir -p /home/build/output/app
-    cp target/*.jar /home/build/output/app/app.jar
+    mkdir -p ${{targets.destdir}}/app
+    cp target/*.jar ${{targets.destdir}}/app/app.jar
   env:
     JAVA_HOME: "/usr/lib/jvm/java-{JAVA_VERSION}-openjdk"
     MAVEN_OPTS: "-Xmx512m -XX:+UseContainerSupport"
@@ -122,8 +122,8 @@ build:
         MVN_SETTINGS=""
         if [ -f "/home/build/.m2/settings.xml" ]; then MVN_SETTINGS="-s /home/build/.m2/settings.xml"; fi
         mvn package -DskipTests -B -q -Dquarkus.package.jar.type=uber-jar $MVN_SETTINGS
-        mkdir -p /home/build/output/app
-        cp target/*-runner.jar /home/build/output/app/app.jar
+        mkdir -p ${{targets.destdir}}/app
+        cp target/*-runner.jar ${{targets.destdir}}/app/app.jar
     spring-boot-gradle:
       command: |
         export PATH="$JAVA_HOME/bin:$PATH"
@@ -132,8 +132,8 @@ build:
         fi
         chmod +x ./gradlew
         ./gradlew build -x test --no-daemon -q
-        mkdir -p /home/build/output/app
-        cp build/libs/*.jar /home/build/output/app/app.jar
+        mkdir -p ${{targets.destdir}}/app
+        cp build/libs/*.jar ${{targets.destdir}}/app/app.jar
       caches:
         - /home/build/.gradle
     quarkus-gradle:
@@ -144,8 +144,8 @@ build:
         fi
         chmod +x ./gradlew
         ./gradlew build -Dquarkus.package.jar.type=uber-jar -x test --no-daemon -q
-        mkdir -p /home/build/output/app
-        cp build/quarkus-app/*-runner.jar /home/build/output/app/app.jar
+        mkdir -p ${{targets.destdir}}/app
+        cp build/quarkus-app/*-runner.jar ${{targets.destdir}}/app/app.jar
       caches:
         - /home/build/.gradle
     micronaut-gradle:
@@ -156,8 +156,8 @@ build:
         fi
         chmod +x ./gradlew
         ./gradlew build -x test --no-daemon -q
-        mkdir -p /home/build/output/app
-        cp build/libs/*.jar /home/build/output/app/app.jar
+        mkdir -p ${{targets.destdir}}/app
+        cp build/libs/*.jar ${{targets.destdir}}/app/app.jar
       caches:
         - /home/build/.gradle
 
