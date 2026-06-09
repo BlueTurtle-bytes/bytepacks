@@ -1008,10 +1008,28 @@ func mergeCABundles(extraCAPath string) (string, error) {
 	return f.Name(), nil
 }
 
+// sanitizeImageName lowercases s and replaces any character that is not
+// [a-z0-9._-] with a hyphen, making the result safe to use as an OCI
+// repository name component.
+func sanitizeImageName(s string) string {
+	s = strings.ToLower(s)
+	b := strings.Builder{}
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	return strings.Trim(b.String(), "-.")
+}
+
 // applyDefaults fills in zero-value options.
 func applyDefaults(opts Options) Options {
 	if opts.ProjectName == "" {
-		opts.ProjectName = filepath.Base(opts.SourceDir)
+		opts.ProjectName = sanitizeImageName(filepath.Base(opts.SourceDir))
+	} else {
+		opts.ProjectName = sanitizeImageName(opts.ProjectName)
 	}
 	if opts.Version == "" {
 		opts.Version = "0.0.1"
