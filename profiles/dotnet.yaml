@@ -51,7 +51,16 @@ build:
     NUGET_PACKAGES: "/home/build/.nuget/packages"
 
   tls_ca_env:
-    - SSL_CERT_FILE  # .NET on Linux respects SSL_CERT_FILE for TLS; no update-ca-certificates needed on Wolfi
+    - SSL_CERT_FILE  # git and other OpenSSL-linked tools in the build step
+
+  # .NET's HttpClient/SslStream on Linux reads the system X509 trust store at
+  # fixed paths — it does NOT use SSL_CERT_FILE. Appending the corporate CA to
+  # the system bundle is the only reliable way to make dotnet restore trust a
+  # TLS-intercepting proxy certificate.
+  tls_ca_pre_step: |
+    if [ -f "/home/build/.apexpack-ca.crt" ] && [ -f "/etc/ssl/certs/ca-certificates.crt" ]; then
+      cat /home/build/.apexpack-ca.crt >> /etc/ssl/certs/ca-certificates.crt
+    fi
 
   # Corporate Artifactory / Nexus NuGet feed.
   # Set to your Artifactory NuGet virtual repo URL; leave empty to restore from nuget.org directly.
