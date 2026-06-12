@@ -46,6 +46,16 @@ build:
     DOTNET_RID="linux-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')"
     dotnet restore -r "$DOTNET_RID" $NUGET_CONFIG
     dotnet publish -c Release -o ${{targets.destdir}}/app -r "$DOTNET_RID" --self-contained false --no-restore
+    RCONFIG=$(find ${{targets.destdir}}/app -maxdepth 1 -name "*.runtimeconfig.json" | head -1)
+    if [ -n "$RCONFIG" ]; then
+      PROJ=$(basename "$RCONFIG" .runtimeconfig.json)
+      if [ "$PROJ" != "app" ]; then
+        for EXT in dll runtimeconfig.json deps.json pdb; do
+          SRC="${{targets.destdir}}/app/$PROJ.$EXT"
+          [ -f "$SRC" ] && mv "$SRC" "${{targets.destdir}}/app/app.$EXT"
+        done
+      fi
+    fi
   env:
     DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     DOTNET_NOLOGO: "1"
