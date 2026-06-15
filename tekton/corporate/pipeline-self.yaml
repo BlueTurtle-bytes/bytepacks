@@ -1,0 +1,201 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: apexpack-self-build
+  annotations:
+    tekton.dev/description: >-
+      CI pipeline for the apexpack project itself.
+      Clones the apexpack repo, scans for secrets, calculates a version,
+      compiles the Go binary, builds the OCI image via apexpack.yaml,
+      pushes to Artifactory, then stamps the git tag.
+      Same corporate params/workspaces as apexpack-corporate pipeline.
+spec:
+  params:
+    - name: app-id
+      type: string
+      description: "Application name (used as image name component)."
+      default: "apexpack"
+
+    - name: release-id
+      type: string
+      description: "Optional id attached to version names."
+      default: ""
+
+    - name: release-strategy
+      type: string
+      description: "Versioning strategy: semantic or timestamped-hash."
+      default: "timestamped-hash"
+
+    - name: release-channels
+      type: array
+      description: "Additional image tags to publish after the versioned push (e.g. latest)."
+      default: []
+
+    - name: image-name
+      type: string
+      description: >-
+        Full image path without tag
+        (e.g. artifacts.bcp.absa.co.za/apexpack/apexpack).
+
+    - name: git-url
+      type: string
+      description: "apexpack source repository URL."
+
+    - name: git-revision
+      type: string
+      description: "Branch, tag, or commit SHA to build."
+      default: "main"
+
+    - name: git-branch-type
+      type: string
+      description: "Branch type injected by the trigger: push or pull_request."
+      default: "push"
+
+    - name: git-source-branch
+      type: string
+      default: ""
+
+    - name: git-target-branch
+      type: string
+      default: ""
+
+    - name: gitleaks_exit_code
+      type: string
+      default: "1"
+
+    - name: go-image
+      type: string
+      description: "Go SDK image for the compile step."
+      default: "golang:1.23-alpine"
+
+    - name: apexpack-builder-image
+      type: string
+      description: >-
+        Image providing melange + apko + bubblewrap for the build step.
+        On first bootstrap this is the currently deployed apexpack image.
+        Override to pull from your Artifactory mirror.
+      default: "apexpack:latest"
+
+  workspaces:
+    - name: source
+    - name: shared
+      description: "Holds the compiled Go binary and the OCI tarball."
+    - name: cache
+      optional: true
+    - name: dockerconfig
+      description: "Optional Secret providing .docker/config.json for Artifactory image push."
+      optional: true
+    - name: tls-ca
+      optional: true
+
+  results:
+    - name: images.pushed-image
+      value: $(tasks.self-build.results.pushed-image)
+
+  tasks:
+    # ── 1. Clone ───────────────────────────────────────────────────────────────
+    - name: clone-source
+      taskRef:
+        name: git-clone-v1-0
+        kind: ClusterTask
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+      workspaces:
+        - name: output
+          workspace: source
+
+    # ── 2. Secret scan ─────────────────────────────────────────────────────────
+    - name: gitleaks-scan
+      taskRef:
+        name: gitleaks
+        kind: ClusterTask
+      runAfter:
+        - clone-source
+      params:
+        - name: exit-code
+          value: $(params.gitleaks_exit_code)
+      workspaces:
+        - name: source
+          workspace: source
+
+    # ── 3. Calculate version (no git tag yet) ──────────────────────────────────
+    - name: version-release
+      taskRef:
+        name: build-version-v1-0
+        kind: ClusterTask
+      runAfter:
+        - clone-source
+        - gitleaks-scan
+      params:
+        - name: app-id
+          value: $(params.app-id)
+        - name: release-strategy
+          value: $(params.release-strategy)
+        - name: release-id
+          value: $(params.release-id)
+        - name: git-hash
+          value: $(tasks.clone-source.results.commit)
+        - name: git-branch-type
+          value: $(params.git-branch-type)
+        - name: push-tag
+          value: "False"
+      workspaces:
+        - name: source
+          workspace: source
+
+    # ── 4. Compile → build OCI image → push ───────────────────────────────────
+    - name: self-build
+      taskRef:
+        name: apexpack-self-build
+      runAfter:
+        - version-release
+      params:
+        - name: IMAGE
+          value: "$(params.image-name):$(tasks.version-release.results.release-version)"
+        - name: VERSION
+          value: $(tasks.version-release.results.release-version)
+        - name: GO_IMAGE
+          value: $(params.go-image)
+        - name: APEXPACK_BUILDER_IMAGE
+          value: $(params.apexpack-builder-image)
+        - name: image-base
+          value: $(params.image-name)
+        - name: additional-tags
+          value:
+            - $(params.release-channels[*])
+      workspaces:
+        - name: source
+          workspace: source
+        - name: shared
+          workspace: shared
+        - name: dockerconfig
+          workspace: dockerconfig
+        - name: tls-ca
+          workspace: tls-ca
+
+    # ── 5. Push git tag now that image is live ─────────────────────────────────
+    - name: tag-version
+      taskRef:
+        name: build-version-v1-0
+        kind: ClusterTask
+      runAfter:
+        - self-build
+      params:
+        - name: app-id
+          value: $(params.app-id)
+        - name: release-strategy
+          value: $(params.release-strategy)
+        - name: release-id
+          value: $(params.release-id)
+        - name: git-hash
+          value: $(tasks.clone-source.results.commit)
+        - name: git-branch-type
+          value: $(params.git-branch-type)
+        - name: push-tag
+          value: "True"
+      workspaces:
+        - name: source
+          workspace: source

@@ -1,0 +1,237 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: apexpack-corporate
+  annotations:
+    tekton.dev/description: >-
+      Corporate apexpack pipeline. Mirrors the structure of the existing
+      docker-v1-0 pipeline: clone → gitleaks → version-release →
+      apexpack-build → crane-push → tag-version.
+      Replaces install-external-artifacts + build-push-image (ClusterTasks)
+      with apexpack-build-corporate + crane-push-corporate.
+spec:
+  # ── Params ──────────────────────────────────────────────────────────────────
+  # Kept identical to the docker-v1-0 pipeline where possible so existing
+  # PipelineRun manifests need minimal changes.
+  params:
+    - name: app-id
+      type: string
+      description: Application name (used as project name and APK package name).
+
+    - name: release-id
+      type: string
+      description: "Optional id attached to version names (git tags, image tags)."
+      default: ""
+
+    - name: release-strategy
+      type: string
+      description: "Versioning strategy: semantic or timestamped-hash."
+      default: "timestamped-hash"
+
+    - name: release-channels
+      type: array
+      description: "Additional image tags to publish (e.g. latest, dev, next)."
+      default: []
+
+    - name: image-name
+      type: string
+      description: >-
+        Full image path without tag
+        (e.g. artifacts.bcp.absa.co.za/my-repo/myapp).
+
+    - name: git-url
+      type: string
+      description: "Source repository URL."
+
+    - name: git-revision
+      type: string
+      description: "Branch, tag, or commit SHA to build."
+      default: "main"
+
+    - name: git-branch-type
+      type: string
+      description: "Branch type injected by the trigger: push or pull_request."
+      default: "push"
+
+    - name: git-source-branch
+      type: string
+      description: "Source branch name (injected by trigger)."
+      default: ""
+
+    - name: git-target-branch
+      type: string
+      description: "Target branch for PRs (injected by trigger)."
+      default: ""
+
+    - name: gitleaks_exit_code
+      type: string
+      description: "Exit code when gitleaks finds secrets. Set to 0 to warn without failing."
+      default: "1"
+
+    # ── apexpack-specific ────────────────────────────────────────────────────
+    - name: runtime
+      type: string
+      description: "Language runtime override for apexpack. Leave empty for auto-detect."
+      default: ""
+
+    - name: apexpack-image
+      type: string
+      description: "apexpack container image to use. Override to pin a version or use your Artifactory mirror."
+      default: "apexpack:latest"
+
+  # ── Workspaces ───────────────────────────────────────────────────────────────
+  workspaces:
+    - name: source
+      description: "Primary workspace: code is cloned here, all tasks share it."
+    - name: shared
+      description: "Shared workspace: apexpack writes the OCI tarball, APK, and SBOM here."
+    - name: cache
+      description: "Optional cache workspace for package manager caches."
+      optional: true
+    - name: dockerconfig
+      description: "Optional Secret providing .docker/config.json for Artifactory image push."
+      optional: true
+    - name: tls-ca
+      description: >-
+        Optional Secret with a corporate CA certificate (key: ca-bundle.crt).
+        Mount when the cluster routes traffic through a TLS-intercepting proxy.
+      optional: true
+
+  # ── Results ──────────────────────────────────────────────────────────────────
+  results:
+    - name: images.pushed-image
+      description: "The primary image reference that was pushed."
+      value: $(tasks.crane-push.results.pushed-image)
+
+  # ── Tasks ────────────────────────────────────────────────────────────────────
+  tasks:
+    # ── 1. Clone source ───────────────────────────────────────────────────────
+    - name: clone-source
+      taskRef:
+        name: git-clone-v1-0
+        kind: ClusterTask
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+      workspaces:
+        - name: output
+          workspace: source
+
+    # ── 2. Secret scanning ────────────────────────────────────────────────────
+    - name: gitleaks-scan
+      taskRef:
+        name: gitleaks
+        kind: ClusterTask
+      runAfter:
+        - clone-source
+      params:
+        - name: exit-code
+          value: $(params.gitleaks_exit_code)
+      workspaces:
+        - name: source
+          workspace: source
+
+    # ── 3. Calculate release version (pre-build — no git tag yet) ────────────
+    - name: version-release
+      taskRef:
+        name: build-version-v1-0
+        kind: ClusterTask
+      runAfter:
+        - clone-source
+        - gitleaks-scan
+      params:
+        - name: app-id
+          value: $(params.app-id)
+        - name: release-strategy
+          value: $(params.release-strategy)
+        - name: release-id
+          value: $(params.release-id)
+        - name: git-hash
+          value: $(tasks.clone-source.results.commit)
+        - name: git-branch-type
+          value: $(params.git-branch-type)
+        - name: push-tag
+          value: "False"
+      workspaces:
+        - name: source
+          workspace: source
+
+    # ── 4. Build OCI image with apexpack ─────────────────────────────────────
+    # Replaces: install-external-artifacts + build-push-image ClusterTasks.
+    # Detects the language, runs melange (APK build), runs apko (OCI image),
+    # and writes the tarball + SBOM to the 'shared' workspace.
+    - name: apexpack-build
+      taskRef:
+        name: apexpack-build-corporate
+      runAfter:
+        - version-release
+      params:
+        - name: IMAGE
+          value: "$(params.image-name):$(tasks.version-release.results.release-version)"
+        - name: VERSION
+          value: $(tasks.version-release.results.release-version)
+        - name: PROJECT_NAME
+          value: $(params.app-id)
+        - name: RUNTIME
+          value: $(params.runtime)
+        - name: APEXPACK_IMAGE
+          value: $(params.apexpack-image)
+      workspaces:
+        - name: source
+          workspace: source
+        - name: output
+          workspace: shared
+        - name: dockerconfig
+          workspace: dockerconfig
+        - name: tls-ca
+          workspace: tls-ca
+
+    # ── 5. Push image to Artifactory registry ────────────────────────────────
+    # Pushes the OCI tarball to the primary versioned tag, then stamps any
+    # additional release-channel tags (e.g. latest, dev) without re-uploading.
+    - name: crane-push
+      taskRef:
+        name: crane-push-corporate
+      runAfter:
+        - apexpack-build
+      params:
+        - name: tarball
+          value: $(tasks.apexpack-build.results.IMAGE_TARBALL)
+        - name: image
+          value: "$(params.image-name):$(tasks.version-release.results.release-version)"
+        - name: image-base
+          value: $(params.image-name)
+        - name: additional-tags
+          value:
+            - $(params.release-channels[*])
+      workspaces:
+        - name: output
+          workspace: shared
+        - name: dockerconfig
+          workspace: dockerconfig
+
+    # ── 6. Push git tag now that the image is live ────────────────────────────
+    - name: tag-version
+      taskRef:
+        name: build-version-v1-0
+        kind: ClusterTask
+      runAfter:
+        - crane-push
+      params:
+        - name: app-id
+          value: $(params.app-id)
+        - name: release-strategy
+          value: $(params.release-strategy)
+        - name: release-id
+          value: $(params.release-id)
+        - name: git-hash
+          value: $(tasks.clone-source.results.commit)
+        - name: git-branch-type
+          value: $(params.git-branch-type)
+        - name: push-tag
+          value: "True"
+      workspaces:
+        - name: source
+          workspace: source

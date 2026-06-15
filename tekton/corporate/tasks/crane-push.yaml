@@ -1,0 +1,71 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: crane-push-corporate
+  labels:
+    app.kubernetes.io/version: "1.0"
+  annotations:
+    tekton.dev/displayName: "crane push (corporate)"
+    tekton.dev/description: >-
+      Pushes an OCI image tarball to a registry using crane.
+      After the primary push, applies any additional tags (release-channels)
+      to the same image base without re-uploading layers.
+spec:
+  params:
+    - name: tarball
+      description: "Absolute path to the OCI image tarball produced by apexpack-build-corporate."
+    - name: image
+      description: >-
+        Primary destination including tag
+        (e.g. artifacts.corp.com/myrepo/myapp:v1.2.3).
+    - name: image-base
+      description: >-
+        Image reference without tag, used when applying additional-tags.
+        Typically $(params.image-name) from the corporate pipeline.
+      default: ""
+    - name: additional-tags
+      description: >-
+        Extra tags to stamp on the same image after push (maps to release-channels).
+        Crane re-tags in the registry — no re-upload required.
+      type: array
+      default: []
+
+  workspaces:
+    - name: output
+      description: "Workspace containing the image tarball (maps to 'shared')."
+    - name: dockerconfig
+      description: "Optional .docker/config.json for Artifactory push. Mount the dockerconfig Secret here."
+      optional: true
+      mountPath: /root/.docker
+
+  results:
+    - name: pushed-image
+      description: "The primary image reference that was pushed."
+
+  steps:
+    - name: push
+      image: gcr.io/go-containerregistry/crane:latest
+      script: |
+        #!/bin/sh
+        set -e
+        crane push "$(params.tarball)" "$(params.image)"
+        printf "%s" "$(params.image)" > $(results.pushed-image.path)
+        echo "Pushed: $(params.image)"
+
+    - name: tag-additional
+      image: gcr.io/go-containerregistry/crane:latest
+      script: |
+        #!/bin/sh
+        set -e
+        BASE="$(params.image-base)"
+        if [ -z "$BASE" ]; then
+          echo "No image-base set — skipping additional tags."
+          exit 0
+        fi
+        for TAG in "$@"; do
+          [ -z "$TAG" ] && continue
+          echo "Tagging as ${BASE}:${TAG} ..."
+          crane tag "$(params.image)" "${BASE}:${TAG}"
+        done
+      args:
+        - $(params.additional-tags[*])

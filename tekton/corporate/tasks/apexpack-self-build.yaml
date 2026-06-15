@@ -1,0 +1,136 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: apexpack-self-build
+  labels:
+    app.kubernetes.io/version: "1.0"
+  annotations:
+    tekton.dev/displayName: "apexpack self-build"
+    tekton.dev/description: >-
+      Compiles the apexpack Go binary from source, then uses that binary to
+      build and push its own OCI image (via apexpack.yaml in the repo root).
+      Three steps share one pod: compile (golang) → build-image (apexpack) → push (crane).
+spec:
+  params:
+    - name: IMAGE
+      description: >-
+        Full OCI image reference including tag
+        (e.g. artifacts.corp.com/apexpack/apexpack:v1.2.3).
+    - name: VERSION
+      description: "APK package version — typically $(tasks.version-release.results.release-version)."
+      default: "0.0.1"
+    - name: GO_IMAGE
+      description: "Go SDK image used to compile the apexpack binary."
+      default: "golang:1.23-alpine"
+    - name: APEXPACK_BUILDER_IMAGE
+      description: >-
+        Image that provides melange, apko, and bubblewrap for the OCI build step.
+        Defaults to the currently deployed apexpack image (bootstrapping).
+        Override to pull from your Artifactory mirror.
+      default: "apexpack:latest"
+    - name: additional-tags
+      description: "Extra tags to stamp after push (e.g. latest). Empty = primary tag only."
+      type: array
+      default: []
+    - name: image-base
+      description: "Image path without tag, used when stamping additional-tags."
+      default: ""
+
+  workspaces:
+    - name: source
+      description: "Cloned apexpack source (maps to corporate 'source' workspace)."
+    - name: shared
+      description: "Shared workspace — compiled binary and OCI tarball are written here."
+    - name: dockerconfig
+      description: "Optional .docker/config.json for Artifactory push. Mount the dockerconfig Secret here."
+      optional: true
+      mountPath: /root/.docker
+    - name: tls-ca
+      description: "Optional Secret with corporate CA cert (key: ca-bundle.crt)."
+      optional: true
+
+  results:
+    - name: IMAGE_TARBALL
+      description: "Path to the OCI image tarball."
+    - name: pushed-image
+      description: "The primary image reference that was pushed."
+
+  steps:
+    # ── Step 1: Compile Go binary ─────────────────────────────────────────────
+    # CGO_ENABLED=0 produces a fully static binary — runs in any Linux container.
+    - name: compile
+      image: $(params.GO_IMAGE)
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: CGO_ENABLED
+          value: "0"
+        - name: GOFLAGS
+          value: "-trimpath"
+        - name: GOCACHE
+          value: "$(workspaces.shared.path)/.gocache"
+        - name: GOMODCACHE
+          value: "$(workspaces.shared.path)/.gomodcache"
+      script: |
+        #!/bin/sh
+        set -e
+        echo "Building apexpack binary..."
+        go build -o $(workspaces.shared.path)/apexpack ./cmd/apexpack
+        echo "Binary size: $(du -sh $(workspaces.shared.path)/apexpack | cut -f1)"
+
+    # ── Step 2: Build OCI image using the compiled binary ────────────────────
+    # Runs inside the current apexpack image (which has melange, apko, bubblewrap).
+    # The compiled binary from step 1 replaces the container's own apexpack binary.
+    - name: build-image
+      image: $(params.APEXPACK_BUILDER_IMAGE)
+      imagePullPolicy: Always
+      securityContext:
+        privileged: true
+        runAsUser: 0
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/sh
+        set -e
+
+        TLS_CA_FLAG=""
+        if [ "$(workspaces.tls-ca.bound)" = "true" ]; then
+          TLS_CA_FLAG="--tls-extra-ca $(workspaces.tls-ca.path)/ca-bundle.crt"
+        fi
+
+        # Use the freshly compiled binary from step 1.
+        $(workspaces.shared.path)/apexpack build . \
+          --tag $(params.IMAGE) \
+          --version $(params.VERSION) \
+          --output $(workspaces.shared.path)/output \
+          $TLS_CA_FLAG
+
+        SOURCE_BASE=$(basename $(workspaces.source.path))
+        printf "%s" "$(workspaces.shared.path)/output/${SOURCE_BASE}.tar" > $(results.IMAGE_TARBALL.path)
+        echo "Build complete:"
+        ls -lh $(workspaces.shared.path)/output/
+
+    # ── Step 3: Push to registry ──────────────────────────────────────────────
+    - name: push
+      image: gcr.io/go-containerregistry/crane:latest
+      script: |
+        #!/bin/sh
+        set -e
+        TARBALL=$(cat $(results.IMAGE_TARBALL.path))
+        crane push "$TARBALL" "$(params.IMAGE)"
+        printf "%s" "$(params.IMAGE)" > $(results.pushed-image.path)
+        echo "Pushed: $(params.IMAGE)"
+
+    # ── Step 4: Stamp additional tags (e.g. latest) ───────────────────────────
+    - name: tag-additional
+      image: gcr.io/go-containerregistry/crane:latest
+      script: |
+        #!/bin/sh
+        set -e
+        BASE="$(params.image-base)"
+        if [ -z "$BASE" ]; then exit 0; fi
+        for TAG in "$@"; do
+          [ -z "$TAG" ] && continue
+          echo "Tagging as ${BASE}:${TAG} ..."
+          crane tag "$(params.IMAGE)" "${BASE}:${TAG}"
+        done
+      args:
+        - $(params.additional-tags[*])

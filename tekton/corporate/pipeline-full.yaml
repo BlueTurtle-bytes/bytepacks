@@ -1,0 +1,423 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: apexpack-corporate-full
+  annotations:
+    tekton.dev/description: >-
+      Full corporate apexpack pipeline.
+      clone → gitleaks → version-release → detect → build → scan →
+      patch (conditional) → rebuild (conditional) → rescan (conditional) →
+      push → tag-version.
+      Uses corporate ClusterTasks for clone, gitleaks, and versioning.
+      Uses apexpack tasks for detect, build, scan, patch, and push.
+spec:
+  # ── Params ──────────────────────────────────────────────────────────────────
+  params:
+    # Corporate params (mirror docker-v1-0 pipeline)
+    - name: app-id
+      type: string
+      description: "Application name used as the APK package name and project name."
+
+    - name: release-id
+      type: string
+      description: "Optional id attached to version names (git tags, image tags)."
+      default: ""
+
+    - name: release-strategy
+      type: string
+      description: "Versioning strategy: semantic or timestamped-hash."
+      default: "timestamped-hash"
+
+    - name: release-channels
+      type: array
+      description: "Additional image tags to publish after the versioned push (e.g. latest, dev)."
+      default: []
+
+    - name: image-name
+      type: string
+      description: "Full image path without tag (e.g. artifacts.bcp.absa.co.za/myrepo/myapp)."
+
+    - name: git-url
+      type: string
+      description: "Source repository URL."
+
+    - name: git-revision
+      type: string
+      description: "Branch, tag, or commit SHA to build."
+      default: "main"
+
+    - name: git-branch-type
+      type: string
+      description: "Branch type injected by the trigger: push or pull_request."
+      default: "push"
+
+    - name: git-source-branch
+      type: string
+      default: ""
+
+    - name: git-target-branch
+      type: string
+      default: ""
+
+    - name: gitleaks_exit_code
+      type: string
+      description: "Exit code when gitleaks finds secrets. Set to 0 to warn without failing."
+      default: "1"
+
+    # apexpack build / scan params
+    - name: runtime
+      type: string
+      description: "Language runtime override. Leave empty for auto-detect."
+      default: ""
+
+    - name: fail-on
+      type: string
+      description: "Minimum CVE severity that fails the scan: critical, high, medium, low, none."
+      default: "high"
+
+    - name: auto-patch
+      type: string
+      description: >-
+        Force auto-patch on for this run regardless of the profile setting.
+        Leave empty to use the profile's scan.auto-patch default.
+      default: ""
+
+    - name: patch-persist
+      type: string
+      description: >-
+        Force patch-persist on for this run regardless of the profile setting.
+        Leave empty to use the profile's scan.patch-persist default.
+      default: ""
+
+    - name: apexpack-image
+      type: string
+      description: "apexpack container image. Override to use your Artifactory mirror or pin a version."
+      default: "apexpack:latest"
+
+  # ── Workspaces ───────────────────────────────────────────────────────────────
+  workspaces:
+    - name: source
+      description: "Source code workspace — cloned here and shared across all tasks."
+    - name: shared
+      description: "Build artifacts — OCI tarball, APK, SBOM, and scan reports are written here."
+    - name: profiles
+      description: >-
+        Profiles workspace. The detect task seeds profiles from the apexpack image on every run.
+        The patch task writes updated profiles here when CVEs are found.
+        Bind to a ReadWriteOnce PVC (or share the same PVC as 'shared' with a subPath).
+    - name: cache
+      description: "Optional package manager cache workspace."
+      optional: true
+    - name: dockerconfig
+      description: "Optional Secret providing .docker/config.json for Artifactory image push."
+      optional: true
+    - name: tls-ca
+      description: >-
+        Optional Secret with a corporate CA certificate (key: ca-bundle.crt).
+        Required when the cluster routes traffic through a TLS-intercepting proxy.
+      optional: true
+
+  # ── Results ──────────────────────────────────────────────────────────────────
+  results:
+    - name: RUNTIME
+      value: $(tasks.detect.results.RUNTIME)
+    - name: FRAMEWORK
+      value: $(tasks.detect.results.FRAMEWORK)
+    - name: SCAN_RESULT
+      value: $(tasks.scan.results.SCAN_RESULT)
+    - name: AUTO_PATCH
+      value: $(tasks.detect.results.AUTO_PATCH)
+    - name: PATCHES_APPLIED
+      value: $(tasks.patch.results.PATCHES_APPLIED)
+    - name: RESCAN_RESULT
+      value: $(tasks.rescan.results.SCAN_RESULT)
+    - name: images.pushed-image
+      value: $(tasks.crane-push.results.pushed-image)
+
+  # ── Tasks ────────────────────────────────────────────────────────────────────
+  tasks:
+    # ── 1. Clone source ───────────────────────────────────────────────────────
+    - name: clone-source
+      taskRef:
+        name: git-clone-v1-0
+        kind: ClusterTask
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+      workspaces:
+        - name: output
+          workspace: source
+
+    # ── 2. Secret scan ────────────────────────────────────────────────────────
+    - name: gitleaks-scan
+      taskRef:
+        name: gitleaks
+        kind: ClusterTask
+      runAfter:
+        - clone-source
+      params:
+        - name: exit-code
+          value: $(params.gitleaks_exit_code)
+      workspaces:
+        - name: source
+          workspace: source
+
+    # ── 3. Calculate release version (no git tag yet) ─────────────────────────
+    - name: version-release
+      taskRef:
+        name: build-version-v1-0
+        kind: ClusterTask
+      runAfter:
+        - clone-source
+        - gitleaks-scan
+      params:
+        - name: app-id
+          value: $(params.app-id)
+        - name: release-strategy
+          value: $(params.release-strategy)
+        - name: release-id
+          value: $(params.release-id)
+        - name: git-hash
+          value: $(tasks.clone-source.results.commit)
+        - name: git-branch-type
+          value: $(params.git-branch-type)
+        - name: push-tag
+          value: "False"
+      workspaces:
+        - name: source
+          workspace: source
+
+    # ── 4. Detect language and framework ─────────────────────────────────────
+    # Seeds profiles from the apexpack image into the profiles workspace.
+    # Produces: RUNTIME, FRAMEWORK, AUTO_PATCH, PATCH_PERSIST.
+    - name: detect
+      taskRef:
+        name: apexpack-detect
+      runAfter:
+        - version-release
+      params:
+        - name: RUNTIME_OVERRIDE
+          value: $(params.runtime)
+        - name: AUTO_PATCH_OVERRIDE
+          value: $(params.auto-patch)
+        - name: PATCH_PERSIST_OVERRIDE
+          value: $(params.patch-persist)
+      workspaces:
+        - name: source
+          workspace: source
+        - name: profiles
+          workspace: profiles
+
+    # ── 5. Build OCI image ────────────────────────────────────────────────────
+    # Runs melange (APK) + apko (OCI). Outputs tarball + SBOM to shared workspace.
+    - name: build
+      taskRef:
+        name: apexpack-build-corporate
+      runAfter:
+        - detect
+      params:
+        - name: IMAGE
+          value: "$(params.image-name):$(tasks.version-release.results.release-version)"
+        - name: VERSION
+          value: $(tasks.version-release.results.release-version)
+        - name: PROJECT_NAME
+          value: $(params.app-id)
+        - name: RUNTIME
+          value: $(tasks.detect.results.RUNTIME)
+        - name: APEXPACK_IMAGE
+          value: $(params.apexpack-image)
+      workspaces:
+        - name: source
+          workspace: source
+        - name: output
+          workspace: shared
+        - name: profiles
+          workspace: profiles
+        - name: dockerconfig
+          workspace: dockerconfig
+        - name: tls-ca
+          workspace: tls-ca
+
+    # ── 6. CVE scan ───────────────────────────────────────────────────────────
+    # SOFT_FAIL is set to AUTO_PATCH so the pipeline continues when auto-patch is
+    # enabled — scan writes "fail" result but exits 0.
+    # When AUTO_PATCH=false and CVEs are found, scan exits 1 and the pipeline stops.
+    - name: scan
+      taskRef:
+        name: apexpack-scan
+      runAfter:
+        - build
+      params:
+        - name: SBOM_PATH
+          value: $(tasks.build.results.SBOM_PATH)
+        - name: FAIL_ON
+          value: $(params.fail-on)
+        - name: FORMAT
+          value: sarif
+        - name: SOFT_FAIL
+          value: $(tasks.detect.results.AUTO_PATCH)
+      workspaces:
+        - name: output
+          workspace: shared
+        - name: tls-ca
+          workspace: tls-ca
+
+    # ── 7. Auto-patch CVEs ────────────────────────────────────────────────────
+    # Only runs when: scan=fail AND AUTO_PATCH=true.
+    # Updates the profile YAML in the profiles workspace with pinned package versions.
+    - name: patch
+      taskRef:
+        name: apexpack-patch
+      runAfter:
+        - scan
+      when:
+        - input: "$(tasks.scan.results.SCAN_RESULT)"
+          operator: in
+          values: ["fail"]
+        - input: "$(tasks.detect.results.AUTO_PATCH)"
+          operator: in
+          values: ["true"]
+      params:
+        - name: SBOM_PATH
+          value: $(tasks.build.results.SBOM_PATH)
+        - name: PROFILES_SUBDIR
+          value: profiles
+        - name: PERSIST
+          value: $(tasks.detect.results.PATCH_PERSIST)
+        - name: GIT_REVISION
+          value: $(params.git-revision)
+        - name: RUNTIME
+          value: $(tasks.detect.results.RUNTIME)
+      workspaces:
+        - name: profiles
+          workspace: profiles
+        - name: output
+          workspace: shared
+        - name: tls-ca
+          workspace: tls-ca
+
+    # ── 8. Rebuild with patched profiles ──────────────────────────────────────
+    # Only runs when: scan=fail AND AUTO_PATCH=true AND at least one patch was applied.
+    # Rebuilds using the updated profiles — overwrites the original tarball in shared.
+    - name: rebuild
+      taskRef:
+        name: apexpack-build-corporate
+      runAfter:
+        - patch
+      when:
+        - input: "$(tasks.scan.results.SCAN_RESULT)"
+          operator: in
+          values: ["fail"]
+        - input: "$(tasks.detect.results.AUTO_PATCH)"
+          operator: in
+          values: ["true"]
+        - input: "$(tasks.patch.results.PATCHES_APPLIED)"
+          operator: notin
+          values: ["0", ""]
+      params:
+        - name: IMAGE
+          value: "$(params.image-name):$(tasks.version-release.results.release-version)"
+        - name: VERSION
+          value: $(tasks.version-release.results.release-version)
+        - name: PROJECT_NAME
+          value: $(params.app-id)
+        - name: RUNTIME
+          value: $(tasks.detect.results.RUNTIME)
+        - name: APEXPACK_IMAGE
+          value: $(params.apexpack-image)
+      workspaces:
+        - name: source
+          workspace: source
+        - name: output
+          workspace: shared
+        - name: profiles
+          workspace: profiles
+        - name: dockerconfig
+          workspace: dockerconfig
+        - name: tls-ca
+          workspace: tls-ca
+
+    # ── 9. Re-scan rebuilt image ──────────────────────────────────────────────
+    # Confirms CVEs were resolved. Soft-fail so push always completes — check
+    # the rescan logs for the final verdict. Only runs when rebuild ran.
+    - name: rescan
+      taskRef:
+        name: apexpack-scan
+      runAfter:
+        - rebuild
+      when:
+        - input: "$(tasks.scan.results.SCAN_RESULT)"
+          operator: in
+          values: ["fail"]
+        - input: "$(tasks.detect.results.AUTO_PATCH)"
+          operator: in
+          values: ["true"]
+        - input: "$(tasks.patch.results.PATCHES_APPLIED)"
+          operator: notin
+          values: ["0", ""]
+      params:
+        - name: SBOM_PATH
+          value: $(tasks.build.results.SBOM_PATH)
+        - name: FAIL_ON
+          value: $(params.fail-on)
+        - name: FORMAT
+          value: table
+        - name: SOFT_FAIL
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: shared
+        - name: tls-ca
+          workspace: tls-ca
+
+    # ── 10. Push to Artifactory ───────────────────────────────────────────────
+    # Runs after rescan. If patch cycle was skipped, rescan is also skipped
+    # (Tekton treats skipped tasks as complete) so push still runs after scan passes.
+    # rebuild overwrites the same tarball path, so $(tasks.build.results.IMAGE_TARBALL)
+    # always points to the most recent image — original or patched.
+    - name: crane-push
+      taskRef:
+        name: crane-push-corporate
+      runAfter:
+        - rescan
+      params:
+        - name: tarball
+          value: $(tasks.build.results.IMAGE_TARBALL)
+        - name: image
+          value: "$(params.image-name):$(tasks.version-release.results.release-version)"
+        - name: image-base
+          value: $(params.image-name)
+        - name: additional-tags
+          value:
+            - $(params.release-channels[*])
+      workspaces:
+        - name: output
+          workspace: shared
+        - name: dockerconfig
+          workspace: dockerconfig
+
+    # ── 11. Push git tag now that the image is live ───────────────────────────
+    - name: tag-version
+      taskRef:
+        name: build-version-v1-0
+        kind: ClusterTask
+      runAfter:
+        - crane-push
+      params:
+        - name: app-id
+          value: $(params.app-id)
+        - name: release-strategy
+          value: $(params.release-strategy)
+        - name: release-id
+          value: $(params.release-id)
+        - name: git-hash
+          value: $(tasks.clone-source.results.commit)
+        - name: git-branch-type
+          value: $(params.git-branch-type)
+        - name: push-tag
+          value: "True"
+      workspaces:
+        - name: source
+          workspace: source
