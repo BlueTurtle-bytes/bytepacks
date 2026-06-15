@@ -315,6 +315,9 @@ func marshalYAML(v any) (string, error) {
 func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, error) {
 	token := langVersionToken(p.Runtime)
 	version := resolveVersion(p.Runtime, opts.LanguageVersion)
+	if err := validateRuntimeVersion(p.Runtime, version); err != nil {
+		return types.MelangeConfig{}, err
+	}
 
 	packages := vsubSlice(append([]string{"wolfi-baselayout"}, p.Build.Dependencies...), token, version)
 
@@ -599,12 +602,37 @@ func langVersionToken(runtime string) string {
 	return ""
 }
 
+// supportedLangVersions lists the versions available in the Wolfi APK repo.
+// Versions not in this set will cause an apk solve failure at build time.
+var supportedLangVersions = map[string][]string{
+	"dotnet": {"8", "9", "10"},
+}
+
 // resolveVersion returns the detected version, falling back to the built-in default.
 func resolveVersion(runtime, detected string) string {
 	if detected != "" {
 		return detected
 	}
 	return defaultLangVersions[runtime]
+}
+
+// validateRuntimeVersion returns an error if the resolved version is not available
+// in the Wolfi APK repository for the given runtime.
+func validateRuntimeVersion(runtime, version string) error {
+	supported, ok := supportedLangVersions[runtime]
+	if !ok {
+		return nil // no constraint defined for this runtime
+	}
+	for _, v := range supported {
+		if v == version {
+			return nil
+		}
+	}
+	return fmt.Errorf(
+		"unsupported %s version %q: Wolfi only provides versions %s — "+
+			"upgrade TargetFramework in your .csproj (or sdk.version in global.json) to a supported release",
+		runtime, version, strings.Join(supported, ", "),
+	)
 }
 
 // vsub replaces the language version token in s.

@@ -85,10 +85,11 @@ build:
   nuget_settings_template: "corporate"
 
 image:
-  # aspnetcore-{DOTNET_VERSION}-runtime is the ASP.NET Core runtime — no SDK, no compiler.
+  # aspnet-{DOTNET_VERSION}-runtime is the ASP.NET Core runtime — no SDK, no compiler.
   # Much smaller than dotnet-{DOTNET_VERSION}-sdk and has a smaller CVE surface.
+  # Wolfi package name is "aspnet-N-runtime" (not "aspnetcore-N-runtime").
   packages:
-    - dotnet-{DOTNET_VERSION}-runtime
+    - aspnet-{DOTNET_VERSION}-runtime
     - ca-certificates-bundle=20260413-r0
     - icu-libs
   # The entrypoint is the published DLL.
