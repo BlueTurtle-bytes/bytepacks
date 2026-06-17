@@ -1,0 +1,124 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: apexpack-detect-corporate
+  labels:
+    app.kubernetes.io/version: "1.0"
+  annotations:
+    tekton.dev/displayName: "apexpack detect (corporate)"
+    tekton.dev/description: >-
+      Detects the language and framework of a source repository.
+      Seeds the profiles workspace from the apexpack image on every run
+      so the PVC stays in sync with the deployed apexpack version.
+      Uses a configurable APEXPACK_IMAGE param so the image can be pulled
+      from the corporate Artifactory mirror.
+spec:
+  params:
+    - name: APEXPACK_IMAGE
+      description: "apexpack container image. Override to use your Artifactory mirror or pin a version."
+      default: "apexpack:latest"
+    - name: RUNTIME_OVERRIDE
+      description: "Skip detection and use this runtime (e.g. golang, java). Empty = auto-detect."
+      default: ""
+    - name: AUTO_PATCH_OVERRIDE
+      description: "Force AUTO_PATCH on (true) regardless of the profile setting. Empty = use profile default."
+      default: ""
+    - name: PATCH_PERSIST_OVERRIDE
+      description: "Force PATCH_PERSIST on (true) regardless of the profile setting. Empty = use profile default."
+      default: ""
+
+  workspaces:
+    - name: source
+      description: "Cloned source code to detect."
+    - name: profiles
+      description: >-
+        Profiles workspace. Profiles are seeded from the apexpack image on every run
+        into <profiles-workspace>/profiles/. The patch task updates them in-place.
+        Bind to a ReadWriteOnce PVC.
+
+  results:
+    - name: RUNTIME
+      description: "Detected runtime (e.g. golang, java, python, node, dotnet, webserver)."
+    - name: FRAMEWORK
+      description: "Detected framework (e.g. gin, spring-boot, express). Empty if not identified."
+    - name: CONFIDENCE
+      description: "Detection confidence as a percentage (e.g. 90)."
+    - name: AUTO_PATCH
+      description: "Resolved auto-patch flag (true/false) — profile default, overridden by AUTO_PATCH_OVERRIDE param."
+    - name: PATCH_PERSIST
+      description: "Resolved patch-persist flag (true/false) — profile default, overridden by PATCH_PERSIST_OVERRIDE param."
+
+  steps:
+    - name: detect
+      image: $(params.APEXPACK_IMAGE)
+      imagePullPolicy: Always
+      securityContext:
+        runAsUser: 0
+      script: |
+        #!/bin/sh
+        set -e
+
+        PROFILES_DIR="$(workspaces.profiles.path)/profiles"
+
+        # Seed profiles from the apexpack image on every run so the PVC stays
+        # in sync with whichever apexpack version the pipeline is using.
+        rm -rf "$PROFILES_DIR"
+        mkdir -p "$PROFILES_DIR"
+        if ! ls /etc/apexpack/profiles/*.yaml >/dev/null 2>&1; then
+          echo "ERROR: /etc/apexpack/profiles/ is empty — rebuild the apexpack image."
+          exit 1
+        fi
+        cp /etc/apexpack/profiles/*.yaml "$PROFILES_DIR/"
+        echo "Profiles seeded: $(ls $PROFILES_DIR | tr '\n' ' ')"
+
+        if [ -n "$(params.RUNTIME_OVERRIDE)" ]; then
+          printf "%s" "$(params.RUNTIME_OVERRIDE)" > $(results.RUNTIME.path)
+          printf "%s" ""                            > $(results.FRAMEWORK.path)
+          printf "%s" "100"                         > $(results.CONFIDENCE.path)
+          RUNTIME="$(params.RUNTIME_OVERRIDE)"
+          echo "Runtime overridden to: $RUNTIME"
+        else
+          apexpack detect \
+            $(workspaces.source.path) \
+            --profiles-dir "$PROFILES_DIR" \
+            2>&1 | tee /tmp/detect-output.txt
+
+          RUNTIME=$(grep "^→" /tmp/detect-output.txt | awk '{print $2}')
+          CONFIDENCE=$(grep "^→" /tmp/detect-output.txt | grep -o '[0-9]*%' | tr -d '%')
+          FRAMEWORK=$(grep "^→" /tmp/detect-output.txt | grep -o 'framework: [^ ]*' | cut -d' ' -f2)
+
+          if [ -z "$RUNTIME" ]; then
+            echo "ERROR: could not detect language."
+            echo "Available profiles:"
+            ls "$PROFILES_DIR"
+            exit 1
+          fi
+
+          printf "%s" "$RUNTIME"    > $(results.RUNTIME.path)
+          printf "%s" "$FRAMEWORK"  > $(results.FRAMEWORK.path)
+          printf "%s" "$CONFIDENCE" > $(results.CONFIDENCE.path)
+
+          echo "Detected: $RUNTIME (${CONFIDENCE}%) framework: $FRAMEWORK"
+        fi
+
+        # Read scan defaults from the matched profile.
+        PROFILE_FILE="$PROFILES_DIR/${RUNTIME}.yaml"
+        PROFILE_AUTO_PATCH="false"
+        PROFILE_PATCH_PERSIST="false"
+        if [ -f "$PROFILE_FILE" ]; then
+          VAL=$(grep "auto-patch:" "$PROFILE_FILE" | awk '{print $2}' | tr -d '[:space:]')
+          [ "$VAL" = "true" ] && PROFILE_AUTO_PATCH="true"
+          VAL=$(grep "patch-persist:" "$PROFILE_FILE" | awk '{print $2}' | tr -d '[:space:]')
+          [ "$VAL" = "true" ] && PROFILE_PATCH_PERSIST="true"
+        fi
+
+        AUTO_PATCH="$PROFILE_AUTO_PATCH"
+        [ "$(params.AUTO_PATCH_OVERRIDE)" = "true" ] && AUTO_PATCH="true"
+
+        PATCH_PERSIST="$PROFILE_PATCH_PERSIST"
+        [ "$(params.PATCH_PERSIST_OVERRIDE)" = "true" ] && PATCH_PERSIST="true"
+
+        printf "%s" "$AUTO_PATCH"    > $(results.AUTO_PATCH.path)
+        printf "%s" "$PATCH_PERSIST" > $(results.PATCH_PERSIST.path)
+
+        echo "Scan config: auto-patch=$AUTO_PATCH  patch-persist=$PATCH_PERSIST"

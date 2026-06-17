@@ -1,0 +1,73 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: apexpack-corporate-
+  namespace: <your-namespace>
+spec:
+  pipelineRef:
+    name: apexpack-corporate
+
+  params:
+    # ── Required ────────────────────────────────────────────────────────────────
+    - name: app-id
+      value: my-app                                          # APK package name and project name
+
+    - name: image-name
+      value: artifacts.corp.com/my-repo/my-app              # full path, no tag
+
+    - name: git-url
+      value: https://github.com/my-org/my-app.git
+
+    # ── Optional — defaults are set in the pipeline ──────────────────────────
+    - name: git-revision
+      value: main
+
+    - name: git-branch-type
+      value: push                                            # push | pull_request
+
+    - name: release-strategy
+      value: timestamped-hash                                # timestamped-hash | semantic
+
+    - name: release-id
+      value: ""                                              # optional suffix on the version tag
+
+    - name: release-channels
+      value:
+        - latest                                             # additional tags stamped after push
+
+    - name: gitleaks_exit_code
+      value: "1"                                             # set to "0" to warn instead of fail
+
+    - name: runtime
+      value: ""                                              # leave empty for auto-detect
+                                                             # or set: java | golang | dotnet | node | python | webserver
+
+    - name: apexpack-image
+      value: artifacts.corp.com/apexpack/apexpack:latest    # apexpack runner image from Artifactory
+
+  workspaces:
+    # ── Required ────────────────────────────────────────────────────────────────
+    - name: source
+      persistentVolumeClaim:
+        claimName: apexpack-source-pvc
+
+    - name: shared
+      persistentVolumeClaim:
+        claimName: apexpack-shared-pvc
+
+    # ── Optional ─────────────────────────────────────────────────────────────────
+    - name: dockerconfig
+      secret:
+        secretName: artifactory-docker-config               # kubectl create secret generic artifactory-docker-config
+                                                             #   --from-file=config.json=~/.docker/config.json
+
+    # Uncomment if your cluster routes through a TLS-intercepting proxy:
+    # - name: tls-ca
+    #   secret:
+    #     secretName: corporate-ca                           # kubectl create secret generic corporate-ca
+    #                                                        #   --from-file=ca-bundle.crt=/path/to/ca.crt
+
+    # Uncomment to enable package manager caching:
+    # - name: cache
+    #   persistentVolumeClaim:
+    #     claimName: apexpack-cache-pvc
