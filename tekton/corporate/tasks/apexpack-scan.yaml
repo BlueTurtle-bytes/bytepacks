@@ -8,8 +8,11 @@ metadata:
     tekton.dev/displayName: "apexpack CVE scan (corporate)"
     tekton.dev/description: >-
       Scans the SBOM produced by apexpack-build-corporate for CVEs using grype.
-      Exits 1 if vulnerabilities at or above FAIL_ON severity are found,
-      unless SOFT_FAIL=true (used when auto-patch will run next).
+      SBOM version strings are normalised automatically before scanning.
+      Per-severity counts and the scan result are written to
+      source/.apexpack/context.json by the apexpack binary.
+      Set SOFT_FAIL=true so the task exits 0 when auto-patch will run next.
+      Set RESCAN=true to write results to rescan_* fields in context.json.
       Uses a configurable APEXPACK_IMAGE param so the image can be pulled
       from the corporate Artifactory mirror.
 spec:
@@ -17,8 +20,6 @@ spec:
     - name: APEXPACK_IMAGE
       description: "apexpack container image. Override to use your Artifactory mirror or pin a version."
       default: "apexpack:latest"
-    - name: SBOM_PATH
-      description: "Absolute path to the SPDX SBOM file produced by apexpack-build-corporate."
     - name: FAIL_ON
       description: "Minimum severity that fails the pipeline: critical, high, medium, low, none."
       default: "high"
@@ -28,8 +29,13 @@ spec:
     - name: SOFT_FAIL
       description: "When true, write fail result but exit 0 so the pipeline can continue to auto-patch."
       default: "false"
+    - name: RESCAN
+      description: "When true, write results to rescan_* fields in context.json instead of scan_*."
+      default: "false"
 
   workspaces:
+    - name: source
+      description: "Source workspace — .apexpack/context.json is updated here."
     - name: output
       description: "Shared workspace — scan report is written here (maps to 'shared' pipeline workspace)."
     - name: tls-ca
@@ -49,40 +55,40 @@ spec:
           value: "/tmp/grype-db"
       script: |
         #!/bin/sh
-
-        OUTPUT_FILE="$(workspaces.output.path)/scan-results.$(params.FORMAT)"
+        set -e
 
         if [ "$(workspaces.tls-ca.bound)" = "true" ]; then
           export SSL_CERT_FILE="$(workspaces.tls-ca.path)/ca-bundle.crt"
         fi
 
-        # Normalize SBOM version strings before scanning.
-        # Grype can only correlate packages when versions are in standard APK
-        # format ("3.6.2-r5"). Without this, packages like openssl ("openssl-3.6.2")
-        # or brotli ("v1.2.0") are missed by the CVE database lookup.
-        NORMALIZED=$(apexpack normalize-sbom "$(params.SBOM_PATH)")
-        SBOM="sbom:$NORMALIZED"
-
-        echo "=== CVE Scan Results ==="
-        grype "$SBOM" --output table 2>&1 || true
-        echo "========================"
-
-        if grype "$SBOM" \
-            --fail-on $(params.FAIL_ON) \
-            --output $(params.FORMAT) \
-            --file "$OUTPUT_FILE" \
-            2>/dev/null; then
-          printf "pass" > $(results.SCAN_RESULT.path)
-          echo "No CVEs found at or above $(params.FAIL_ON) severity."
-        else
-          printf "fail" > $(results.SCAN_RESULT.path)
-          echo "CVEs found at or above $(params.FAIL_ON) severity. Full report: $OUTPUT_FILE"
-          if [ "$(params.SOFT_FAIL)" = "true" ]; then
-            echo "AUTO_PATCH enabled — continuing to apply patches."
-          else
-            rm -f "$NORMALIZED"
-            exit 1
-          fi
+        RESCAN_FLAG=""
+        if [ "$(params.RESCAN)" = "true" ]; then
+          RESCAN_FLAG="--rescan"
         fi
 
-        rm -f "$NORMALIZED"
+        SOFT_FAIL_FLAG=""
+        if [ "$(params.SOFT_FAIL)" = "true" ]; then
+          SOFT_FAIL_FLAG="--soft-fail"
+        fi
+
+        # apexpack scan:
+        #   - normalises the SBOM automatically
+        #   - runs grype JSON to extract severity counts
+        #   - writes scan_* (or rescan_*) fields to context.json
+        #   - exits 1 on CVE threshold breach unless --soft-fail is set
+        apexpack scan \
+          --source  "$(workspaces.source.path)" \
+          --output  "$(workspaces.output.path)" \
+          --fail-on "$(params.FAIL_ON)" \
+          --format  "$(params.FORMAT)" \
+          $RESCAN_FLAG \
+          $SOFT_FAIL_FLAG
+
+        # Write SCAN_RESULT Tekton result from context.json.
+        # This value gates 'when' conditions in the pipeline and must be a Tekton result.
+        CTX="$(workspaces.source.path)/.apexpack/context.json"
+        if [ "$(params.RESCAN)" = "true" ]; then
+          jq -r '.rescan_result // "pass"' "$CTX" > $(results.SCAN_RESULT.path)
+        else
+          jq -r '.scan_result   // "pass"' "$CTX" > $(results.SCAN_RESULT.path)
+        fi

@@ -1,0 +1,11 @@
+{
+  "_schema_version": "1",
+  "_updated_by": [
+    "build"
+  ],
+  "version": "0.0.1",
+  "image": "apexpack:latest",
+  "image_tarball": "/Users/ronphilip/dev/apexpack/.apexpack-output/apexpack.tar",
+  "sbom_path": "/Users/ronphilip/dev/apexpack/.apexpack-output/sbom-aarch64.spdx.json",
+  "apk_path": "/Users/ronphilip/dev/apexpack/.apexpack-output/packages/aarch64/*.apk"
+}

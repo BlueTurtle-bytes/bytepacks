@@ -10,6 +10,8 @@ metadata:
       Detects the language and framework of a source repository.
       Seeds the profiles workspace from the apexpack image on every run
       so the PVC stays in sync with the deployed apexpack version.
+      Writes detection results to source/.apexpack/context.json via the
+      apexpack binary — no shell jq required.
       Uses a configurable APEXPACK_IMAGE param so the image can be pulled
       from the corporate Artifactory mirror.
 spec:
@@ -25,6 +27,18 @@ spec:
       default: ""
     - name: PATCH_PERSIST_OVERRIDE
       description: "Force PATCH_PERSIST on (true) regardless of the profile setting. Empty = use profile default."
+      default: ""
+    - name: GIT_URL
+      description: "Source repository URL. Written to context.json."
+      default: ""
+    - name: GIT_BRANCH
+      description: "Branch or revision being built. Written to context.json."
+      default: ""
+    - name: GIT_COMMIT
+      description: "Full commit SHA being built. Written to context.json."
+      default: ""
+    - name: PROJECT_NAME
+      description: "Application / project name. Written to context.json."
       default: ""
 
   workspaces:
@@ -71,54 +85,38 @@ spec:
         cp /etc/apexpack/profiles/*.yaml "$PROFILES_DIR/"
         echo "Profiles seeded: $(ls $PROFILES_DIR | tr '\n' ' ')"
 
+        # Build optional flag list for runtime override and auto-patch/patch-persist overrides.
+        EXTRA_FLAGS=""
         if [ -n "$(params.RUNTIME_OVERRIDE)" ]; then
-          printf "%s" "$(params.RUNTIME_OVERRIDE)" > $(results.RUNTIME.path)
-          printf "%s" ""                            > $(results.FRAMEWORK.path)
-          printf "%s" "100"                         > $(results.CONFIDENCE.path)
-          RUNTIME="$(params.RUNTIME_OVERRIDE)"
-          echo "Runtime overridden to: $RUNTIME"
-        else
-          apexpack detect \
-            $(workspaces.source.path) \
-            --profiles-dir "$PROFILES_DIR" \
-            2>&1 | tee /tmp/detect-output.txt
-
-          RUNTIME=$(grep "^→" /tmp/detect-output.txt | awk '{print $2}')
-          CONFIDENCE=$(grep "^→" /tmp/detect-output.txt | grep -o '[0-9]*%' | tr -d '%')
-          FRAMEWORK=$(grep "^→" /tmp/detect-output.txt | grep -o 'framework: [^ ]*' | cut -d' ' -f2)
-
-          if [ -z "$RUNTIME" ]; then
-            echo "ERROR: could not detect language."
-            echo "Available profiles:"
-            ls "$PROFILES_DIR"
-            exit 1
-          fi
-
-          printf "%s" "$RUNTIME"    > $(results.RUNTIME.path)
-          printf "%s" "$FRAMEWORK"  > $(results.FRAMEWORK.path)
-          printf "%s" "$CONFIDENCE" > $(results.CONFIDENCE.path)
-
-          echo "Detected: $RUNTIME (${CONFIDENCE}%) framework: $FRAMEWORK"
+          EXTRA_FLAGS="$EXTRA_FLAGS --runtime $(params.RUNTIME_OVERRIDE)"
+        fi
+        if [ -n "$(params.AUTO_PATCH_OVERRIDE)" ]; then
+          EXTRA_FLAGS="$EXTRA_FLAGS --auto-patch $(params.AUTO_PATCH_OVERRIDE)"
+        fi
+        if [ -n "$(params.PATCH_PERSIST_OVERRIDE)" ]; then
+          EXTRA_FLAGS="$EXTRA_FLAGS --patch-persist $(params.PATCH_PERSIST_OVERRIDE)"
         fi
 
-        # Read scan defaults from the matched profile.
-        PROFILE_FILE="$PROFILES_DIR/${RUNTIME}.yaml"
-        PROFILE_AUTO_PATCH="false"
-        PROFILE_PATCH_PERSIST="false"
-        if [ -f "$PROFILE_FILE" ]; then
-          VAL=$(grep "auto-patch:" "$PROFILE_FILE" | awk '{print $2}' | tr -d '[:space:]')
-          [ "$VAL" = "true" ] && PROFILE_AUTO_PATCH="true"
-          VAL=$(grep "patch-persist:" "$PROFILE_FILE" | awk '{print $2}' | tr -d '[:space:]')
-          [ "$VAL" = "true" ] && PROFILE_PATCH_PERSIST="true"
-        fi
+        # Run detect — writes .apexpack/context.json as a side effect.
+        apexpack detect "$(workspaces.source.path)" \
+          --profiles-dir "$PROFILES_DIR" \
+          --project-name "$(params.PROJECT_NAME)" \
+          --git-url     "$(params.GIT_URL)" \
+          --git-branch  "$(params.GIT_BRANCH)" \
+          --git-commit  "$(params.GIT_COMMIT)" \
+          $EXTRA_FLAGS
 
-        AUTO_PATCH="$PROFILE_AUTO_PATCH"
-        [ "$(params.AUTO_PATCH_OVERRIDE)" = "true" ] && AUTO_PATCH="true"
+        # Extract Tekton result values from context.json.
+        # These three values gate 'when' conditions in the pipeline — they must
+        # remain as Tekton results. Everything else lives in context.json only.
+        CTX="$(workspaces.source.path)/.apexpack/context.json"
 
-        PATCH_PERSIST="$PROFILE_PATCH_PERSIST"
-        [ "$(params.PATCH_PERSIST_OVERRIDE)" = "true" ] && PATCH_PERSIST="true"
+        jq -r '.runtime'                  "$CTX" > $(results.RUNTIME.path)
+        jq -r '.framework        // ""'   "$CTX" > $(results.FRAMEWORK.path)
+        jq -r '.confidence       // "0"'  "$CTX" > $(results.CONFIDENCE.path)
+        jq -r '.auto_patch       // "false"' "$CTX" > $(results.AUTO_PATCH.path)
+        jq -r '.patch_persist    // "false"' "$CTX" > $(results.PATCH_PERSIST.path)
 
-        printf "%s" "$AUTO_PATCH"    > $(results.AUTO_PATCH.path)
-        printf "%s" "$PATCH_PERSIST" > $(results.PATCH_PERSIST.path)
-
-        echo "Scan config: auto-patch=$AUTO_PATCH  patch-persist=$PATCH_PERSIST"
+        echo ""
+        echo "Detected: $(jq -r '.runtime' $CTX) framework=$(jq -r '.framework // "none"' $CTX)"
+        echo "Scan config: auto-patch=$(jq -r '.auto_patch' $CTX)  patch-persist=$(jq -r '.patch_persist' $CTX)"

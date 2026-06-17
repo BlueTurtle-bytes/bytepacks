@@ -12,6 +12,9 @@ metadata:
       to the same image base without re-uploading layers.
 spec:
   params:
+    - name: APEXPACK_IMAGE
+      description: "apexpack container image — used only to write context.json (has jq). Override to use your Artifactory mirror."
+      default: "apexpack:latest"
     - name: tarball
       description: "Absolute path to the OCI image tarball produced by apexpack-build-corporate."
     - name: image
@@ -31,6 +34,9 @@ spec:
       default: []
 
   workspaces:
+    - name: source
+      description: "Optional source workspace. When bound, .apexpack/context.json is updated with push results."
+      optional: true
     - name: output
       description: "Workspace containing the image tarball (maps to 'shared')."
     - name: dockerconfig
@@ -67,5 +73,31 @@ spec:
           echo "Tagging as ${BASE}:${TAG} ..."
           crane tag "$(params.image)" "${BASE}:${TAG}"
         done
+      args:
+        - $(params.additional-tags[*])
+
+    - name: update-context
+      image: $(params.APEXPACK_IMAGE)
+      imagePullPolicy: Always
+      script: |
+        #!/bin/sh
+        set -e
+        if [ "$(workspaces.source.bound)" != "true" ]; then
+          exit 0
+        fi
+        CTX="$(workspaces.source.path)/.apexpack/context.json"
+        mkdir -p "$(workspaces.source.path)/.apexpack"
+        [ -f "$CTX" ] || echo '{}' > "$CTX"
+        TAGS_JSON=$(printf '%s\n' "$@" | jq -Rn '[inputs | select(. != "")]' 2>/dev/null || echo "[]")
+        tmp=$(mktemp)
+        jq \
+          --arg pi "$(params.image)" \
+          --argjson tags "$TAGS_JSON" \
+          '. + {
+            "pushed_image": $pi,
+            "pushed_tags":  $tags,
+            "_updated_by": (._updated_by // [] | . + ["push"])
+          }' "$CTX" > "$tmp" && mv "$tmp" "$CTX"
+        echo "Context updated with push results."
       args:
         - $(params.additional-tags[*])

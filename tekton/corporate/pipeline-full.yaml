@@ -206,6 +206,14 @@ spec:
           value: $(params.auto-patch)
         - name: PATCH_PERSIST_OVERRIDE
           value: $(params.patch-persist)
+        - name: GIT_URL
+          value: $(params.git-url)
+        - name: GIT_BRANCH
+          value: $(params.git-revision)
+        - name: GIT_COMMIT
+          value: $(tasks.clone-source.results.commit)
+        - name: PROJECT_NAME
+          value: $(params.app-id)
       workspaces:
         - name: source
           workspace: source
@@ -226,8 +234,6 @@ spec:
           value: $(tasks.version-release.results.release-version)
         - name: PROJECT_NAME
           value: $(params.app-id)
-        - name: RUNTIME
-          value: $(tasks.detect.results.RUNTIME)
         - name: APEXPACK_IMAGE
           value: $(params.apexpack-image)
       workspaces:
@@ -254,15 +260,17 @@ spec:
       params:
         - name: APEXPACK_IMAGE
           value: $(params.apexpack-image)
-        - name: SBOM_PATH
-          value: $(tasks.build.results.SBOM_PATH)
         - name: FAIL_ON
           value: $(params.fail-on)
         - name: FORMAT
           value: sarif
         - name: SOFT_FAIL
           value: $(tasks.detect.results.AUTO_PATCH)
+        - name: RESCAN
+          value: "false"
       workspaces:
+        - name: source
+          workspace: source
         - name: output
           workspace: shared
         - name: tls-ca
@@ -286,17 +294,11 @@ spec:
       params:
         - name: APEXPACK_IMAGE
           value: $(params.apexpack-image)
-        - name: SBOM_PATH
-          value: $(tasks.build.results.SBOM_PATH)
         - name: PROFILES_SUBDIR
           value: profiles
-        - name: PERSIST
-          value: $(tasks.detect.results.PATCH_PERSIST)
-        - name: GIT_REVISION
-          value: $(params.git-revision)
-        - name: RUNTIME
-          value: $(tasks.detect.results.RUNTIME)
       workspaces:
+        - name: source
+          workspace: source
         - name: profiles
           workspace: profiles
         - name: output
@@ -329,8 +331,6 @@ spec:
           value: $(tasks.version-release.results.release-version)
         - name: PROJECT_NAME
           value: $(params.app-id)
-        - name: RUNTIME
-          value: $(tasks.detect.results.RUNTIME)
         - name: APEXPACK_IMAGE
           value: $(params.apexpack-image)
       workspaces:
@@ -366,15 +366,17 @@ spec:
       params:
         - name: APEXPACK_IMAGE
           value: $(params.apexpack-image)
-        - name: SBOM_PATH
-          value: $(tasks.build.results.SBOM_PATH)
         - name: FAIL_ON
           value: $(params.fail-on)
         - name: FORMAT
           value: table
         - name: SOFT_FAIL
           value: "true"
+        - name: RESCAN
+          value: "true"
       workspaces:
+        - name: source
+          workspace: source
         - name: output
           workspace: shared
         - name: tls-ca
@@ -391,6 +393,8 @@ spec:
       runAfter:
         - rescan
       params:
+        - name: APEXPACK_IMAGE
+          value: $(params.apexpack-image)
         - name: tarball
           value: $(tasks.build.results.IMAGE_TARBALL)
         - name: image
@@ -401,6 +405,8 @@ spec:
           value:
             - $(params.release-channels[*])
       workspaces:
+        - name: source
+          workspace: source
         - name: output
           workspace: shared
         - name: dockerconfig

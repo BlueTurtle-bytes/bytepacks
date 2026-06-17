@@ -9,6 +9,7 @@ image:
   packages:
     - busybox
     - git
+    - jq
     - melange
     - apko
     - bubblewrap

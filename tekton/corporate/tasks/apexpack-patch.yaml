@@ -9,6 +9,8 @@ metadata:
     tekton.dev/description: >-
       Runs 'apexpack patch --apply' to update profile YAML files with pinned
       package versions that fix CVEs found during the scan step.
+      Writes patches_applied and patched_packages to source/.apexpack/context.json
+      via the apexpack binary — no shell jq required.
       When PERSIST=true, commits the updated profiles back to git so future
       pipeline runs start with the patched versions already pinned.
       Uses a configurable APEXPACK_IMAGE param so the image can be pulled
@@ -18,22 +20,23 @@ spec:
     - name: APEXPACK_IMAGE
       description: "apexpack container image. Override to use your Artifactory mirror or pin a version."
       default: "apexpack:latest"
-    - name: SBOM_PATH
-      description: "Absolute path to the SBOM file produced by apexpack-build-corporate."
     - name: PROFILES_SUBDIR
       description: "Subdirectory within the profiles workspace that contains *.yaml profile files."
       default: "profiles"
     - name: PERSIST
-      description: "When true, commit the patched profiles back to git."
-      default: "false"
+      description: >-
+        When true, commit the patched profiles back to git.
+        Leave empty to use the patch_persist value from context.json (set by detect).
+      default: ""
     - name: GIT_REVISION
-      description: "Branch to push the patched profiles to (only used when PERSIST=true)."
-      default: "main"
-    - name: RUNTIME
-      description: "Detected runtime (e.g. java, golang). Used to print the patched profile."
+      description: >-
+        Branch to push the patched profiles to (only used when PERSIST=true).
+        Leave empty to use git_branch from context.json (set by detect).
       default: ""
 
   workspaces:
+    - name: source
+      description: "Source workspace — .apexpack/context.json is updated here."
     - name: profiles
       description: "Profiles workspace — profiles/*.yaml are patched in-place here."
     - name: output
@@ -63,35 +66,23 @@ spec:
         fi
 
         echo "=== Applying CVE patches ==="
-        echo "SBOM:     $(params.SBOM_PATH)"
         echo "Profiles: $PROFILES_PATH"
         echo ""
 
+        # apexpack patch --apply reads sbom_path and runtime from context.json
+        # automatically — no --sbom or --runtime flag required.
         apexpack patch \
-          --sbom "$(params.SBOM_PATH)" \
           --apply \
           --profiles-dir "$PROFILES_PATH" \
-          --runtime "$(params.RUNTIME)" \
-          2>&1 | tee /tmp/patch-output.txt
+          --source       "$(workspaces.source.path)"
 
-        # Count pinned lines (lines starting with "↑") as a rough patch count.
-        # NOTE: do NOT use $(grep ... || echo "0") — grep -c outputs "0" on no
-        # matches AND exits 1, so the subshell captures grep's "0" + echo's "0"
-        # giving "0\n0", which the pipeline's when-condition treats as non-zero.
-        COUNT=$(grep -c "^    ↑" /tmp/patch-output.txt 2>/dev/null) || COUNT=0
-        printf "%s" "$COUNT" > $(results.PATCHES_APPLIED.path)
+        # Write PATCHES_APPLIED Tekton result from context.json.
+        # This value gates the rebuild 'when' condition — must be a Tekton result.
+        CTX="$(workspaces.source.path)/.apexpack/context.json"
+        jq -r '.patches_applied // "0"' "$CTX" > $(results.PATCHES_APPLIED.path)
 
         echo ""
-        echo "$COUNT package(s) patched."
-
-        if [ -n "$(params.RUNTIME)" ]; then
-          PROFILE_FILE="$PROFILES_PATH/$(params.RUNTIME).yaml"
-          if [ -f "$PROFILE_FILE" ]; then
-            echo ""
-            echo "=== $(params.RUNTIME).yaml ==="
-            cat "$PROFILE_FILE"
-          fi
-        fi
+        echo "$(cat $(results.PATCHES_APPLIED.path)) package(s) patched."
 
     - name: persist
       image: $(params.APEXPACK_IMAGE)
@@ -100,18 +91,31 @@ spec:
         #!/bin/sh
         set -e
 
-        if [ "$(params.PERSIST)" != "true" ]; then
-          echo "PERSIST=false — skipping git commit."
+        CTX="$(workspaces.source.path)/.apexpack/context.json"
+
+        # Resolve PERSIST: param overrides context.json (set by detect via patch_persist).
+        PERSIST_VAL="$(params.PERSIST)"
+        if [ -z "$PERSIST_VAL" ]; then
+          PERSIST_VAL=$(jq -r '.patch_persist // "false"' "$CTX" 2>/dev/null || echo "false")
+        fi
+        if [ "$PERSIST_VAL" != "true" ]; then
+          echo "patch_persist=false — skipping git commit."
           exit 0
         fi
 
-        COUNT=$(cat $(results.PATCHES_APPLIED.path) 2>/dev/null || echo "0")
+        COUNT=$(jq -r '.patches_applied // "0"' "$CTX" 2>/dev/null || echo "0")
         if [ "$COUNT" = "0" ]; then
           echo "No patches applied — nothing to commit."
           exit 0
         fi
 
-        echo "=== Committing patched profiles to git ==="
+        # Resolve branch: param overrides context.json (set by detect via git_branch).
+        BRANCH="$(params.GIT_REVISION)"
+        if [ -z "$BRANCH" ]; then
+          BRANCH=$(jq -r '.git_branch // "main"' "$CTX" 2>/dev/null || echo "main")
+        fi
+
+        echo "=== Committing patched profiles to git (branch: $BRANCH) ==="
         cd "$(workspaces.profiles.path)"
 
         git config user.email "apexpack-bot@ci"
@@ -122,6 +126,6 @@ spec:
           echo "No changes staged — profiles already up to date."
         else
           git commit -m "chore: auto-patch CVEs — pin $COUNT package(s) to latest Wolfi versions"
-          git push origin "$(params.GIT_REVISION)"
+          git push origin "$BRANCH"
           echo "Patched profiles committed and pushed."
         fi

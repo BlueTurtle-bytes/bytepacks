@@ -10,6 +10,8 @@ metadata:
       Builds a minimal Wolfi-based OCI image from source using melange + apko.
       Designed to slot into the corporate Docker pipeline in place of
       install-external-artifacts + build-push-image.
+      Writes build artifact paths to source/.apexpack/context.json via the
+      apexpack binary — no shell jq required.
       Pulls Artifactory / NuGet credentials from existing K8s secrets.
 spec:
   params:
@@ -24,9 +26,6 @@ spec:
       description: >-
         Project / app name. Defaults to source directory basename.
         Pass $(params.app-id) from the corporate pipeline.
-      default: ""
-    - name: RUNTIME
-      description: "Language runtime override. Leave empty for auto-detect."
       default: ""
     - name: APEXPACK_IMAGE
       description: "apexpack container image to run. Override to pin a version or use your Artifactory mirror."
@@ -115,11 +114,6 @@ spec:
           fi
         fi
 
-        RUNTIME_FLAG=""
-        if [ -n "$(params.RUNTIME)" ]; then
-          RUNTIME_FLAG="--runtime $(params.RUNTIME)"
-        fi
-
         NAME_FLAG=""
         if [ -n "$(params.PROJECT_NAME)" ]; then
           NAME_FLAG="--project-name $(params.PROJECT_NAME)"
@@ -130,21 +124,21 @@ spec:
           TLS_CA_FLAG="--tls-extra-ca $(workspaces.tls-ca.path)/ca-bundle.crt"
         fi
 
+        # Build — writes .apexpack/context.json with artifact paths as a side effect.
         apexpack build \
           $(workspaces.source.path) \
-          --tag $(params.IMAGE) \
+          --tag     $(params.IMAGE) \
           --version $(params.VERSION) \
-          --output $(workspaces.output.path) \
+          --output  $(workspaces.output.path) \
           $PROFILES_FLAG \
-          $RUNTIME_FLAG \
           $NAME_FLAG \
           $TLS_CA_FLAG
 
-        SOURCE_BASE=$(basename $(workspaces.source.path))
-        ARCH=$(uname -m)
-        printf "%s" "$(workspaces.output.path)/${SOURCE_BASE}.tar"     > $(results.IMAGE_TARBALL.path)
-        printf "%s" "$(workspaces.output.path)/sbom-${ARCH}.spdx.json" > $(results.SBOM_PATH.path)
-        printf "%s" "$(workspaces.output.path)/packages/${ARCH}/*.apk" > $(results.APK_PATH.path)
+        # Read artifact paths from context.json and write to Tekton results.
+        CTX="$(workspaces.source.path)/.apexpack/context.json"
+        jq -r '.image_tarball' "$CTX" > $(results.IMAGE_TARBALL.path)
+        jq -r '.sbom_path'     "$CTX" > $(results.SBOM_PATH.path)
+        jq -r '.apk_path'      "$CTX" > $(results.APK_PATH.path)
 
         echo "Build complete:"
         ls -lh $(workspaces.output.path)/

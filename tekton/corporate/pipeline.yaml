@@ -174,8 +174,6 @@ spec:
           value: $(tasks.version-release.results.release-version)
         - name: PROJECT_NAME
           value: $(params.app-id)
-        - name: RUNTIME
-          value: $(params.runtime)
         - name: APEXPACK_IMAGE
           value: $(params.apexpack-image)
       workspaces:
@@ -197,6 +195,8 @@ spec:
       runAfter:
         - apexpack-build
       params:
+        - name: APEXPACK_IMAGE
+          value: $(params.apexpack-image)
         - name: tarball
           value: $(tasks.apexpack-build.results.IMAGE_TARBALL)
         - name: image
@@ -207,6 +207,8 @@ spec:
           value:
             - $(params.release-channels[*])
       workspaces:
+        - name: source
+          workspace: source
         - name: output
           workspace: shared
         - name: dockerconfig
