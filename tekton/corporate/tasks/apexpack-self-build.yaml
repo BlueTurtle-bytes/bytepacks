@@ -7,9 +7,10 @@ metadata:
   annotations:
     tekton.dev/displayName: "apexpack self-build"
     tekton.dev/description: >-
-      Compiles the apexpack Go binary from source, then uses that binary to
-      build and push its own OCI image (via apexpack.yaml in the repo root).
-      Three steps share one pod: compile (golang) → build-image (apexpack) → push (crane).
+      Bootstrappable self-build for the apexpack project. No pre-existing apexpack
+      image required. Step 1 compiles the Go binary. Step 2 installs melange, apko,
+      and bubblewrap into a Wolfi base image and runs the compiled binary to produce
+      the OCI tarball. Step 3 pushes with crane.
 spec:
   params:
     - name: IMAGE
@@ -22,12 +23,11 @@ spec:
     - name: GO_IMAGE
       description: "Go SDK image used to compile the apexpack binary."
       default: "golang:1.23-alpine"
-    - name: APEXPACK_BUILDER_IMAGE
+    - name: WOLFI_IMAGE
       description: >-
-        Image that provides melange, apko, and bubblewrap for the OCI build step.
-        Defaults to the currently deployed apexpack image (bootstrapping).
+        Wolfi base image used to install melange, apko, and bubblewrap for the build step.
         Override to pull from your Artifactory mirror.
-      default: "apexpack:latest"
+      default: "cgr.dev/chainguard/wolfi-base:latest"
     - name: additional-tags
       description: "Extra tags to stamp after push (e.g. latest). Empty = primary tag only."
       type: array
@@ -57,7 +57,8 @@ spec:
 
   steps:
     # ── Step 1: Compile Go binary ─────────────────────────────────────────────
-    # CGO_ENABLED=0 produces a fully static binary — runs in any Linux container.
+    # CGO_ENABLED=0 produces a fully static binary — runs in any Linux container
+    # without needing glibc, so it works inside the Wolfi step that follows.
     - name: compile
       image: $(params.GO_IMAGE)
       workingDir: $(workspaces.source.path)
@@ -73,16 +74,14 @@ spec:
       script: |
         #!/bin/sh
         set -e
-        echo "Building apexpack binary..."
         go build -o $(workspaces.shared.path)/apexpack ./cmd/apexpack
-        echo "Binary size: $(du -sh $(workspaces.shared.path)/apexpack | cut -f1)"
+        echo "Binary: $(du -sh $(workspaces.shared.path)/apexpack | cut -f1)"
 
-    # ── Step 2: Build OCI image using the compiled binary ────────────────────
-    # Runs inside the current apexpack image (which has melange, apko, bubblewrap).
-    # The compiled binary from step 1 replaces the container's own apexpack binary.
+    # ── Step 2: Build OCI image ───────────────────────────────────────────────
+    # Uses a plain Wolfi base — no apexpack image needed. Installs melange, apko,
+    # and bubblewrap via apk, then runs the binary compiled in step 1.
     - name: build-image
-      image: $(params.APEXPACK_BUILDER_IMAGE)
-      imagePullPolicy: Always
+      image: $(params.WOLFI_IMAGE)
       securityContext:
         privileged: true
         runAsUser: 0
@@ -91,12 +90,15 @@ spec:
         #!/bin/sh
         set -e
 
+        apk add --no-cache melange apko bubblewrap git ca-certificates
+
         TLS_CA_FLAG=""
         if [ "$(workspaces.tls-ca.bound)" = "true" ]; then
+          # Append corporate CA so apk/git/apko trust the proxy.
+          cat "$(workspaces.tls-ca.path)/ca-bundle.crt" >> /etc/ssl/certs/ca-certificates.crt
           TLS_CA_FLAG="--tls-extra-ca $(workspaces.tls-ca.path)/ca-bundle.crt"
         fi
 
-        # Use the freshly compiled binary from step 1.
         $(workspaces.shared.path)/apexpack build . \
           --tag $(params.IMAGE) \
           --version $(params.VERSION) \
@@ -105,7 +107,6 @@ spec:
 
         SOURCE_BASE=$(basename $(workspaces.source.path))
         printf "%s" "$(workspaces.shared.path)/output/${SOURCE_BASE}.tar" > $(results.IMAGE_TARBALL.path)
-        echo "Build complete:"
         ls -lh $(workspaces.shared.path)/output/
 
     # ── Step 3: Push to registry ──────────────────────────────────────────────
@@ -129,7 +130,7 @@ spec:
         if [ -z "$BASE" ]; then exit 0; fi
         for TAG in "$@"; do
           [ -z "$TAG" ] && continue
-          echo "Tagging as ${BASE}:${TAG} ..."
+          echo "Tagging ${BASE}:${TAG}"
           crane tag "$(params.IMAGE)" "${BASE}:${TAG}"
         done
       args:

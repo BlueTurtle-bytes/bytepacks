@@ -68,13 +68,13 @@ spec:
       description: "Go SDK image for the compile step."
       default: "golang:1.23-alpine"
 
-    - name: apexpack-builder-image
+    - name: wolfi-image
       type: string
       description: >-
-        Image providing melange + apko + bubblewrap for the build step.
-        On first bootstrap this is the currently deployed apexpack image.
+        Wolfi base image used to install melange, apko, and bubblewrap for the build step.
+        No pre-existing apexpack image needed — tools are installed via apk at runtime.
         Override to pull from your Artifactory mirror.
-      default: "apexpack:latest"
+      default: "cgr.dev/chainguard/wolfi-base:latest"
 
   workspaces:
     - name: source
@@ -159,8 +159,8 @@ spec:
           value: $(tasks.version-release.results.release-version)
         - name: GO_IMAGE
           value: $(params.go-image)
-        - name: APEXPACK_BUILDER_IMAGE
-          value: $(params.apexpack-builder-image)
+        - name: WOLFI_IMAGE
+          value: $(params.wolfi-image)
         - name: image-base
           value: $(params.image-name)
         - name: additional-tags

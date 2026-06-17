@@ -157,12 +157,7 @@ EOF
 ## 4. Apply Tasks and Pipelines
 
 ```bash
-# apexpack detect/scan/patch Tasks (shared across all pipelines)
-kubectl apply -n $NAMESPACE -f tekton/tasks/apexpack-detect.yaml
-kubectl apply -n $NAMESPACE -f tekton/tasks/apexpack-scan.yaml
-kubectl apply -n $NAMESPACE -f tekton/tasks/apexpack-patch.yaml
-
-# Corporate-specific Tasks
+# All Tasks (corporate versions of detect/scan/patch/build/crane-push/self-build)
 kubectl apply -n $NAMESPACE -f tekton/corporate/tasks/
 
 # Pipelines
@@ -299,8 +294,8 @@ tkn pipelinerun logs --last -f -n $NAMESPACE
 
 ### 5c. Self-build pipeline (`apexpack-self-build`)
 
-Builds and pushes the apexpack image itself. Requires an existing apexpack image
-as the builder (bootstrapping — use the image from your first manual push).
+Builds and pushes the apexpack image itself. No pre-existing apexpack image required —
+melange, apko, and bubblewrap are installed into a plain Wolfi base at runtime.
 
 ```yaml
 # pipelinerun-self-build.yaml
@@ -325,8 +320,8 @@ spec:
       value: [latest]
     - name: go-image
       value: golang:1.23-alpine
-    - name: apexpack-builder-image
-      value: artifacts.corp.com/apexpack/apexpack:latest
+    - name: wolfi-image
+      value: cgr.dev/chainguard/wolfi-base:latest   # override to your Artifactory mirror
   workspaces:
     - name: source
       persistentVolumeClaim:

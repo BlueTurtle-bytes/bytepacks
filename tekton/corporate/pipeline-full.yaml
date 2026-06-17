@@ -194,10 +194,12 @@ spec:
     # Produces: RUNTIME, FRAMEWORK, AUTO_PATCH, PATCH_PERSIST.
     - name: detect
       taskRef:
-        name: apexpack-detect
+        name: apexpack-detect-corporate
       runAfter:
         - version-release
       params:
+        - name: APEXPACK_IMAGE
+          value: $(params.apexpack-image)
         - name: RUNTIME_OVERRIDE
           value: $(params.runtime)
         - name: AUTO_PATCH_OVERRIDE
@@ -246,10 +248,12 @@ spec:
     # When AUTO_PATCH=false and CVEs are found, scan exits 1 and the pipeline stops.
     - name: scan
       taskRef:
-        name: apexpack-scan
+        name: apexpack-scan-corporate
       runAfter:
         - build
       params:
+        - name: APEXPACK_IMAGE
+          value: $(params.apexpack-image)
         - name: SBOM_PATH
           value: $(tasks.build.results.SBOM_PATH)
         - name: FAIL_ON
@@ -269,7 +273,7 @@ spec:
     # Updates the profile YAML in the profiles workspace with pinned package versions.
     - name: patch
       taskRef:
-        name: apexpack-patch
+        name: apexpack-patch-corporate
       runAfter:
         - scan
       when:
@@ -280,6 +284,8 @@ spec:
           operator: in
           values: ["true"]
       params:
+        - name: APEXPACK_IMAGE
+          value: $(params.apexpack-image)
         - name: SBOM_PATH
           value: $(tasks.build.results.SBOM_PATH)
         - name: PROFILES_SUBDIR
@@ -344,7 +350,7 @@ spec:
     # the rescan logs for the final verdict. Only runs when rebuild ran.
     - name: rescan
       taskRef:
-        name: apexpack-scan
+        name: apexpack-scan-corporate
       runAfter:
         - rebuild
       when:
@@ -358,6 +364,8 @@ spec:
           operator: notin
           values: ["0", ""]
       params:
+        - name: APEXPACK_IMAGE
+          value: $(params.apexpack-image)
         - name: SBOM_PATH
           value: $(tasks.build.results.SBOM_PATH)
         - name: FAIL_ON
