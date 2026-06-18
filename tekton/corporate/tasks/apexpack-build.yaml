@@ -1,11 +1,11 @@
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
-  name: apexpack-build-corporate
+  name: apexpack-build
   labels:
     app.kubernetes.io/version: "1.0"
   annotations:
-    tekton.dev/displayName: "apexpack build (corporate)"
+    tekton.dev/displayName: "apexpack build"
     tekton.dev/description: >-
       Builds a minimal Wolfi-based OCI image from source using melange + apko.
       Designed to slot into the corporate Docker pipeline in place of

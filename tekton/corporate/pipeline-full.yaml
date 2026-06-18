@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
-  name: apexpack-corporate-full
+  name: apexpack-full
   annotations:
     tekton.dev/description: >-
       Full corporate apexpack pipeline.
@@ -191,7 +191,7 @@ spec:
     # Produces: RUNTIME, FRAMEWORK, AUTO_PATCH, PATCH_PERSIST.
     - name: detect
       taskRef:
-        name: apexpack-detect-corporate
+        name: apexpack-detect
       runAfter:
         - version-release
       params:
@@ -221,7 +221,7 @@ spec:
     # Runs melange (APK) + apko (OCI). Outputs tarball + SBOM to shared workspace.
     - name: build
       taskRef:
-        name: apexpack-build-corporate
+        name: apexpack-build
       runAfter:
         - detect
       params:
@@ -249,7 +249,7 @@ spec:
     # When AUTO_PATCH=false and CVEs are found, scan exits 1 and the pipeline stops.
     - name: scan
       taskRef:
-        name: apexpack-scan-corporate
+        name: apexpack-scan
       runAfter:
         - build
       params:
@@ -276,7 +276,7 @@ spec:
     # Updates the profile YAML in the profiles workspace with pinned package versions.
     - name: patch
       taskRef:
-        name: apexpack-patch-corporate
+        name: apexpack-patch
       runAfter:
         - scan
       when:
@@ -306,7 +306,7 @@ spec:
     # Rebuilds using the updated profiles — overwrites the original tarball in shared.
     - name: rebuild
       taskRef:
-        name: apexpack-build-corporate
+        name: apexpack-build
       runAfter:
         - patch
       when:
@@ -343,7 +343,7 @@ spec:
     # the rescan logs for the final verdict. Only runs when rebuild ran.
     - name: rescan
       taskRef:
-        name: apexpack-scan-corporate
+        name: apexpack-scan
       runAfter:
         - rebuild
       when:
@@ -382,7 +382,7 @@ spec:
     # always points to the most recent image — original or patched.
     - name: crane-push
       taskRef:
-        name: crane-push-corporate
+        name: crane-push
       runAfter:
         - rescan
       params:

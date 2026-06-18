@@ -8,7 +8,7 @@ metadata:
       Clones the apexpack repo, scans for secrets, calculates a version,
       compiles the Go binary, builds the OCI image via apexpack.yaml,
       pushes to Artifactory, then stamps the git tag.
-      Same corporate params/workspaces as apexpack-corporate pipeline.
+      Same corporate params/workspaces as apexpack pipeline.
 spec:
   params:
     - name: app-id

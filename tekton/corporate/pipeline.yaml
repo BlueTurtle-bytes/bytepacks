@@ -1,14 +1,14 @@
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
-  name: apexpack-corporate
+  name: apexpack
   annotations:
     tekton.dev/description: >-
       Corporate apexpack pipeline. Mirrors the structure of the existing
       docker-v1-0 pipeline: clone → gitleaks → version-release →
       apexpack-build → crane-push → tag-version.
       Replaces install-external-artifacts + build-push-image (ClusterTasks)
-      with apexpack-build-corporate + crane-push-corporate.
+      with apexpack-build + crane-push.
 spec:
   # ── Params ──────────────────────────────────────────────────────────────────
   # Kept identical to the docker-v1-0 pipeline where possible so existing
@@ -161,7 +161,7 @@ spec:
     # and writes the tarball + SBOM to the 'shared' workspace.
     - name: apexpack-build
       taskRef:
-        name: apexpack-build-corporate
+        name: apexpack-build
       runAfter:
         - version-release
       params:
@@ -186,7 +186,7 @@ spec:
     # additional release-channel tags (e.g. latest, dev) without re-uploading.
     - name: crane-push
       taskRef:
-        name: crane-push-corporate
+        name: crane-push
       runAfter:
         - apexpack-build
       params:

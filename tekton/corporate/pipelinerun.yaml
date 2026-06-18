@@ -1,11 +1,11 @@
 apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
 metadata:
-  generateName: apexpack-corporate-
+  generateName: apexpack-
   namespace: <your-namespace>
 spec:
   pipelineRef:
-    name: apexpack-corporate
+    name: apexpack
 
   params:
     # ── Required ────────────────────────────────────────────────────────────────

@@ -1,11 +1,11 @@
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
-  name: apexpack-patch-corporate
+  name: apexpack-patch
   labels:
     app.kubernetes.io/version: "1.0"
   annotations:
-    tekton.dev/displayName: "apexpack CVE auto-patch (corporate)"
+    tekton.dev/displayName: "apexpack CVE auto-patch"
     tekton.dev/description: >-
       Runs 'apexpack patch --apply' to update profile YAML files with pinned
       package versions that fix CVEs found during the scan step.

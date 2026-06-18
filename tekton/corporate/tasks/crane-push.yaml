@@ -1,11 +1,11 @@
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
-  name: crane-push-corporate
+  name: crane-push
   labels:
     app.kubernetes.io/version: "1.0"
   annotations:
-    tekton.dev/displayName: "crane push (corporate)"
+    tekton.dev/displayName: "crane push"
     tekton.dev/description: >-
       Pushes an OCI image tarball to a registry using crane.
       After the primary push, applies any additional tags (release-channels)
@@ -16,7 +16,7 @@ spec:
       description: "apexpack container image — used only to write context.json (has jq). Override to use your Artifactory mirror."
       default: "apexpack:latest"
     - name: tarball
-      description: "Absolute path to the OCI image tarball produced by apexpack-build-corporate."
+      description: "Absolute path to the OCI image tarball produced by apexpack-build."
     - name: image
       description: >-
         Primary destination including tag

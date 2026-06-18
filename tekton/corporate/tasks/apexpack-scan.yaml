@@ -1,13 +1,13 @@
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
-  name: apexpack-scan-corporate
+  name: apexpack-scan
   labels:
     app.kubernetes.io/version: "1.0"
   annotations:
-    tekton.dev/displayName: "apexpack CVE scan (corporate)"
+    tekton.dev/displayName: "apexpack CVE scan"
     tekton.dev/description: >-
-      Scans the SBOM produced by apexpack-build-corporate for CVEs using grype.
+      Scans the SBOM produced by apexpack-build for CVEs using grype.
       SBOM version strings are normalised automatically before scanning.
       Per-severity counts and the scan result are written to
       source/.apexpack/context.json by the apexpack binary.

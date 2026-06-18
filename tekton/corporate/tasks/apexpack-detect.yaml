@@ -1,11 +1,11 @@
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
-  name: apexpack-detect-corporate
+  name: apexpack-detect
   labels:
     app.kubernetes.io/version: "1.0"
   annotations:
-    tekton.dev/displayName: "apexpack detect (corporate)"
+    tekton.dev/displayName: "apexpack detect"
     tekton.dev/description: >-
       Detects the language and framework of a source repository.
       Seeds the profiles workspace from the apexpack image on every run
