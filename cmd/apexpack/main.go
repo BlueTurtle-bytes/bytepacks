@@ -323,6 +323,8 @@ Examples:
 				fmt.Println("  → Merged apexpack.yaml project overrides")
 			}
 
+			ver = strings.TrimPrefix(ver, "v")
+
 			opts := build.Options{
 				SourceDir:       absSrcDir,
 				ProfilesDir:     profilesDir,
