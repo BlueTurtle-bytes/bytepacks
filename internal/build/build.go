@@ -362,7 +362,7 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 
 	// Inject a Maven settings.xml step for corporate Artifactory mirrors.
 	// Fires when maven_mirror_url is set AND either:
-	//   a) MAVEN_MIRROR_USER is present (credentials from Kubernetes secret), or
+	//   a) ARTI_USER is present (credentials from regcred docker secret), or
 	//   b) a custom template exists in the profiles dir (template supplies its own auth).
 	// Without either, the mirror step is skipped so Maven resolves from Maven Central
 	// directly — keeps local/CI-without-Artifactory builds working.
@@ -372,11 +372,11 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 	}
 	customTemplatePath := filepath.Join(opts.ProfilesDir, "templates", "maven", tmplName+".xml")
 	_, customTemplateExists := os.Stat(customTemplatePath)
-	if p.Build.MavenMirrorURL != "" && (os.Getenv("MAVEN_MIRROR_USER") != "" || customTemplateExists == nil) {
+	if p.Build.MavenMirrorURL != "" && (os.Getenv("ARTI_USER") != "" || customTemplateExists == nil) {
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)
 		}
-		for _, key := range []string{"MAVEN_MIRROR_USER", "MAVEN_MIRROR_PASSWORD"} {
+		for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD"} {
 			if val := os.Getenv(key); val != "" {
 				if _, exists := cfg.Environment.Env[key]; !exists {
 					cfg.Environment.Env[key] = val
@@ -404,7 +404,7 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 
 	// Inject a NuGet.Config for corporate Artifactory NuGet feeds.
 	// Fires when nuget_mirror_url is set AND either:
-	//   a) NUGET_MIRROR_USER is present (credentials from Kubernetes secret), or
+	//   a) ARTI_USER is present (credentials from regcred docker secret), or
 	//   b) a custom template exists in the profiles dir (template supplies its own auth).
 	// Without either, skipped so builds work locally and in OSS CI without Artifactory.
 	nugetTmplName := p.Build.NuGetSettingsTemplate
@@ -413,11 +413,11 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 	}
 	nugetCustomTemplatePath := filepath.Join(opts.ProfilesDir, "templates", "nuget", nugetTmplName+".xml")
 	_, nugetCustomTemplateExists := os.Stat(nugetCustomTemplatePath)
-	if p.Build.NuGetMirrorURL != "" && (os.Getenv("NUGET_MIRROR_USER") != "" || nugetCustomTemplateExists == nil) {
+	if p.Build.NuGetMirrorURL != "" && (os.Getenv("ARTI_USER") != "" || nugetCustomTemplateExists == nil) {
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)
 		}
-		for _, key := range []string{"NUGET_MIRROR_USER", "NUGET_MIRROR_PASSWORD"} {
+		for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD"} {
 			if val := os.Getenv(key); val != "" {
 				if _, exists := cfg.Environment.Env[key]; !exists {
 					cfg.Environment.Env[key] = val

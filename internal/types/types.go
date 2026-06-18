@@ -189,7 +189,7 @@ type BuildConfig struct {
 
 	// NuGetMirrorURL is the URL of a corporate Artifactory (or Nexus) NuGet proxy.
 	// When set, apexpack injects a NuGet.Config into every build that replaces
-	// nuget.org with this feed. Fires only when NUGET_MIRROR_USER is also present.
+	// nuget.org with this feed. Fires only when ARTI_USER is also present.
 	// Example: "https://artifactory.corp.example.com/artifactory/api/nuget/nuget-virtual"
 	NuGetMirrorURL string `yaml:"nuget_mirror_url,omitempty"`
 

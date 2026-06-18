@@ -80,8 +80,8 @@ build:
 
   # Corporate Artifactory / Nexus mirror for Maven.
   # Set to your actual URL; leave empty to resolve directly from Maven Central.
-  # settings.xml is only injected when this is non-empty AND the 'artifactory-creds'
-  # Kubernetes secret is present (MAVEN_MIRROR_USER env var must be set).
+  # settings.xml is only injected when this is non-empty AND ARTI_USER is set
+  # (decoded from the regcred docker secret by the build task).
   # Replace with your Artifactory virtual repo URL, e.g.:
   # https://<host>/artifactory/maven-virtual
   maven_mirror_url: ""

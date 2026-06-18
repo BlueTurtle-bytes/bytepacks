@@ -56,10 +56,10 @@ spec:
         claimName: apexpack-shared-pvc
 
     # ── Optional ─────────────────────────────────────────────────────────────────
-    - name: dockerconfig
-      secret:
-        secretName: artifactory-docker-config               # kubectl create secret generic artifactory-docker-config
-                                                             #   --from-file=config.json=~/.docker/config.json
+    # Registry credentials are mounted directly from the 'regcred' secret
+    # (type: kubernetes.io/dockerconfigjson) — no workspace binding needed.
+    # kubectl create secret docker-registry regcred \
+    #   --docker-server=<registry> --docker-username=<user> --docker-password=<token>
 
     # Uncomment if your cluster routes through a TLS-intercepting proxy:
     # - name: tls-ca

@@ -6,8 +6,8 @@
   </packageSources>
   <packageSourceCredentials>
     <artifactory-nuget>
-      <add key="Username" value="$NUGET_MIRROR_USER" />
-      <add key="ClearTextPassword" value="$NUGET_MIRROR_PASSWORD" />
+      <add key="Username" value="$ARTI_USER" />
+      <add key="ClearTextPassword" value="$ARTI_PASSWORD" />
     </artifactory-nuget>
   </packageSourceCredentials>
 </configuration>

@@ -12,7 +12,7 @@ metadata:
       install-external-artifacts + build-push-image.
       Writes build artifact paths to source/.apexpack/context.json via the
       apexpack binary — no shell jq required.
-      Pulls Artifactory / NuGet credentials from existing K8s secrets.
+      Derives Artifactory / NuGet credentials from the regcred docker config secret.
 spec:
   params:
     - name: IMAGE
@@ -41,10 +41,6 @@ spec:
         Optional profiles repository. When not bound, the profiles embedded in
         APEXPACK_IMAGE are used — no extra PVC required.
       optional: true
-    - name: dockerconfig
-      description: "Optional .docker/config.json for Artifactory push. Mount the dockerconfig Secret here."
-      optional: true
-      mountPath: /root/.docker
     - name: tls-ca
       description: >-
         Optional Secret with a corporate CA certificate (key: ca-bundle.crt).
@@ -59,6 +55,14 @@ spec:
     - name: APK_PATH
       description: "Absolute path to the built APK in the output workspace."
 
+  volumes:
+    - name: docker-credentials
+      secret:
+        secretName: regcred
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+
   stepTemplate:
     securityContext:
       privileged: true  # melange needs bubblewrap
@@ -68,42 +72,24 @@ spec:
     - name: build
       image: $(params.APEXPACK_IMAGE)
       imagePullPolicy: Always
-      env:
-        # Artifactory Maven mirror credentials — sourced from the 'artifactory-creds' secret.
-        # kubectl create secret generic artifactory-creds \
-        #   --from-literal=MAVEN_MIRROR_USER=<user> \
-        #   --from-literal=MAVEN_MIRROR_PASSWORD=<token>
-        - name: MAVEN_MIRROR_USER
-          valueFrom:
-            secretKeyRef:
-              name: artifactory-creds
-              key: MAVEN_MIRROR_USER
-              optional: true
-        - name: MAVEN_MIRROR_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: artifactory-creds
-              key: MAVEN_MIRROR_PASSWORD
-              optional: true
-        # Artifactory NuGet feed credentials — sourced from the 'nuget-creds' secret.
-        # kubectl create secret generic nuget-creds \
-        #   --from-literal=NUGET_MIRROR_USER=<user> \
-        #   --from-literal=NUGET_MIRROR_PASSWORD=<token>
-        - name: NUGET_MIRROR_USER
-          valueFrom:
-            secretKeyRef:
-              name: nuget-creds
-              key: NUGET_MIRROR_USER
-              optional: true
-        - name: NUGET_MIRROR_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: nuget-creds
-              key: NUGET_MIRROR_PASSWORD
-              optional: true
+      volumeMounts:
+        - name: docker-credentials
+          mountPath: /root/.docker
+          readOnly: true
       script: |
         #!/bin/sh
         set -e
+
+        # Decode Artifactory credentials from the mounted regcred docker config.
+        # The same user/token is used for Maven mirror and NuGet feed.
+        if [ -f /root/.docker/config.json ]; then
+          _auth=$(jq -r 'first(.auths | to_entries[].value.auth) // ""' /root/.docker/config.json)
+          if [ -n "$_auth" ] && [ "$_auth" != "null" ]; then
+            _decoded=$(printf '%s' "$_auth" | base64 -d)
+            export ARTI_USER="${_decoded%%:*}"
+            export ARTI_PASSWORD="${_decoded#*:}"
+          fi
+        fi
 
         PROFILES_FLAG=""
         if [ "$(workspaces.profiles.bound)" = "true" ]; then

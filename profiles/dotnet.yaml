@@ -75,7 +75,7 @@ build:
 
   # Corporate Artifactory / Nexus NuGet feed.
   # Set to your Artifactory NuGet virtual repo URL; leave empty to restore from nuget.org directly.
-  # Requires NUGET_MIRROR_USER / NUGET_MIRROR_PASSWORD from the 'nuget-creds' Kubernetes secret.
+  # Requires ARTI_USER / ARTI_PASSWORD decoded from the regcred docker secret.
   # Example: https://<host>/artifactory/api/nuget/nuget-virtual
   nuget_mirror_url: ""
 

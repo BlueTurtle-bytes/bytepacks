@@ -39,10 +39,14 @@ spec:
       optional: true
     - name: output
       description: "Workspace containing the image tarball (maps to 'shared')."
-    - name: dockerconfig
-      description: "Optional .docker/config.json for Artifactory push. Mount the dockerconfig Secret here."
-      optional: true
-      mountPath: /root/.docker
+
+  volumes:
+    - name: docker-credentials
+      secret:
+        secretName: regcred
+        items:
+          - key: .dockerconfigjson
+            path: config.json
 
   results:
     - name: pushed-image
@@ -51,6 +55,10 @@ spec:
   steps:
     - name: push
       image: gcr.io/go-containerregistry/crane:latest
+      volumeMounts:
+        - name: docker-credentials
+          mountPath: /root/.docker
+          readOnly: true
       script: |
         #!/bin/sh
         set -e
@@ -60,6 +68,10 @@ spec:
 
     - name: tag-additional
       image: gcr.io/go-containerregistry/crane:latest
+      volumeMounts:
+        - name: docker-credentials
+          mountPath: /root/.docker
+          readOnly: true
       script: |
         #!/bin/sh
         set -e

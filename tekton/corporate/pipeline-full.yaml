@@ -108,9 +108,6 @@ spec:
     - name: cache
       description: "Optional package manager cache workspace."
       optional: true
-    - name: dockerconfig
-      description: "Optional Secret providing .docker/config.json for Artifactory image push."
-      optional: true
     - name: tls-ca
       description: >-
         Optional Secret with a corporate CA certificate (key: ca-bundle.crt).
@@ -243,8 +240,6 @@ spec:
           workspace: shared
         - name: profiles
           workspace: profiles
-        - name: dockerconfig
-          workspace: dockerconfig
         - name: tls-ca
           workspace: tls-ca
 
@@ -340,8 +335,6 @@ spec:
           workspace: shared
         - name: profiles
           workspace: profiles
-        - name: dockerconfig
-          workspace: dockerconfig
         - name: tls-ca
           workspace: tls-ca
 
@@ -409,8 +402,6 @@ spec:
           workspace: source
         - name: output
           workspace: shared
-        - name: dockerconfig
-          workspace: dockerconfig
 
     # ── 11. Push git tag now that the image is live ───────────────────────────
     - name: tag-version

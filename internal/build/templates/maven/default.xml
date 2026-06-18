@@ -9,8 +9,8 @@
   <servers>
     <server>
       <id>apexpack-mirror</id>
-      <username>$MAVEN_MIRROR_USER</username>
-      <password>$MAVEN_MIRROR_PASSWORD</password>
+      <username>$ARTI_USER</username>
+      <password>$ARTI_PASSWORD</password>
     </server>
   </servers>
 </settings>
