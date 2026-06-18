@@ -269,9 +269,11 @@ Examples:
 			fmt.Printf("  → %d profile(s) loaded\n", len(profiles))
 
 			// If --runtime not given, check context.json set by a prior detect run.
+			runtimeSource := "--runtime flag"
 			if runtime_ == "" {
 				if ctxData, cerr := apexctx.Load(absSrcDir); cerr == nil && ctxData.Runtime != "" {
 					runtime_ = ctxData.Runtime
+					runtimeSource = "context.json"
 				}
 			}
 
@@ -289,7 +291,7 @@ Examples:
 				if detectedLangVersion != "" {
 					versionSuffix = " — version " + detectedLangVersion
 				}
-				fmt.Printf("  → Using profile: %s (specified via --runtime)%s\n", runtime_, versionSuffix)
+				fmt.Printf("  → Using profile: %s (from %s)%s\n", runtime_, runtimeSource, versionSuffix)
 			} else {
 				fmt.Printf("[2/3] Detecting language in %s...\n", absSrcDir)
 				result := detect.Best(profiles, absSrcDir)

@@ -267,13 +267,13 @@ fi`
 	}
 
 	// Run melange.
-	fmt.Println("\n[2/3] Running melange...")
+	fmt.Println("\n  → Running melange...")
 	if err := runMelange(melangeFile, opts); err != nil {
 		return fmt.Errorf("melange: %w", err)
 	}
 
 	// Run apko.
-	fmt.Println("\n[3/3] Running apko...")
+	fmt.Println("\n  → Running apko...")
 	if err := runApko(apkoFile, opts); err != nil {
 		return fmt.Errorf("apko: %w", err)
 	}
