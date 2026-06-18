@@ -82,9 +82,6 @@ spec:
       description: "Holds the compiled Go binary and the OCI tarball."
     - name: cache
       optional: true
-    - name: dockerconfig
-      description: "Optional Secret providing .docker/config.json for Artifactory image push."
-      optional: true
     - name: tls-ca
       optional: true
 
@@ -150,6 +147,7 @@ spec:
     - name: self-build
       taskRef:
         name: apexpack-self-build
+        kind: ClusterTask
       runAfter:
         - version-release
       params:
@@ -171,8 +169,6 @@ spec:
           workspace: source
         - name: shared
           workspace: shared
-        - name: dockerconfig
-          workspace: dockerconfig
         - name: tls-ca
           workspace: tls-ca
 

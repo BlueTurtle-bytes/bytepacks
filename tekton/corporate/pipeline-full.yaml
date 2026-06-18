@@ -192,6 +192,7 @@ spec:
     - name: detect
       taskRef:
         name: apexpack-detect
+        kind: ClusterTask
       runAfter:
         - version-release
       params:
@@ -222,6 +223,7 @@ spec:
     - name: build
       taskRef:
         name: apexpack-build
+        kind: ClusterTask
       runAfter:
         - detect
       params:
@@ -250,6 +252,7 @@ spec:
     - name: scan
       taskRef:
         name: apexpack-scan
+        kind: ClusterTask
       runAfter:
         - build
       params:
@@ -277,6 +280,7 @@ spec:
     - name: patch
       taskRef:
         name: apexpack-patch
+        kind: ClusterTask
       runAfter:
         - scan
       when:
@@ -307,6 +311,7 @@ spec:
     - name: rebuild
       taskRef:
         name: apexpack-build
+        kind: ClusterTask
       runAfter:
         - patch
       when:
@@ -344,6 +349,7 @@ spec:
     - name: rescan
       taskRef:
         name: apexpack-scan
+        kind: ClusterTask
       runAfter:
         - rebuild
       when:
@@ -383,6 +389,7 @@ spec:
     - name: crane-push
       taskRef:
         name: crane-push
+        kind: ClusterTask
       runAfter:
         - rescan
       params:

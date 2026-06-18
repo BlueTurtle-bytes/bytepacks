@@ -162,6 +162,7 @@ spec:
     - name: apexpack-build
       taskRef:
         name: apexpack-build
+        kind: ClusterTask
       runAfter:
         - version-release
       params:
@@ -187,6 +188,7 @@ spec:
     - name: crane-push
       taskRef:
         name: crane-push
+        kind: ClusterTask
       runAfter:
         - apexpack-build
       params:

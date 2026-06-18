@@ -1,5 +1,5 @@
 apiVersion: tekton.dev/v1
-kind: Task
+kind: ClusterTask
 metadata:
   name: apexpack-self-build
   labels:
@@ -41,13 +41,17 @@ spec:
       description: "Cloned apexpack source (maps to corporate 'source' workspace)."
     - name: shared
       description: "Shared workspace — compiled binary and OCI tarball are written here."
-    - name: dockerconfig
-      description: "Optional .docker/config.json for Artifactory push. Mount the dockerconfig Secret here."
-      optional: true
-      mountPath: /root/.docker
     - name: tls-ca
       description: "Optional Secret with corporate CA cert (key: ca-bundle.crt)."
       optional: true
+
+  volumes:
+    - name: docker-credentials
+      secret:
+        secretName: regcred
+        items:
+          - key: .dockerconfigjson
+            path: config.json
 
   results:
     - name: IMAGE_TARBALL
@@ -112,6 +116,10 @@ spec:
     # ── Step 3: Push to registry ──────────────────────────────────────────────
     - name: push
       image: gcr.io/go-containerregistry/crane:latest
+      volumeMounts:
+        - name: docker-credentials
+          mountPath: /root/.docker
+          readOnly: true
       script: |
         #!/bin/sh
         set -e
@@ -123,6 +131,10 @@ spec:
     # ── Step 4: Stamp additional tags (e.g. latest) ───────────────────────────
     - name: tag-additional
       image: gcr.io/go-containerregistry/crane:latest
+      volumeMounts:
+        - name: docker-credentials
+          mountPath: /root/.docker
+          readOnly: true
       script: |
         #!/bin/sh
         set -e
