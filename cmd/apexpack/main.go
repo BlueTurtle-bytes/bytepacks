@@ -94,7 +94,7 @@ Examples:
 				return fmt.Errorf("resolving source dir: %w", err)
 			}
 
-			profiles, err := profile.LoadAll(profilesDir)
+			profiles, err := profile.LoadAll(resolveProfilesDir(profilesDir))
 			if err != nil {
 				return err
 			}
@@ -262,7 +262,7 @@ Examples:
 			fmt.Println()
 
 			fmt.Printf("[1/3] Loading profiles from %s...\n", profilesDir)
-			profiles, err := profile.LoadAll(profilesDir)
+			profiles, err := profile.LoadAll(resolveProfilesDir(profilesDir))
 			if err != nil {
 				return err
 			}
@@ -741,7 +741,7 @@ Examples:
 
 			fmt.Printf("\n[2/2] Applying patches to profiles in %s...\n", profilesDir)
 
-			profiles, err := profile.LoadAll(profilesDir)
+			profiles, err := profile.LoadAll(resolveProfilesDir(profilesDir))
 			if err != nil {
 				return err
 			}
@@ -832,6 +832,22 @@ Prints the temp file path (no newline) — designed for shell substitution:
 	}
 }
 
+// resolveProfilesDir returns dir unchanged when it exists on disk.
+// When dir is the default relative "profiles" and it doesn't exist, it falls
+// back to the path where the apexpack image installs bundled profiles.
+func resolveProfilesDir(dir string) string {
+	if _, err := os.Stat(dir); err == nil {
+		return dir
+	}
+	if dir == profile.DefaultProfilesDir {
+		const bundled = "/etc/apexpack/profiles"
+		if _, err := os.Stat(bundled); err == nil {
+			return bundled
+		}
+	}
+	return dir
+}
+
 // findTool looks for a binary in PATH.
 func findTool(name string) (string, error) {
 	if p, err := exec.LookPath(name); err == nil {
@@ -849,7 +865,7 @@ func profilesCmd() *cobra.Command {
 		Use:   "profiles",
 		Short: "List available language profiles",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			profiles, err := profile.LoadAll(profilesDir)
+			profiles, err := profile.LoadAll(resolveProfilesDir(profilesDir))
 			if err != nil {
 				return err
 			}

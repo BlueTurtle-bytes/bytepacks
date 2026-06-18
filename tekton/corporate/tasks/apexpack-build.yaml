@@ -72,9 +72,12 @@ spec:
     - name: build
       image: $(params.APEXPACK_IMAGE)
       imagePullPolicy: Always
+      env:
+        - name: DOCKER_CONFIG
+          value: /etc/docker-creds
       volumeMounts:
         - name: docker-credentials
-          mountPath: /root/.docker
+          mountPath: /etc/docker-creds
           readOnly: true
       script: |
         #!/bin/sh
@@ -82,8 +85,8 @@ spec:
 
         # Decode Artifactory credentials from the mounted regcred docker config.
         # The same user/token is used for Maven mirror and NuGet feed.
-        if [ -f /root/.docker/config.json ]; then
-          _auth=$(jq -r 'first(.auths | to_entries[].value.auth) // ""' /root/.docker/config.json)
+        if [ -f /etc/docker-creds/config.json ]; then
+          _auth=$(jq -r 'first(.auths | to_entries[].value.auth) // ""' /etc/docker-creds/config.json)
           if [ -n "$_auth" ] && [ "$_auth" != "null" ]; then
             _decoded=$(printf '%s' "$_auth" | base64 -d)
             export ARTI_USER="${_decoded%%:*}"

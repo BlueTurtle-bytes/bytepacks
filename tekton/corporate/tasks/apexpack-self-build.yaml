@@ -107,18 +107,21 @@ spec:
           --tag $(params.IMAGE) \
           --version $(params.VERSION) \
           --output $(workspaces.shared.path)/output \
+          --project-name apexpack \
           $TLS_CA_FLAG
 
-        SOURCE_BASE=$(basename $(workspaces.source.path))
-        printf "%s" "$(workspaces.shared.path)/output/${SOURCE_BASE}.tar" > $(results.IMAGE_TARBALL.path)
+        printf "%s" "$(workspaces.shared.path)/output/apexpack.tar" > $(results.IMAGE_TARBALL.path)
         ls -lh $(workspaces.shared.path)/output/
 
     # ── Step 3: Push to registry ──────────────────────────────────────────────
     - name: push
-      image: gcr.io/go-containerregistry/crane:latest
+      image: gcr.io/go-containerregistry/crane:debug
+      env:
+        - name: DOCKER_CONFIG
+          value: /etc/docker-creds
       volumeMounts:
         - name: docker-credentials
-          mountPath: /root/.docker
+          mountPath: /etc/docker-creds
           readOnly: true
       script: |
         #!/bin/sh
@@ -130,10 +133,13 @@ spec:
 
     # ── Step 4: Stamp additional tags (e.g. latest) ───────────────────────────
     - name: tag-additional
-      image: gcr.io/go-containerregistry/crane:latest
+      image: gcr.io/go-containerregistry/crane:debug
+      env:
+        - name: DOCKER_CONFIG
+          value: /etc/docker-creds
       volumeMounts:
         - name: docker-credentials
-          mountPath: /root/.docker
+          mountPath: /etc/docker-creds
           readOnly: true
       script: |
         #!/bin/sh

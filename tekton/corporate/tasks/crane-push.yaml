@@ -54,10 +54,13 @@ spec:
 
   steps:
     - name: push
-      image: gcr.io/go-containerregistry/crane:latest
+      image: gcr.io/go-containerregistry/crane:debug
+      env:
+        - name: DOCKER_CONFIG
+          value: /etc/docker-creds
       volumeMounts:
         - name: docker-credentials
-          mountPath: /root/.docker
+          mountPath: /etc/docker-creds
           readOnly: true
       script: |
         #!/bin/sh
@@ -67,10 +70,13 @@ spec:
         echo "Pushed: $(params.image)"
 
     - name: tag-additional
-      image: gcr.io/go-containerregistry/crane:latest
+      image: gcr.io/go-containerregistry/crane:debug
+      env:
+        - name: DOCKER_CONFIG
+          value: /etc/docker-creds
       volumeMounts:
         - name: docker-credentials
-          mountPath: /root/.docker
+          mountPath: /etc/docker-creds
           readOnly: true
       script: |
         #!/bin/sh
