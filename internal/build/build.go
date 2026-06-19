@@ -1110,7 +1110,11 @@ func mergeCABundles(extraCAPath string) (string, error) {
 // sanitizeImageName lowercases s and replaces any character that is not
 // [a-z0-9._-] with a hyphen, making the result safe to use as an OCI
 // repository name component.
-func sanitizeImageName(s string) string {
+// SanitizeImageName lowercases s and replaces any character that is not
+// a-z, 0-9, '.', '-', or '_' with '-', then trims leading/trailing '-' and '.'.
+// This is applied to ProjectName before using it as the APK package name and
+// tarball filename, so callers that need the actual filename should use it too.
+func SanitizeImageName(s string) string {
 	s = strings.ToLower(s)
 	b := strings.Builder{}
 	for _, r := range s {
@@ -1126,9 +1130,9 @@ func sanitizeImageName(s string) string {
 // applyDefaults fills in zero-value options.
 func applyDefaults(opts Options) Options {
 	if opts.ProjectName == "" {
-		opts.ProjectName = sanitizeImageName(filepath.Base(opts.SourceDir))
+		opts.ProjectName = SanitizeImageName(filepath.Base(opts.SourceDir))
 	} else {
-		opts.ProjectName = sanitizeImageName(opts.ProjectName)
+		opts.ProjectName = SanitizeImageName(opts.ProjectName)
 	}
 	if opts.Version == "" {
 		opts.Version = "0.0.1"

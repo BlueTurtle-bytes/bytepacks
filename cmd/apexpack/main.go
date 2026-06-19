@@ -374,8 +374,9 @@ Examples:
 			fmt.Printf("✓ Output:      %s\n", outputDir)
 
 			// Write build artifact paths to context.json.
+			// Use SanitizeImageName to match the name build.Run used for the tarball.
 			actualArch := buildArch(arch)
-			tarball := filepath.Join(outputDir, projectName+".tar")
+			tarball := filepath.Join(outputDir, build.SanitizeImageName(projectName)+".tar")
 			sbomFile := filepath.Join(outputDir, "sbom-"+actualArch+".spdx.json")
 			apkPath := filepath.Join(outputDir, "packages", actualArch, "*.apk")
 

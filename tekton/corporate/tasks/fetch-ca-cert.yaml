@@ -39,20 +39,20 @@ spec:
             DEST="$(workspaces.shared.path)/${BASENAME%.t*}"
             mkdir -p "$DEST"
             echo "Downloading and extracting $URL ..."
-            curl -fsSL --insecure "$URL" | tar -xzf - -C "$DEST"
+            curl -Lk "$URL" | tar -xzf - -C "$DEST"
             echo "Extracted to $DEST"
             ;;
           *.tar)
             DEST="$(workspaces.shared.path)/${BASENAME%.tar}"
             mkdir -p "$DEST"
             echo "Downloading and extracting $URL ..."
-            curl -fsSL --insecure "$URL" | tar -xf - -C "$DEST"
+            curl -Lk "$URL" | tar -xf - -C "$DEST"
             echo "Extracted to $DEST"
             ;;
           *.pem|*.crt)
             DEST="$(workspaces.shared.path)/$BASENAME"
             echo "Downloading $URL ..."
-            curl -fsSL --insecure "$URL" -o "$DEST"
+            curl -Lk "$URL" -o "$DEST"
             echo "Saved $(wc -c < "$DEST") bytes to $DEST"
             ;;
           *)
