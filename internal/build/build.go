@@ -697,27 +697,36 @@ func runMelange(configFile string, opts Options) error {
 
 	arch := melangeArch(opts.Arch)
 	fmt.Printf("  → melange arch: %s (GOARCH=%s)\n", arch, runtime.GOARCH)
-	env := os.Environ()
-	if opts.TLSExtraCA != "" {
-		// SSL_CERT_FILE points Go (and OpenSSL-based tools) at the system bundle
-		// that the Tekton step already appended the corporate CA to.
-		// SSL_CERT_DIR keeps the rehashed individual-cert directory for tools
-		// that require it. Both are needed for full compatibility across melange
-		// and its subprocesses (apko, wget, etc.).
-		const bundle = "/etc/ssl/certs/ca-certificates.crt"
-		env = append(env,
-			"SSL_CERT_FILE="+bundle,
-			"SSL_CERT_DIR=/etc/ssl/certs",
-		)
-	}
-	return runToolEnv("melange", []string{
+
+	args := []string{
 		"build", configFile,
 		"--source-dir", opts.SourceDir,
 		"--out-dir", packagesDir,
 		"--signing-key", keyFile,
 		"--arch", arch,
 		"--runner", "bubblewrap",
-	}, env)
+	}
+
+	if opts.TLSExtraCA == "" {
+		return runTool("melange", args)
+	}
+
+	// Corporate proxy: merge the system CA bundle with the extra CA into a single
+	// temp PEM file and point SSL_CERT_FILE at it so melange's Go TLS stack
+	// (which fetches wolfi packages via go-apk) trusts both public root CAs and
+	// the corporate CA. SSL_CERT_DIR covers any OpenSSL-linked subprocess.
+	absCA, _ := filepath.Abs(opts.TLSExtraCA)
+	merged, err := mergeCABundles(absCA)
+	if err != nil {
+		fmt.Printf("  → WARN: could not prepare merged CA bundle (%v); melange may fail on TLS\n", err)
+		return runTool("melange", args)
+	}
+	defer os.Remove(merged)
+
+	return runToolEnv("melange", args, append(os.Environ(),
+		"SSL_CERT_FILE="+merged,
+		"SSL_CERT_DIR=/etc/ssl/certs",
+	))
 }
 
 // runMelangeInDocker runs the melange build entirely inside a Linux container.

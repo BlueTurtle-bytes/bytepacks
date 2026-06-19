@@ -8,6 +8,7 @@ build:
 image:
   packages:
     - busybox
+    - ca-certificates
     - git
     - jq
     - melange
