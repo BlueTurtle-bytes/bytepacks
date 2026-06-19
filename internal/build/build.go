@@ -218,7 +218,7 @@ func Run(plan *types.BuildPlan, opts Options) error {
 	if opts.TLSExtraCA != "" {
 		absCA, _ := filepath.Abs(opts.TLSExtraCA)
 		caCopyPath := filepath.Join(opts.SourceDir, ".apexpack-ca.crt")
-		if caData, readErr := os.ReadFile(absCA); readErr == nil {
+		if caData, readErr := readCACerts(absCA); readErr == nil {
 			if writeErr := os.WriteFile(caCopyPath, caData, 0o644); writeErr == nil {
 				defer os.Remove(caCopyPath)
 				pipelineModified := false
@@ -862,8 +862,8 @@ func runApko(configFile string, opts Options) error {
 		return runToolInDir(opts.OutputDir, "apko", args)
 	}
 
-	// Corporate proxy: merge the system CA bundle with the extra CA into a temp
-	// file and expose it via SSL_CERT_FILE so apko's Go TLS stack trusts it.
+	// Corporate proxy: merge the system CA bundle with the extra CA (file or
+	// directory) into a temp PEM so apko's Go TLS stack trusts it.
 	absCA, _ := filepath.Abs(opts.TLSExtraCA)
 	merged, err := mergeCABundles(absCA)
 	if err != nil {
@@ -1015,8 +1015,54 @@ func runToolInDirEnv(dir, name string, args []string, env []string) error {
 	return nil
 }
 
+// readCACerts reads PEM certificate data from path, which may be either a
+// single PEM/CRT file or a directory. For directories every *.pem and *.crt
+// file found directly inside is concatenated in sorted order.
+func readCACerts(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Printf("  → CA cert: %s (%d bytes)\n", path, len(data))
+		return data, nil
+	}
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	var buf []byte
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".pem") && !strings.HasSuffix(name, ".crt") {
+			continue
+		}
+		full := filepath.Join(path, name)
+		data, err := os.ReadFile(full)
+		if err != nil {
+			fmt.Printf("  → CA cert: %s (skipped: %v)\n", full, err)
+			continue
+		}
+		fmt.Printf("  → CA cert: %s (%d bytes)\n", full, len(data))
+		buf = append(buf, data...)
+		buf = append(buf, '\n')
+	}
+	if len(buf) == 0 {
+		return nil, fmt.Errorf("no .pem or .crt files found in %s", path)
+	}
+	return buf, nil
+}
+
 // mergeCABundles concatenates the system CA bundle with an extra CA certificate
-// into a temp PEM file so a single SSL_CERT_FILE covers both.
+// (file or directory) into a temp PEM file so a single SSL_CERT_FILE covers both.
 func mergeCABundles(extraCAPath string) (string, error) {
 	systemBundles := []string{
 		"/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu
@@ -1025,15 +1071,22 @@ func mergeCABundles(extraCAPath string) (string, error) {
 		"/etc/ssl/cert.pem",                   // Alpine/Wolfi
 	}
 
+	var systemBundle string
 	var systemCerts []byte
 	for _, p := range systemBundles {
 		if data, err := os.ReadFile(p); err == nil {
+			systemBundle = p
 			systemCerts = data
 			break
 		}
 	}
+	if systemBundle != "" {
+		fmt.Printf("  → system CA bundle: %s (%d bytes)\n", systemBundle, len(systemCerts))
+	} else {
+		fmt.Println("  → system CA bundle: not found — merged bundle will contain extra CA only")
+	}
 
-	extraCerts, err := os.ReadFile(extraCAPath)
+	extraCerts, err := readCACerts(extraCAPath)
 	if err != nil {
 		return "", fmt.Errorf("reading extra CA: %w", err)
 	}
@@ -1050,6 +1103,7 @@ func mergeCABundles(extraCAPath string) (string, error) {
 	}
 	f.Write(extraCerts)
 
+	fmt.Printf("  → merged CA bundle: %s (%d bytes)\n", f.Name(), len(systemCerts)+len(extraCerts))
 	return f.Name(), nil
 }
 

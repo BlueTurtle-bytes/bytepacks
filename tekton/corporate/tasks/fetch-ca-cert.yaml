@@ -7,27 +7,22 @@ metadata:
   annotations:
     tekton.dev/displayName: "fetch CA certificate"
     tekton.dev/description: >-
-      Downloads a corporate CA certificate (PEM) from a URL and writes it to
-      the shared workspace. Run this as the first task in the pipeline so all
-      subsequent tasks can trust the TLS-intercepting proxy.
+      Downloads a corporate CA certificate from CERT_URL.
+      Detects the type from the URL extension:
+        .tar / .tar.gz / .tgz  → extracts to a directory
+        .pem / .crt            → saves as a single file
+      The result cert-path is the directory or file path in the shared workspace.
 spec:
   params:
     - name: CERT_URL
-      description: "URL to fetch the CA certificate from."
-    - name: CERT_FILENAME
-      description: "Filename to save the cert as in the shared workspace."
-      default: "ca-bundle.crt"
-    - name: INSECURE
-      description: "Set to 'true' to skip TLS verification on the curl request (needed when the cert server itself is behind the proxy)."
-      default: "false"
+      description: "URL to the CA certificate (.pem / .crt) or archive (.tar / .tar.gz / .tgz)."
 
   workspaces:
     - name: shared
-      description: "Shared workspace — cert is written here for downstream tasks."
 
   results:
     - name: cert-path
-      description: "Absolute path to the downloaded certificate."
+      description: "Absolute path to the downloaded file or extracted directory."
 
   steps:
     - name: fetch
@@ -36,15 +31,34 @@ spec:
         #!/bin/sh
         set -e
 
-        DEST="$(workspaces.shared.path)/$(params.CERT_FILENAME)"
+        URL="$(params.CERT_URL)"
+        BASENAME=$(basename "$URL")
 
-        CURL_FLAGS="-fsSL"
-        if [ "$(params.INSECURE)" = "true" ]; then
-          CURL_FLAGS="$CURL_FLAGS --insecure"
-        fi
+        case "$BASENAME" in
+          *.tar.gz|*.tgz)
+            DEST="$(workspaces.shared.path)/${BASENAME%.t*}"
+            mkdir -p "$DEST"
+            echo "Downloading and extracting $URL ..."
+            curl -fsSL --insecure "$URL" | tar -xzf - -C "$DEST"
+            echo "Extracted to $DEST"
+            ;;
+          *.tar)
+            DEST="$(workspaces.shared.path)/${BASENAME%.tar}"
+            mkdir -p "$DEST"
+            echo "Downloading and extracting $URL ..."
+            curl -fsSL --insecure "$URL" | tar -xf - -C "$DEST"
+            echo "Extracted to $DEST"
+            ;;
+          *.pem|*.crt)
+            DEST="$(workspaces.shared.path)/$BASENAME"
+            echo "Downloading $URL ..."
+            curl -fsSL --insecure "$URL" -o "$DEST"
+            echo "Saved $(wc -c < "$DEST") bytes to $DEST"
+            ;;
+          *)
+            echo "ERROR: unsupported cert URL — expected .pem, .crt, .tar, .tar.gz, or .tgz" >&2
+            exit 1
+            ;;
+        esac
 
-        echo "Fetching cert from $(params.CERT_URL) ..."
-        curl $CURL_FLAGS "$(params.CERT_URL)" -o "$DEST"
-
-        echo "Saved to $DEST ($(wc -c < "$DEST") bytes)"
         printf "%s" "$DEST" > $(results.cert-path.path)

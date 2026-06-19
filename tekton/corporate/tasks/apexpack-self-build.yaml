@@ -97,11 +97,15 @@ spec:
         apk add --no-cache melange apko bubblewrap git ca-certificates
 
         TLS_CA_FLAG=""
-        if [ -n "$(params.TLS_CA_PATH)" ]; then
-          if [ -f "$(params.TLS_CA_PATH)" ]; then
+        if [ -n "$(params.TLS_CA_PATH)" ] && [ -e "$(params.TLS_CA_PATH)" ]; then
+          if [ -d "$(params.TLS_CA_PATH)" ]; then
+            find "$(params.TLS_CA_PATH)" \( -name "*.pem" -o -name "*.crt" \) -exec cat {} + \
+              >> /etc/ssl/certs/ca-certificates.crt
+          else
             cat "$(params.TLS_CA_PATH)" >> /etc/ssl/certs/ca-certificates.crt
-            TLS_CA_FLAG="--tls-extra-ca $(params.TLS_CA_PATH)"
           fi
+          export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+          TLS_CA_FLAG="--tls-extra-ca $(params.TLS_CA_PATH)"
         fi
 
         $(workspaces.shared.path)/apexpack build . \

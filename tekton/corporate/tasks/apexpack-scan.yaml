@@ -57,11 +57,14 @@ spec:
         #!/bin/sh
         set -e
 
-        if [ -n "$(params.TLS_CA_PATH)" ]; then
-          if [ -f "$(params.TLS_CA_PATH)" ]; then
+        if [ -n "$(params.TLS_CA_PATH)" ] && [ -e "$(params.TLS_CA_PATH)" ]; then
+          if [ -d "$(params.TLS_CA_PATH)" ]; then
+            find "$(params.TLS_CA_PATH)" \( -name "*.pem" -o -name "*.crt" \) -exec cat {} + \
+              >> /etc/ssl/certs/ca-certificates.crt
+          else
             cat "$(params.TLS_CA_PATH)" >> /etc/ssl/certs/ca-certificates.crt
-            export SSL_CERT_FILE="$(params.TLS_CA_PATH)"
           fi
+          export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
         fi
 
         RESCAN_FLAG=""

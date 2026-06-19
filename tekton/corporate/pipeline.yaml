@@ -84,10 +84,6 @@ spec:
         URL to fetch the corporate CA certificate from. Leave empty to skip
         the cert fetch (no TLS proxy in the cluster).
       default: ""
-    - name: cert-filename
-      type: string
-      description: "Filename to save the CA cert as in the shared workspace (used by fetch-ca-cert)."
-      default: "cacerts.pem"
 
   # ── Workspaces ───────────────────────────────────────────────────────────────
   workspaces:
@@ -174,10 +170,6 @@ spec:
       params:
         - name: CERT_URL
           value: $(params.cert-url)
-        - name: CERT_FILENAME
-          value: $(params.cert-filename)
-        - name: INSECURE
-          value: "true"
       workspaces:
         - name: shared
           workspace: shared
