@@ -1,0 +1,50 @@
+apiVersion: tekton.dev/v1
+kind: ClusterTask
+metadata:
+  name: fetch-ca-cert
+  labels:
+    app.kubernetes.io/version: "1.0"
+  annotations:
+    tekton.dev/displayName: "fetch CA certificate"
+    tekton.dev/description: >-
+      Downloads a corporate CA certificate (PEM) from a URL and writes it to
+      the shared workspace. Run this as the first task in the pipeline so all
+      subsequent tasks can trust the TLS-intercepting proxy.
+spec:
+  params:
+    - name: CERT_URL
+      description: "URL to fetch the CA certificate from."
+    - name: CERT_FILENAME
+      description: "Filename to save the cert as in the shared workspace."
+      default: "ca-bundle.crt"
+    - name: INSECURE
+      description: "Set to 'true' to skip TLS verification on the curl request (needed when the cert server itself is behind the proxy)."
+      default: "false"
+
+  workspaces:
+    - name: shared
+      description: "Shared workspace — cert is written here for downstream tasks."
+
+  results:
+    - name: cert-path
+      description: "Absolute path to the downloaded certificate."
+
+  steps:
+    - name: fetch
+      image: curlimages/curl:latest
+      script: |
+        #!/bin/sh
+        set -e
+
+        DEST="$(workspaces.shared.path)/$(params.CERT_FILENAME)"
+
+        CURL_FLAGS="-fsSL"
+        if [ "$(params.INSECURE)" = "true" ]; then
+          CURL_FLAGS="$CURL_FLAGS --insecure"
+        fi
+
+        echo "Fetching cert from $(params.CERT_URL) ..."
+        curl $CURL_FLAGS "$(params.CERT_URL)" -o "$DEST"
+
+        echo "Saved to $DEST ($(wc -c < "$DEST") bytes)"
+        printf "%s" "$DEST" > $(results.cert-path.path)
