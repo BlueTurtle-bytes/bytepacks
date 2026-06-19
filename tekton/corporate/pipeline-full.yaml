@@ -94,6 +94,13 @@ spec:
       description: "apexpack container image. Override to use your Artifactory mirror or pin a version."
       default: "apexpack:latest"
 
+    - name: tls-ca-path
+      type: string
+      description: >-
+        Absolute path to a CA certificate (PEM) in the shared workspace.
+        Set when the cluster routes traffic through a TLS-intercepting proxy.
+      default: ""
+
   # ── Workspaces ───────────────────────────────────────────────────────────────
   workspaces:
     - name: source
@@ -107,11 +114,6 @@ spec:
         Bind to a ReadWriteOnce PVC (or share the same PVC as 'shared' with a subPath).
     - name: cache
       description: "Optional package manager cache workspace."
-      optional: true
-    - name: tls-ca
-      description: >-
-        Optional Secret with a corporate CA certificate (key: ca-bundle.crt).
-        Required when the cluster routes traffic through a TLS-intercepting proxy.
       optional: true
 
   # ── Results ──────────────────────────────────────────────────────────────────
@@ -235,6 +237,8 @@ spec:
           value: $(params.app-id)
         - name: APEXPACK_IMAGE
           value: $(params.apexpack-image)
+        - name: TLS_CA_PATH
+          value: $(params.tls-ca-path)
       workspaces:
         - name: source
           workspace: source
@@ -242,8 +246,6 @@ spec:
           workspace: shared
         - name: profiles
           workspace: profiles
-        - name: tls-ca
-          workspace: tls-ca
 
     # ── 6. CVE scan ───────────────────────────────────────────────────────────
     # SOFT_FAIL is set to AUTO_PATCH so the pipeline continues when auto-patch is
@@ -266,13 +268,13 @@ spec:
           value: $(tasks.detect.results.AUTO_PATCH)
         - name: RESCAN
           value: "false"
+        - name: TLS_CA_PATH
+          value: $(params.tls-ca-path)
       workspaces:
         - name: source
           workspace: source
         - name: output
           workspace: shared
-        - name: tls-ca
-          workspace: tls-ca
 
     # ── 7. Auto-patch CVEs ────────────────────────────────────────────────────
     # Only runs when: scan=fail AND AUTO_PATCH=true.
@@ -295,6 +297,8 @@ spec:
           value: $(params.apexpack-image)
         - name: PROFILES_SUBDIR
           value: profiles
+        - name: TLS_CA_PATH
+          value: $(params.tls-ca-path)
       workspaces:
         - name: source
           workspace: source
@@ -302,8 +306,6 @@ spec:
           workspace: profiles
         - name: output
           workspace: shared
-        - name: tls-ca
-          workspace: tls-ca
 
     # ── 8. Rebuild with patched profiles ──────────────────────────────────────
     # Only runs when: scan=fail AND AUTO_PATCH=true AND at least one patch was applied.
@@ -333,6 +335,8 @@ spec:
           value: $(params.app-id)
         - name: APEXPACK_IMAGE
           value: $(params.apexpack-image)
+        - name: TLS_CA_PATH
+          value: $(params.tls-ca-path)
       workspaces:
         - name: source
           workspace: source
@@ -340,8 +344,6 @@ spec:
           workspace: shared
         - name: profiles
           workspace: profiles
-        - name: tls-ca
-          workspace: tls-ca
 
     # ── 9. Re-scan rebuilt image ──────────────────────────────────────────────
     # Confirms CVEs were resolved. Soft-fail so push always completes — check
@@ -373,13 +375,13 @@ spec:
           value: "true"
         - name: RESCAN
           value: "true"
+        - name: TLS_CA_PATH
+          value: $(params.tls-ca-path)
       workspaces:
         - name: source
           workspace: source
         - name: output
           workspace: shared
-        - name: tls-ca
-          workspace: tls-ca
 
     # ── 10. Push to Artifactory ───────────────────────────────────────────────
     # Runs after rescan. If patch cycle was skipped, rescan is also skipped

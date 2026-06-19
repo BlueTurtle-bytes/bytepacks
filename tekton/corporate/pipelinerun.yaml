@@ -61,11 +61,9 @@ spec:
     # kubectl create secret docker-registry regcred \
     #   --docker-server=<registry> --docker-username=<user> --docker-password=<token>
 
-    # Uncomment if your cluster routes through a TLS-intercepting proxy:
-    # - name: tls-ca
-    #   secret:
-    #     secretName: corporate-ca                           # kubectl create secret generic corporate-ca
-    #                                                        #   --from-file=ca-bundle.crt=/path/to/ca.crt
+    # Set tls-ca-path if your cluster routes through a TLS-intercepting proxy:
+    # Add to params above: - name: tls-ca-path
+    #                        value: /workspace/shared/ca-bundle.crt
 
     # Uncomment to enable package manager caching:
     # - name: cache

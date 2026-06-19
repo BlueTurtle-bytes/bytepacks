@@ -33,6 +33,9 @@ spec:
         Branch to push the patched profiles to (only used when PERSIST=true).
         Leave empty to use git_branch from context.json (set by detect).
       default: ""
+    - name: TLS_CA_PATH
+      description: "Absolute path to a CA certificate (PEM). Set when traffic is routed through a TLS-intercepting proxy."
+      default: ""
 
   workspaces:
     - name: source
@@ -41,9 +44,6 @@ spec:
       description: "Profiles workspace — profiles/*.yaml are patched in-place here."
     - name: output
       description: "Shared workspace — used to locate the SBOM (maps to 'shared' pipeline workspace)."
-    - name: tls-ca
-      description: "Optional Secret with a corporate CA cert (key: ca-bundle.crt) for TLS-intercepting proxies."
-      optional: true
 
   results:
     - name: PATCHES_APPLIED
@@ -61,8 +61,8 @@ spec:
 
         PROFILES_PATH="$(workspaces.profiles.path)/$(params.PROFILES_SUBDIR)"
 
-        if [ "$(workspaces.tls-ca.bound)" = "true" ]; then
-          export SSL_CERT_FILE="$(workspaces.tls-ca.path)/ca-bundle.crt"
+        if [ -n "$(params.TLS_CA_PATH)" ]; then
+          export SSL_CERT_FILE="$(params.TLS_CA_PATH)"
         fi
 
         echo "=== Applying CVE patches ==="

@@ -76,13 +76,18 @@ spec:
         Override to pull from your Artifactory mirror.
       default: "cgr.dev/chainguard/wolfi-base:latest"
 
+    - name: tls-ca-path
+      type: string
+      description: >-
+        Absolute path to a CA certificate (PEM) in the shared workspace.
+        Set when the cluster routes traffic through a TLS-intercepting proxy.
+      default: ""
+
   workspaces:
     - name: source
     - name: shared
       description: "Holds the compiled Go binary and the OCI tarball."
     - name: cache
-      optional: true
-    - name: tls-ca
       optional: true
 
   results:
@@ -164,13 +169,13 @@ spec:
         - name: additional-tags
           value:
             - $(params.release-channels[*])
+        - name: TLS_CA_PATH
+          value: $(params.tls-ca-path)
       workspaces:
         - name: source
           workspace: source
         - name: shared
           workspace: shared
-        - name: tls-ca
-          workspace: tls-ca
 
     # ── 5. Push git tag now that image is live ─────────────────────────────────
     - name: tag-version

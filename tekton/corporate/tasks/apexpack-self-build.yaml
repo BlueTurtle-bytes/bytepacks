@@ -35,15 +35,15 @@ spec:
     - name: image-base
       description: "Image path without tag, used when stamping additional-tags."
       default: ""
+    - name: TLS_CA_PATH
+      description: "Absolute path to a CA certificate (PEM). Set when traffic is routed through a TLS-intercepting proxy."
+      default: ""
 
   workspaces:
     - name: source
       description: "Cloned apexpack source (maps to corporate 'source' workspace)."
     - name: shared
       description: "Shared workspace — compiled binary and OCI tarball are written here."
-    - name: tls-ca
-      description: "Optional Secret with corporate CA cert (key: ca-bundle.crt)."
-      optional: true
 
   volumes:
     - name: docker-credentials
@@ -97,10 +97,9 @@ spec:
         apk add --no-cache melange apko bubblewrap git ca-certificates
 
         TLS_CA_FLAG=""
-        if [ "$(workspaces.tls-ca.bound)" = "true" ]; then
-          # Append corporate CA so apk/git/apko trust the proxy.
-          cat "$(workspaces.tls-ca.path)/ca-bundle.crt" >> /etc/ssl/certs/ca-certificates.crt
-          TLS_CA_FLAG="--tls-extra-ca $(workspaces.tls-ca.path)/ca-bundle.crt"
+        if [ -n "$(params.TLS_CA_PATH)" ]; then
+          cat "$(params.TLS_CA_PATH)" >> /etc/ssl/certs/ca-certificates.crt
+          TLS_CA_FLAG="--tls-extra-ca $(params.TLS_CA_PATH)"
         fi
 
         $(workspaces.shared.path)/apexpack build . \

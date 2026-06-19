@@ -30,6 +30,11 @@ spec:
     - name: APEXPACK_IMAGE
       description: "apexpack container image to run. Override to pin a version or use your Artifactory mirror."
       default: "apexpack:latest"
+    - name: TLS_CA_PATH
+      description: >-
+        Absolute path to a CA certificate (PEM) to trust during the build.
+        Use when the cert is fetched at pipeline runtime into the shared workspace.
+      default: ""
 
   workspaces:
     - name: source
@@ -40,11 +45,6 @@ spec:
       description: >-
         Optional profiles repository. When not bound, the profiles embedded in
         APEXPACK_IMAGE are used — no extra PVC required.
-      optional: true
-    - name: tls-ca
-      description: >-
-        Optional Secret with a corporate CA certificate (key: ca-bundle.crt).
-        Required when the cluster has a TLS-intercepting proxy.
       optional: true
 
   results:
@@ -109,8 +109,9 @@ spec:
         fi
 
         TLS_CA_FLAG=""
-        if [ "$(workspaces.tls-ca.bound)" = "true" ]; then
-          TLS_CA_FLAG="--tls-extra-ca $(workspaces.tls-ca.path)/ca-bundle.crt"
+        if [ -n "$(params.TLS_CA_PATH)" ]; then
+          cat "$(params.TLS_CA_PATH)" >> /etc/ssl/certs/ca-certificates.crt
+          TLS_CA_FLAG="--tls-extra-ca $(params.TLS_CA_PATH)"
         fi
 
         # Build — writes .apexpack/context.json with artifact paths as a side effect.

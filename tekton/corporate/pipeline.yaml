@@ -78,6 +78,12 @@ spec:
       type: string
       description: "apexpack container image to use. Override to pin a version or use your Artifactory mirror."
       default: "apexpack:latest"
+    - name: cert-url
+      type: string
+      description: >-
+        URL to fetch the corporate CA certificate from. Leave empty to skip
+        the cert fetch (no TLS proxy in the cluster).
+      default: ""
 
   # ── Workspaces ───────────────────────────────────────────────────────────────
   workspaces:
@@ -87,11 +93,6 @@ spec:
       description: "Shared workspace: apexpack writes the OCI tarball, APK, and SBOM here."
     - name: cache
       description: "Optional cache workspace for package manager caches."
-      optional: true
-    - name: tls-ca
-      description: >-
-        Optional Secret with a corporate CA certificate (key: ca-bundle.crt).
-        Mount when the cluster routes traffic through a TLS-intercepting proxy.
       optional: true
 
   # ── Results ──────────────────────────────────────────────────────────────────
@@ -155,7 +156,27 @@ spec:
         - name: source
           workspace: source
 
-    # ── 4. Build OCI image with apexpack ─────────────────────────────────────
+    # ── 4. Fetch corporate CA cert ────────────────────────────────────────────
+    # Runs in parallel with clone/version — no source dependency.
+    # Skipped automatically when cert-url is empty.
+    - name: fetch-ca-cert
+      taskRef:
+        name: fetch-ca-cert
+        kind: ClusterTask
+      when:
+        - input: $(params.cert-url)
+          operator: notin
+          values: [""]
+      params:
+        - name: CERT_URL
+          value: $(params.cert-url)
+        - name: INSECURE
+          value: "true"
+      workspaces:
+        - name: shared
+          workspace: shared
+
+    # ── 5. Build OCI image with apexpack ─────────────────────────────────────
     # Replaces: install-external-artifacts + build-push-image ClusterTasks.
     # Detects the language, runs melange (APK build), runs apko (OCI image),
     # and writes the tarball + SBOM to the 'shared' workspace.
@@ -165,6 +186,7 @@ spec:
         kind: ClusterTask
       runAfter:
         - version-release
+        - fetch-ca-cert
       params:
         - name: IMAGE
           value: "$(params.image-name):$(tasks.version-release.results.release-version)"
@@ -174,15 +196,15 @@ spec:
           value: $(params.app-id)
         - name: APEXPACK_IMAGE
           value: $(params.apexpack-image)
+        - name: TLS_CA_PATH
+          value: $(tasks.fetch-ca-cert.results.cert-path)
       workspaces:
         - name: source
           workspace: source
         - name: output
           workspace: shared
-        - name: tls-ca
-          workspace: tls-ca
 
-    # ── 5. Push image to Artifactory registry ────────────────────────────────
+    # ── 6. Push image to Artifactory registry ────────────────────────────────
     # Pushes the OCI tarball to the primary versioned tag, then stamps any
     # additional release-channel tags (e.g. latest, dev) without re-uploading.
     - name: crane-push
