@@ -36,7 +36,7 @@ spec:
       description: "Image path without tag, used when stamping additional-tags."
       default: ""
     - name: TLS_CA_PATH
-      description: "Absolute path to a CA certificate (PEM). Set when traffic is routed through a TLS-intercepting proxy."
+      description: "Absolute path to the CA certificate PEM in the shared workspace. Leave empty to skip."
       default: ""
 
   workspaces:
@@ -98,8 +98,10 @@ spec:
 
         TLS_CA_FLAG=""
         if [ -n "$(params.TLS_CA_PATH)" ]; then
-          cat "$(params.TLS_CA_PATH)" >> /etc/ssl/certs/ca-certificates.crt
-          TLS_CA_FLAG="--tls-extra-ca $(params.TLS_CA_PATH)"
+          if [ -f "$(params.TLS_CA_PATH)" ]; then
+            cat "$(params.TLS_CA_PATH)" >> /etc/ssl/certs/ca-certificates.crt
+            TLS_CA_FLAG="--tls-extra-ca $(params.TLS_CA_PATH)"
+          fi
         fi
 
         $(workspaces.shared.path)/apexpack build . \

@@ -699,8 +699,16 @@ func runMelange(configFile string, opts Options) error {
 	fmt.Printf("  → melange arch: %s (GOARCH=%s)\n", arch, runtime.GOARCH)
 	env := os.Environ()
 	if opts.TLSExtraCA != "" {
-		absCA, _ := filepath.Abs(opts.TLSExtraCA)
-		env = append(env, "SSL_CERT_DIR=/etc/ssl/certs:"+filepath.Dir(absCA))
+		// SSL_CERT_FILE points Go (and OpenSSL-based tools) at the system bundle
+		// that the Tekton step already appended the corporate CA to.
+		// SSL_CERT_DIR keeps the rehashed individual-cert directory for tools
+		// that require it. Both are needed for full compatibility across melange
+		// and its subprocesses (apko, wget, etc.).
+		const bundle = "/etc/ssl/certs/ca-certificates.crt"
+		env = append(env,
+			"SSL_CERT_FILE="+bundle,
+			"SSL_CERT_DIR=/etc/ssl/certs",
+		)
 	}
 	return runToolEnv("melange", []string{
 		"build", configFile,

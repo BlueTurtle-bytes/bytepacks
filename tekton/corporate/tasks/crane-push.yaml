@@ -37,8 +37,8 @@ spec:
     - name: source
       description: "Optional source workspace. When bound, .apexpack/context.json is updated with push results."
       optional: true
-    - name: output
-      description: "Workspace containing the image tarball (maps to 'shared')."
+    - name: shared
+      description: "Shared workspace containing the image tarball."
 
   volumes:
     - name: docker-credentials

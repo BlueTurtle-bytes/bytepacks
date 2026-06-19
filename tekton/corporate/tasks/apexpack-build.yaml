@@ -32,15 +32,15 @@ spec:
       default: "apexpack:latest"
     - name: TLS_CA_PATH
       description: >-
-        Absolute path to a CA certificate (PEM) to trust during the build.
-        Use when the cert is fetched at pipeline runtime into the shared workspace.
+        Absolute path to the CA certificate PEM in the shared workspace
+        (e.g. /workspace/shared/cacerts.pem). Leave empty to skip TLS cert setup.
       default: ""
 
   workspaces:
     - name: source
       description: "Cloned source code (maps to the corporate 'source' workspace)."
-    - name: output
-      description: "Build artifacts output — OCI tarball, APK, SBOM (maps to the corporate 'shared' workspace)."
+    - name: shared
+      description: "Shared workspace — OCI tarball, APK, and SBOM are written here."
     - name: profiles
       description: >-
         Optional profiles repository. When not bound, the profiles embedded in
@@ -110,8 +110,10 @@ spec:
 
         TLS_CA_FLAG=""
         if [ -n "$(params.TLS_CA_PATH)" ]; then
-          cat "$(params.TLS_CA_PATH)" >> /etc/ssl/certs/ca-certificates.crt
-          TLS_CA_FLAG="--tls-extra-ca $(params.TLS_CA_PATH)"
+          if [ -f "$(params.TLS_CA_PATH)" ]; then
+            cat "$(params.TLS_CA_PATH)" >> /etc/ssl/certs/ca-certificates.crt
+            TLS_CA_FLAG="--tls-extra-ca $(params.TLS_CA_PATH)"
+          fi
         fi
 
         # Build — writes .apexpack/context.json with artifact paths as a side effect.
@@ -119,7 +121,7 @@ spec:
           $(workspaces.source.path) \
           --tag     $(params.IMAGE) \
           --version $(params.VERSION) \
-          --output  $(workspaces.output.path) \
+          --output  $(workspaces.shared.path) \
           $PROFILES_FLAG \
           $NAME_FLAG \
           $TLS_CA_FLAG
@@ -131,4 +133,4 @@ spec:
         jq -r '.apk_path'      "$CTX" > $(results.APK_PATH.path)
 
         echo "Build complete:"
-        ls -lh $(workspaces.output.path)/
+        ls -lh $(workspaces.shared.path)/

@@ -242,7 +242,7 @@ spec:
       workspaces:
         - name: source
           workspace: source
-        - name: output
+        - name: shared
           workspace: shared
         - name: profiles
           workspace: profiles
@@ -273,7 +273,7 @@ spec:
       workspaces:
         - name: source
           workspace: source
-        - name: output
+        - name: shared
           workspace: shared
 
     # ── 7. Auto-patch CVEs ────────────────────────────────────────────────────
@@ -304,7 +304,7 @@ spec:
           workspace: source
         - name: profiles
           workspace: profiles
-        - name: output
+        - name: shared
           workspace: shared
 
     # ── 8. Rebuild with patched profiles ──────────────────────────────────────
@@ -340,7 +340,7 @@ spec:
       workspaces:
         - name: source
           workspace: source
-        - name: output
+        - name: shared
           workspace: shared
         - name: profiles
           workspace: profiles
@@ -380,7 +380,7 @@ spec:
       workspaces:
         - name: source
           workspace: source
-        - name: output
+        - name: shared
           workspace: shared
 
     # ── 10. Push to Artifactory ───────────────────────────────────────────────
@@ -409,7 +409,7 @@ spec:
       workspaces:
         - name: source
           workspace: source
-        - name: output
+        - name: shared
           workspace: shared
 
     # ── 11. Push git tag now that the image is live ───────────────────────────

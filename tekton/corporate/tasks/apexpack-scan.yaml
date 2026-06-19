@@ -33,14 +33,14 @@ spec:
       description: "When true, write results to rescan_* fields in context.json instead of scan_*."
       default: "false"
     - name: TLS_CA_PATH
-      description: "Absolute path to a CA certificate (PEM). Set when traffic is routed through a TLS-intercepting proxy."
+      description: "Absolute path to the CA certificate PEM in the shared workspace. Leave empty to skip."
       default: ""
 
   workspaces:
     - name: source
       description: "Source workspace — .apexpack/context.json is updated here."
-    - name: output
-      description: "Shared workspace — scan report is written here (maps to 'shared' pipeline workspace)."
+    - name: shared
+      description: "Shared workspace — scan report is written here."
 
   results:
     - name: SCAN_RESULT
@@ -58,8 +58,10 @@ spec:
         set -e
 
         if [ -n "$(params.TLS_CA_PATH)" ]; then
-          cat "$(params.TLS_CA_PATH)" >> /etc/ssl/certs/ca-certificates.crt
-          export SSL_CERT_FILE="$(params.TLS_CA_PATH)"
+          if [ -f "$(params.TLS_CA_PATH)" ]; then
+            cat "$(params.TLS_CA_PATH)" >> /etc/ssl/certs/ca-certificates.crt
+            export SSL_CERT_FILE="$(params.TLS_CA_PATH)"
+          fi
         fi
 
         RESCAN_FLAG=""
@@ -79,7 +81,7 @@ spec:
         #   - exits 1 on CVE threshold breach unless --soft-fail is set
         apexpack scan \
           --source  "$(workspaces.source.path)" \
-          --output  "$(workspaces.output.path)" \
+          --output  "$(workspaces.shared.path)" \
           --fail-on "$(params.FAIL_ON)" \
           --format  "$(params.FORMAT)" \
           $RESCAN_FLAG \
