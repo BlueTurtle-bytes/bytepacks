@@ -65,6 +65,9 @@ spec:
       script: |
         #!/bin/sh
         set -e
+        echo "tarball param: $(params.tarball)"
+        echo "shared workspace contents:"
+        ls -lh /workspace/shared/ || true
         crane push "$(params.tarball)" "$(params.image)"
         printf "%s" "$(params.image)" > $(results.pushed-image.path)
         echo "Pushed: $(params.image)"
