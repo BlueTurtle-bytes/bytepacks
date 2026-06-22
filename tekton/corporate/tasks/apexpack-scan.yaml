@@ -58,13 +58,14 @@ spec:
         set -e
 
         if [ -n "$(params.TLS_CA_PATH)" ] && [ -e "$(params.TLS_CA_PATH)" ]; then
+          _CA_BUNDLE=/tmp/apexpack-ca-bundle.crt
+          cp /etc/ssl/certs/ca-certificates.crt "$_CA_BUNDLE" 2>/dev/null || touch "$_CA_BUNDLE"
           if [ -d "$(params.TLS_CA_PATH)" ]; then
-            find "$(params.TLS_CA_PATH)" \( -name "*.pem" -o -name "*.crt" \) -exec cat {} + \
-              >> /etc/ssl/certs/ca-certificates.crt
+            find "$(params.TLS_CA_PATH)" \( -name "*.pem" -o -name "*.crt" \) -exec cat {} + >> "$_CA_BUNDLE"
           else
-            cat "$(params.TLS_CA_PATH)" >> /etc/ssl/certs/ca-certificates.crt
+            cat "$(params.TLS_CA_PATH)" >> "$_CA_BUNDLE"
           fi
-          export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+          export SSL_CERT_FILE="$_CA_BUNDLE"
         fi
 
         RESCAN_FLAG=""
