@@ -77,7 +77,7 @@ build:
   # Set to your Artifactory NuGet virtual repo URL; leave empty to restore from nuget.org directly.
   # Requires ARTI_USER / ARTI_PASSWORD decoded from the regcred docker secret.
   # Example: https://<host>/artifactory/api/nuget/nuget-virtual
-  nuget_mirror_url: ""
+  nuget_mirror_url: "https://your-artifactory/artifactory/api/nuget/v3/nuget-virtual"
 
   # NuGet.Config template to use. Built-ins: "default" (source + credentials only),
   # "corporate" (adds globalPackagesFolder + request tuning for Artifactory).

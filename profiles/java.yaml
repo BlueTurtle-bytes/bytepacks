@@ -93,9 +93,7 @@ build:
 
   tls_ca_env: []  # JVM ignores SSL_CERT_FILE; tls_ca_pre_step + build command handle it
   tls_ca_pre_step: |
-    # Copy the JVM's own cacerts (already PKCS12 in Java 21) and add the corporate CA.
-    # This is more reliable than splitting the PEM bundle — cacerts is the authoritative
-    # source of trusted CAs for this JVM and avoids any awk/import edge cases.
+    [ -f /home/build/.apexpack-ca.crt ] || exit 0
     KEYTOOL=$(find /usr/lib/jvm -name "keytool" 2>/dev/null | head -1)
     JAVA_CACERTS=$(find /usr/lib/jvm -name "cacerts" 2>/dev/null | head -1)
     if [ -z "$KEYTOOL" ]; then
@@ -104,11 +102,17 @@ build:
     if [ -z "$JAVA_CACERTS" ]; then
       echo "ERROR: cacerts not found under /usr/lib/jvm" >&2; exit 1
     fi
-    STORE=/home/build/.apexpack-truststore.p12
-    cp "$JAVA_CACERTS" "$STORE"
+    # Import directly into the JVM's own cacerts so every JVM process (Gradle wrapper,
+    # daemon, worker JVMs) trusts the corp CA without needing GRADLE_OPTS or JAVA_OPTS.
+    # GRADLE_OPTS only covers the Gradle JVM; the wrapper may reset it before the
+    # trustStore flags take effect, causing SSLHandshakeException on distribution download.
     "$KEYTOOL" -importcert -noprompt -alias apexpack-corp-ca \
       -file /home/build/.apexpack-ca.crt \
-      -keystore "$STORE" -storetype PKCS12 -storepass changeit
+      -keystore "$JAVA_CACERTS" -storepass changeit
+    # Also write a copy so the -Djavax.net.ssl.trustStore check in the build command
+    # still fires as belt-and-suspenders for any process that ignores cacerts.
+    STORE=/home/build/.apexpack-truststore.p12
+    cp "$JAVA_CACERTS" "$STORE"
     echo "→ Truststore ready ($(basename $JAVA_CACERTS)): Java default CAs + corporate CA"
 
   frameworks:
