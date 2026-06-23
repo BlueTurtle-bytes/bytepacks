@@ -868,8 +868,8 @@ func runApko(configFile string, opts Options) error {
 	if opts.LocalBuild {
 		args = []string{"build", configFile, imageTag, outputTar, "--arch", arch}
 	} else {
-		sbomPath := filepath.Join(opts.OutputDir, "sbom-"+arch+".spdx.json")
-		args = []string{"publish", configFile, imageTag, "--arch", arch, "--sbom-path", sbomPath}
+		// --sbom-path is a directory; apko publish writes sbom-<arch>.spdx.json inside it.
+		args = []string{"publish", configFile, imageTag, "--arch", arch, "--sbom-path", opts.OutputDir}
 	}
 
 	if opts.TLSExtraCA == "" {

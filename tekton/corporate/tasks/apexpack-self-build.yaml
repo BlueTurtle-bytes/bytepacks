@@ -9,8 +9,8 @@ metadata:
     tekton.dev/description: >-
       Bootstrappable self-build for the apexpack project. No pre-existing apexpack
       image required. Step 1 compiles the Go binary. Step 2 installs melange, apko,
-      and bubblewrap into a Wolfi base image and runs the compiled binary to produce
-      the OCI tarball. Step 3 pushes with crane.
+      and bubblewrap into a Wolfi base image, runs the compiled binary, and publishes
+      directly to the registry via apko publish.
 spec:
   params:
     - name: IMAGE
@@ -43,7 +43,7 @@ spec:
     - name: source
       description: "Cloned apexpack source (maps to corporate 'source' workspace)."
     - name: shared
-      description: "Shared workspace — compiled binary and OCI tarball are written here."
+      description: "Shared workspace — compiled binary and build output are written here."
 
   volumes:
     - name: docker-credentials
