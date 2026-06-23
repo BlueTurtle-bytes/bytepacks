@@ -4,7 +4,8 @@ metadata:
   name: apexpack-build-and-push
   annotations:
     tekton.dev/description: >-
-      Full apexpack build pipeline: clone-source → detect → build → scan → patch → rebuild → rescan → push.
+      Full apexpack build pipeline: clone-source → detect → build → scan → patch → rebuild → rescan.
+      apexpack-build publishes directly to the registry via apko publish — no separate push step.
       Profiles are seeded from the apexpack image on every run.
 spec:
   params:
@@ -75,8 +76,8 @@ spec:
       value: "$(tasks.detect.results.RUNTIME)"
     - name: FRAMEWORK
       value: "$(tasks.detect.results.FRAMEWORK)"
-    - name: IMAGE_TARBALL
-      value: "$(tasks.build.results.IMAGE_TARBALL)"
+    - name: PUSHED_IMAGE
+      value: "$(tasks.build.results.PUSHED_IMAGE)"
     - name: SBOM_PATH
       value: "$(tasks.build.results.SBOM_PATH)"
     - name: SCAN_RESULT
@@ -274,21 +275,3 @@ spec:
         - name: tls-ca
           workspace: tls-ca
 
-    # ── Step 8: Push to registry ──────────────────────────────────────────────
-    # Runs after rescan (or rebuild if rescan was skipped). Uses the rebuilt
-    # tarball when a patch cycle ran, otherwise the original build tarball.
-    - name: push
-      taskRef:
-        name: crane-copy
-      runAfter:
-        - rescan
-      params:
-        - name: source
-          value: "$(tasks.build.results.IMAGE_TARBALL)"
-        - name: destination
-          value: $(params.IMAGE)
-      workspaces:
-        - name: output
-          workspace: output
-        - name: credentials
-          workspace: registry-credentials

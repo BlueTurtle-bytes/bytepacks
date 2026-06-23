@@ -225,6 +225,7 @@ func buildCmd() *cobra.Command {
 		tlsExtraCA  string
 		arch        string
 		dryRun      bool
+		localBuild  bool
 	)
 
 	cmd := &cobra.Command{
@@ -337,6 +338,7 @@ Examples:
 				LanguageVersion: detectedLangVersion,
 				TLSExtraCA:      tlsExtraCA,
 				Arch:            arch,
+				LocalBuild:      localBuild,
 			}
 
 			plan, err := build.Plan(matchedProfile, opts)
@@ -374,9 +376,7 @@ Examples:
 			fmt.Printf("✓ Output:      %s\n", outputDir)
 
 			// Write build artifact paths to context.json.
-			// Use SanitizeImageName to match the name build.Run used for the tarball.
 			actualArch := buildArch(arch)
-			tarball := filepath.Join(outputDir, build.SanitizeImageName(projectName)+".tar")
 			sbomFile := filepath.Join(outputDir, "sbom-"+actualArch+".spdx.json")
 			apkPath := filepath.Join(outputDir, "packages", actualArch, "*.apk")
 
@@ -386,9 +386,15 @@ Examples:
 			}
 			ctx.Version = ver
 			ctx.Image = imageTag
-			ctx.ImageTarball = tarball
 			ctx.SBOMPath = sbomFile
 			ctx.APKPath = apkPath
+			if localBuild || runtime.GOOS == "darwin" {
+				// Local build: tarball written to OutputDir, no registry push.
+				ctx.ImageTarball = filepath.Join(outputDir, build.SanitizeImageName(projectName)+".tar")
+			} else {
+				// Publish build: apko pushed directly; tarball is not produced.
+				ctx.PushedImage = imageTag
+			}
 			ctx.AppendStage("build")
 			if err := apexctx.Save(absSrcDir, ctx); err != nil {
 				return fmt.Errorf("saving context: %w", err)
@@ -416,6 +422,8 @@ Examples:
 		"Path to an extra CA certificate (PEM) to trust — use in corporate proxy environments")
 	cmd.Flags().StringVar(&arch, "arch", "",
 		"Target build architecture: x86_64 or aarch64 (default: host arch)")
+	cmd.Flags().BoolVar(&localBuild, "local", false,
+		"Build tarball only, skip registry push (apko build). Default pushes directly via apko publish.")
 
 	return cmd
 }

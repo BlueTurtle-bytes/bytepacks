@@ -40,7 +40,7 @@ spec:
     - name: source
       description: "Cloned source code (maps to the corporate 'source' workspace)."
     - name: shared
-      description: "Shared workspace — OCI tarball, APK, and SBOM are written here."
+      description: "Shared workspace — APK and SBOM are written here."
     - name: profiles
       description: >-
         Optional profiles repository. When not bound, the profiles embedded in
@@ -48,8 +48,8 @@ spec:
       optional: true
 
   results:
-    - name: IMAGE_TARBALL
-      description: "Absolute path to the OCI image tarball in the output workspace."
+    - name: PUSHED_IMAGE
+      description: "Image reference that was pushed to the registry by apko publish."
     - name: SBOM_PATH
       description: "Absolute path to the SPDX SBOM in the output workspace."
     - name: APK_PATH
@@ -120,7 +120,8 @@ spec:
           TLS_CA_FLAG="--tls-extra-ca $(params.TLS_CA_PATH)"
         fi
 
-        # Build — writes .apexpack/context.json with artifact paths as a side effect.
+        # Build — apko publish pushes directly to the registry.
+        # Writes .apexpack/context.json with artifact paths as a side effect.
         apexpack build \
           $(workspaces.source.path) \
           --tag     $(params.IMAGE) \
@@ -134,10 +135,10 @@ spec:
         # printf '%s' avoids the trailing newline that jq -r appends, which
         # would otherwise be embedded in downstream param substitutions.
         CTX="$(workspaces.source.path)/.apexpack/context.json"
-        printf '%s' "$(jq -r '.image_tarball' "$CTX")" > $(results.IMAGE_TARBALL.path)
-        printf '%s' "$(jq -r '.sbom_path'     "$CTX")" > $(results.SBOM_PATH.path)
-        printf '%s' "$(jq -r '.apk_path'      "$CTX")" > $(results.APK_PATH.path)
+        printf '%s' "$(jq -r '.pushed_image // ""' "$CTX")" > $(results.PUSHED_IMAGE.path)
+        echo "pushed_image result: $(cat $(results.PUSHED_IMAGE.path))"
+        printf '%s' "$(jq -r '.sbom_path' "$CTX")" > $(results.SBOM_PATH.path)
+        printf '%s' "$(jq -r '.apk_path'  "$CTX")" > $(results.APK_PATH.path)
 
-        echo "image_tarball result: $(cat $(results.IMAGE_TARBALL.path))"
         echo "Build complete:"
         ls -lh $(workspaces.shared.path)/

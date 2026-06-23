@@ -42,8 +42,8 @@ spec:
       optional: true
 
   results:
-    - name: IMAGE_TARBALL
-      description: "Path to the built OCI image tarball in the output workspace."
+    - name: PUSHED_IMAGE
+      description: "Image reference that was pushed to the registry by apko publish."
     - name: SBOM_PATH
       description: "Path to the SPDX SBOM in the output workspace."
     - name: APK_PATH
@@ -128,11 +128,11 @@ spec:
           $NAME_FLAG \
           $TLS_CA_FLAG
 
-        SOURCE_BASE=$(basename $(workspaces.source.path))
         ARCH=$(uname -m)
-        printf "%s" "$(workspaces.output.path)/${SOURCE_BASE}.tar"                   > $(results.IMAGE_TARBALL.path)
-        printf "%s" "$(workspaces.output.path)/sbom-${ARCH}.spdx.json"              > $(results.SBOM_PATH.path)
-        printf "%s" "$(workspaces.output.path)/packages/${ARCH}/*.apk"              > $(results.APK_PATH.path)
+        CTX="$(workspaces.source.path)/.apexpack/context.json"
+        printf "%s" "$(jq -r '.pushed_image // ""' "$CTX")"              > $(results.PUSHED_IMAGE.path)
+        printf "%s" "$(workspaces.output.path)/sbom-${ARCH}.spdx.json"   > $(results.SBOM_PATH.path)
+        printf "%s" "$(workspaces.output.path)/packages/${ARCH}/*.apk"   > $(results.APK_PATH.path)
 
         echo ""
         echo "Build complete:"

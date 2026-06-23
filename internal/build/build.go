@@ -122,6 +122,12 @@ type Options struct {
 	// Set to "x86_64" when building on Apple Silicon for a Linux x86_64 cluster.
 	Arch string
 
+	// LocalBuild skips the registry push and writes a tarball to OutputDir instead.
+	// When false (default), apko publish pushes directly to the registry in Tag.
+	// When true, apko build produces a .tar file for local inspection or manual push.
+	// On macOS this flag is a no-op — the darwin path always produces a tarball.
+	LocalBuild bool
+
 	// LanguageVersion is the detected language version (e.g. "17" for Java 17,
 	// "20" for Node 20, "3.12" for Python 3.12, "8" for .NET 8).
 	// Substituted for {JAVA_VERSION}, {NODE_VERSION}, {PYTHON_VERSION}, {DOTNET_VERSION}
@@ -846,16 +852,24 @@ func runApko(configFile string, opts Options) error {
 		imageTag = opts.ProjectName + ":latest"
 	}
 	outputTar := filepath.Join(opts.OutputDir, opts.ProjectName+".tar")
+	arch := melangeArch(opts.Arch)
 
+	// macOS always builds a local tarball via a Linux container — apko publish
+	// requires direct network access to the registry from inside the container
+	// which conflicts with the docker-in-docker setup used for macOS builds.
 	if runtime.GOOS == "darwin" {
+		if !opts.LocalBuild {
+			fmt.Println("  → macOS: apko publish not supported; building tarball only (use crane to push)")
+		}
 		return runApkoInDocker(configFile, imageTag, outputTar, opts)
 	}
 
-	args := []string{
-		"build", configFile,
-		imageTag,
-		outputTar,
-		"--arch", melangeArch(opts.Arch),
+	var args []string
+	if opts.LocalBuild {
+		args = []string{"build", configFile, imageTag, outputTar, "--arch", arch}
+	} else {
+		sbomPath := filepath.Join(opts.OutputDir, "sbom-"+arch+".spdx.json")
+		args = []string{"publish", configFile, imageTag, "--arch", arch, "--sbom-path", sbomPath}
 	}
 
 	if opts.TLSExtraCA == "" {

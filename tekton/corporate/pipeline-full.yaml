@@ -7,9 +7,10 @@ metadata:
       Full corporate apexpack pipeline.
       clone → gitleaks → version-release → detect → build → scan →
       patch (conditional) → rebuild (conditional) → rescan (conditional) →
-      push → tag-version.
+      tag-version.
       Uses corporate ClusterTasks for clone, gitleaks, and versioning.
-      Uses apexpack tasks for detect, build, scan, patch, and push.
+      Uses apexpack tasks for detect, build, scan, and patch.
+      apexpack-build runs apko publish directly — no separate crane-push step.
 spec:
   # ── Params ──────────────────────────────────────────────────────────────────
   params:
@@ -106,7 +107,7 @@ spec:
     - name: source
       description: "Source code workspace — cloned here and shared across all tasks."
     - name: shared
-      description: "Build artifacts — OCI tarball, APK, SBOM, and scan reports are written here."
+      description: "Build artifacts — APK, SBOM, and scan reports are written here."
     - name: profiles
       description: >-
         Profiles workspace. The detect task seeds profiles from the apexpack image on every run.
@@ -131,7 +132,7 @@ spec:
     - name: RESCAN_RESULT
       value: $(tasks.rescan.results.SCAN_RESULT)
     - name: images.pushed-image
-      value: $(tasks.crane-push.results.pushed-image)
+      value: $(tasks.build.results.PUSHED_IMAGE)
 
   # ── Tasks ────────────────────────────────────────────────────────────────────
   tasks:
@@ -220,8 +221,10 @@ spec:
         - name: profiles
           workspace: profiles
 
-    # ── 5. Build OCI image ────────────────────────────────────────────────────
-    # Runs melange (APK) + apko (OCI). Outputs tarball + SBOM to shared workspace.
+    # ── 5. Build and publish OCI image ────────────────────────────────────────
+    # Runs melange (APK) then apko publish — pushes directly to the registry.
+    # SBOM is written to the shared workspace for the scan step.
+    # Registry credentials come from the regcred docker secret (mounted in the task).
     - name: build
       taskRef:
         name: apexpack-build
@@ -307,9 +310,9 @@ spec:
         - name: shared
           workspace: shared
 
-    # ── 8. Rebuild with patched profiles ──────────────────────────────────────
+    # ── 8. Rebuild and re-publish patched image ───────────────────────────────
     # Only runs when: scan=fail AND AUTO_PATCH=true AND at least one patch was applied.
-    # Rebuilds using the updated profiles — overwrites the original tarball in shared.
+    # Rebuilds using the updated profiles and publishes to the same tag.
     - name: rebuild
       taskRef:
         name: apexpack-build
@@ -346,8 +349,8 @@ spec:
           workspace: profiles
 
     # ── 9. Re-scan rebuilt image ──────────────────────────────────────────────
-    # Confirms CVEs were resolved. Soft-fail so push always completes — check
-    # the rescan logs for the final verdict. Only runs when rebuild ran.
+    # Confirms CVEs were resolved. Soft-fail so tag-version always completes.
+    # Only runs when rebuild ran.
     - name: rescan
       taskRef:
         name: apexpack-scan
@@ -383,42 +386,15 @@ spec:
         - name: shared
           workspace: shared
 
-    # ── 10. Push to Artifactory ───────────────────────────────────────────────
-    # Runs after rescan. If patch cycle was skipped, rescan is also skipped
-    # (Tekton treats skipped tasks as complete) so push still runs after scan passes.
-    # rebuild overwrites the same tarball path, so $(tasks.build.results.IMAGE_TARBALL)
-    # always points to the most recent image — original or patched.
-    - name: crane-push
-      taskRef:
-        name: crane-push
-        kind: ClusterTask
-      runAfter:
-        - rescan
-      params:
-        - name: APEXPACK_IMAGE
-          value: $(params.apexpack-image)
-        - name: tarball
-          value: $(tasks.build.results.IMAGE_TARBALL)
-        - name: image
-          value: "$(params.image-name):$(tasks.version-release.results.release-version)"
-        - name: image-base
-          value: $(params.image-name)
-        - name: additional-tags
-          value:
-            - $(params.release-channels[*])
-      workspaces:
-        - name: source
-          workspace: source
-        - name: shared
-          workspace: shared
-
-    # ── 11. Push git tag now that the image is live ───────────────────────────
+    # ── 10. Push git tag now that image is live ───────────────────────────────
+    # runAfter rescan — Tekton treats skipped tasks as complete, so this runs
+    # whether or not the patch/rebuild/rescan cycle executed.
     - name: tag-version
       taskRef:
         name: build-version-v1-0
         kind: ClusterTask
       runAfter:
-        - crane-push
+        - rescan
       params:
         - name: app-id
           value: $(params.app-id)

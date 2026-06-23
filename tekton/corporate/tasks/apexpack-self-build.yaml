@@ -108,11 +108,14 @@ spec:
           TLS_CA_FLAG="--tls-extra-ca $(params.TLS_CA_PATH)"
         fi
 
+        # --local produces a tarball instead of pushing directly.
+        # Docker credentials are not mounted in this step; crane push (step 3) handles the push.
         $(workspaces.shared.path)/apexpack build . \
           --tag $(params.IMAGE) \
           --version $(params.VERSION) \
           --output $(workspaces.shared.path)/output \
           --project-name apexpack \
+          --local \
           $TLS_CA_FLAG
 
         printf "%s" "$(workspaces.shared.path)/output/apexpack.tar" > $(results.IMAGE_TARBALL.path)

@@ -6,9 +6,9 @@ metadata:
     tekton.dev/description: >-
       Corporate apexpack pipeline. Mirrors the structure of the existing
       docker-v1-0 pipeline: clone → gitleaks → version-release →
-      apexpack-build → crane-push → tag-version.
+      apexpack-build → tag-version.
       Replaces install-external-artifacts + build-push-image (ClusterTasks)
-      with apexpack-build + crane-push.
+      with apexpack-build (which runs melange + apko publish in one step).
 spec:
   # ── Params ──────────────────────────────────────────────────────────────────
   # Kept identical to the docker-v1-0 pipeline where possible so existing
@@ -90,7 +90,7 @@ spec:
     - name: source
       description: "Primary workspace: code is cloned here, all tasks share it."
     - name: shared
-      description: "Shared workspace: apexpack writes the OCI tarball, APK, and SBOM here."
+      description: "Shared workspace: apexpack writes the APK and SBOM here."
     - name: cache
       description: "Optional cache workspace for package manager caches."
       optional: true
@@ -99,7 +99,7 @@ spec:
   results:
     - name: images.pushed-image
       description: "The primary image reference that was pushed."
-      value: $(tasks.crane-push.results.pushed-image)
+      value: $(tasks.apexpack-build.results.PUSHED_IMAGE)
 
   # ── Tasks ────────────────────────────────────────────────────────────────────
   tasks:
@@ -174,10 +174,11 @@ spec:
         - name: shared
           workspace: shared
 
-    # ── 5. Build OCI image with apexpack ─────────────────────────────────────
-    # Replaces: install-external-artifacts + build-push-image ClusterTasks.
-    # Detects the language, runs melange (APK build), runs apko (OCI image),
-    # and writes the tarball + SBOM to the 'shared' workspace.
+    # ── 5. Build and publish OCI image with apexpack ──────────────────────────
+    # Replaces: install-external-artifacts + build-push-image + crane-push ClusterTasks.
+    # Detects the language, runs melange (APK build), then apko publish which
+    # pushes directly to the registry. SBOM is written to the 'shared' workspace.
+    # Registry credentials are read from the regcred docker secret (mounted in the task).
     - name: apexpack-build
       taskRef:
         name: apexpack-build
@@ -202,40 +203,13 @@ spec:
         - name: shared
           workspace: shared
 
-    # ── 6. Push image to Artifactory registry ────────────────────────────────
-    # Pushes the OCI tarball to the primary versioned tag, then stamps any
-    # additional release-channel tags (e.g. latest, dev) without re-uploading.
-    - name: crane-push
-      taskRef:
-        name: crane-push
-        kind: ClusterTask
-      runAfter:
-        - apexpack-build
-      params:
-        - name: APEXPACK_IMAGE
-          value: $(params.apexpack-image)
-        - name: tarball
-          value: $(tasks.apexpack-build.results.IMAGE_TARBALL)
-        - name: image
-          value: "$(params.image-name):$(tasks.version-release.results.release-version)"
-        - name: image-base
-          value: $(params.image-name)
-        - name: additional-tags
-          value:
-            - $(params.release-channels[*])
-      workspaces:
-        - name: source
-          workspace: source
-        - name: shared
-          workspace: shared
-
     # ── 6. Push git tag now that the image is live ────────────────────────────
     - name: tag-version
       taskRef:
         name: build-version-v1-0
         kind: ClusterTask
       runAfter:
-        - crane-push
+        - apexpack-build
       params:
         - name: app-id
           value: $(params.app-id)
