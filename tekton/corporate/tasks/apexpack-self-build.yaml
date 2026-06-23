@@ -54,8 +54,6 @@ spec:
             path: config.json
 
   results:
-    - name: IMAGE_TARBALL
-      description: "Path to the OCI image tarball."
     - name: pushed-image
       description: "The primary image reference that was pushed."
 
@@ -81,20 +79,28 @@ spec:
         go build -o $(workspaces.shared.path)/apexpack ./cmd/apexpack
         echo "Binary: $(du -sh $(workspaces.shared.path)/apexpack | cut -f1)"
 
-    # ── Step 2: Build OCI image ───────────────────────────────────────────────
+    # ── Step 2: Build and publish OCI image ──────────────────────────────────
     # Uses a plain Wolfi base — no apexpack image needed. Installs melange, apko,
     # and bubblewrap via apk, then runs the binary compiled in step 1.
+    # Docker credentials are mounted here so apko publish can push directly.
     - name: build-image
       image: $(params.WOLFI_IMAGE)
       securityContext:
         privileged: true
         runAsUser: 0
       workingDir: $(workspaces.source.path)
+      env:
+        - name: DOCKER_CONFIG
+          value: /etc/docker-creds
+      volumeMounts:
+        - name: docker-credentials
+          mountPath: /etc/docker-creds
+          readOnly: true
       script: |
         #!/bin/sh
         set -e
 
-        apk add --no-cache melange apko bubblewrap git ca-certificates
+        apk add --no-cache melange apko bubblewrap git ca-certificates jq
 
         TLS_CA_FLAG=""
         if [ -n "$(params.TLS_CA_PATH)" ] && [ -e "$(params.TLS_CA_PATH)" ]; then
@@ -108,40 +114,26 @@ spec:
           TLS_CA_FLAG="--tls-extra-ca $(params.TLS_CA_PATH)"
         fi
 
-        # --local produces a tarball instead of pushing directly.
-        # Docker credentials are not mounted in this step; crane push (step 3) handles the push.
         $(workspaces.shared.path)/apexpack build . \
           --tag $(params.IMAGE) \
           --version $(params.VERSION) \
           --output $(workspaces.shared.path)/output \
           --project-name apexpack \
-          --local \
           $TLS_CA_FLAG
 
-        printf "%s" "$(workspaces.shared.path)/output/apexpack.tar" > $(results.IMAGE_TARBALL.path)
+        CTX="$(workspaces.source.path)/.apexpack/context.json"
+        printf "%s" "$(jq -r '.pushed_image // ""' "$CTX")" > $(results.pushed-image.path)
+        echo "Pushed: $(cat $(results.pushed-image.path))"
         ls -lh $(workspaces.shared.path)/output/
 
-    # ── Step 3: Push to registry ──────────────────────────────────────────────
-    - name: push
-      image: gcr.io/go-containerregistry/crane:debug
-      env:
-        - name: DOCKER_CONFIG
-          value: /etc/docker-creds
-      volumeMounts:
-        - name: docker-credentials
-          mountPath: /etc/docker-creds
-          readOnly: true
-      script: |
-        #!/bin/sh
-        set -e
-        TARBALL=$(cat $(results.IMAGE_TARBALL.path))
-        crane push "$TARBALL" "$(params.IMAGE)"
-        printf "%s" "$(params.IMAGE)" > $(results.pushed-image.path)
-        echo "Pushed: $(params.IMAGE)"
-
-    # ── Step 4: Stamp additional tags (e.g. latest) ───────────────────────────
+    # ── Step 3: Stamp additional tags (e.g. latest) ───────────────────────────
+    # Uses apko publish --tag to stamp extra tags from the same config.
     - name: tag-additional
-      image: gcr.io/go-containerregistry/crane:debug
+      image: $(params.WOLFI_IMAGE)
+      securityContext:
+        privileged: true
+        runAsUser: 0
+      workingDir: $(workspaces.source.path)
       env:
         - name: DOCKER_CONFIG
           value: /etc/docker-creds
@@ -152,12 +144,13 @@ spec:
       script: |
         #!/bin/sh
         set -e
+        apk add --no-cache apko
         BASE="$(params.image-base)"
         if [ -z "$BASE" ]; then exit 0; fi
         for TAG in "$@"; do
           [ -z "$TAG" ] && continue
           echo "Tagging ${BASE}:${TAG}"
-          crane tag "$(params.IMAGE)" "${BASE}:${TAG}"
+          apko publish .apexpack/apko.yaml "${BASE}:${TAG}"
         done
       args:
         - $(params.additional-tags[*])
