@@ -100,7 +100,7 @@ spec:
         #!/bin/sh
         set -e
 
-        apk add --no-cache melange apko bubblewrap git ca-certificates jq
+        apk add --no-cache melange apko bubblewrap git ca-certificates
 
         TLS_CA_FLAG=""
         if [ -n "$(params.TLS_CA_PATH)" ] && [ -e "$(params.TLS_CA_PATH)" ]; then
@@ -121,9 +121,8 @@ spec:
           --project-name apexpack \
           $TLS_CA_FLAG
 
-        CTX="$(workspaces.source.path)/.apexpack/context.json"
-        printf "%s" "$(jq -r '.pushed_image // ""' "$CTX")" > $(results.pushed-image.path)
-        echo "Pushed: $(cat $(results.pushed-image.path))"
+        printf "%s" "$(params.IMAGE)" > $(results.pushed-image.path)
+        echo "Pushed: $(params.IMAGE)"
         ls -lh $(workspaces.shared.path)/output/
 
     # ── Step 3: Stamp additional tags (e.g. latest) ───────────────────────────
