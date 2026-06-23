@@ -103,7 +103,7 @@ func Load(sourceDir string) (*Context, error) {
 // temp file + rename so a crash mid-write never leaves a partial file.
 func Save(sourceDir string, ctx *Context) error {
 	dir := filepath.Join(sourceDir, ".apexpack")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(ctx, "", "  ")
@@ -115,6 +115,8 @@ func Save(sourceDir string, ctx *Context) error {
 		return err
 	}
 	tmpName := tmp.Name()
+	// 0644 so nonroot steps (scan, patch) can read what a root build step wrote.
+	tmp.Chmod(0o644) //nolint:errcheck
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)

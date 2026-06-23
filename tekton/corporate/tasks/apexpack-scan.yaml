@@ -46,6 +46,10 @@ spec:
     - name: SCAN_RESULT
       description: "pass or fail based on CVE findings at or above FAIL_ON severity."
 
+  stepTemplate:
+    securityContext:
+      runAsUser: 0  # must match build step so context.json is readable/writable
+
   steps:
     - name: scan
       image: $(params.APEXPACK_IMAGE)
