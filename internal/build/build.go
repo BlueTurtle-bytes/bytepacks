@@ -122,6 +122,11 @@ type Options struct {
 	// Set to "x86_64" when building on Apple Silicon for a Linux x86_64 cluster.
 	Arch string
 
+	// SigningKey is the path to an existing melange RSA private key (PEM).
+	// The matching .pub file must exist at SigningKey+".pub".
+	// When empty (default), a key pair is generated in OutputDir on first build.
+	SigningKey string
+
 	// LocalBuild skips the registry push and writes a tarball to OutputDir instead.
 	// When false (default), apko publish pushes directly to the registry in Tag.
 	// When true, apko build produces a .tar file for local inspection or manual push.
@@ -256,6 +261,55 @@ fi`
 						plan.Melange.Pipeline...,
 					)
 					pipelineModified = true
+				}
+
+				// Append a post-build step to bake the corporate CA into the runtime image.
+				// Copies an updated system bundle (Wolfi CAs + corp CA) and the individual
+				// cert into ${{targets.destdir}} so they're packaged into the app APK that
+				// apko installs. This replaces ca-certificates-bundle in the runtime image,
+				// which is removed from plan.Apko below to avoid an apk file conflict.
+				const imageCAStep = `if [ -f /home/build/.apexpack-ca.crt ] && [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+  mkdir -p "${{targets.destdir}}/etc/ssl/certs"
+  cat /etc/ssl/certs/ca-certificates.crt /home/build/.apexpack-ca.crt \
+    > "${{targets.destdir}}/etc/ssl/certs/ca-certificates.crt"
+  cp /home/build/.apexpack-ca.crt \
+     "${{targets.destdir}}/etc/ssl/certs/apexpack-corp-ca.crt"
+  echo "  → Corporate CA baked into runtime image"
+fi`
+				plan.Melange.Pipeline = append(plan.Melange.Pipeline, types.MelangePipeline{Runs: imageCAStep})
+				pipelineModified = true
+
+				// Java: also copy the JVM cacerts (already has corp CA imported by
+				// tls_ca_pre_step's keytool call) into destdir so the JRE in the
+				// runtime image trusts it without any -Djavax.net.ssl flags at deploy time.
+				if opts.Profile != nil && opts.Profile.Runtime == "java" {
+					const jvmCACertsStep = `JAVA_CACERTS=$(find /usr/lib/jvm -name "cacerts" 2>/dev/null | head -1)
+if [ -n "$JAVA_CACERTS" ]; then
+  DEST="${{targets.destdir}}${JAVA_CACERTS}"
+  mkdir -p "$(dirname "$DEST")"
+  cp "$JAVA_CACERTS" "$DEST"
+  echo "  → JVM cacerts (with corp CA) baked into runtime image"
+fi`
+					plan.Melange.Pipeline = append(plan.Melange.Pipeline, types.MelangePipeline{Runs: jvmCACertsStep})
+				}
+
+				// Remove ca-certificates-bundle from the runtime image package list.
+				// Our APK now owns /etc/ssl/certs/ca-certificates.crt (the updated bundle),
+				// so keeping ca-certificates-bundle would cause an apk file conflict.
+				filtered := plan.Apko.Contents.Packages[:0]
+				for _, pkg := range plan.Apko.Contents.Packages {
+					if !strings.HasPrefix(pkg, "ca-certificates-bundle") {
+						filtered = append(filtered, pkg)
+					}
+				}
+				plan.Apko.Contents.Packages = filtered
+				apkoYAML, err = marshalYAML(&plan.Apko)
+				if err != nil {
+					return fmt.Errorf("marshalling apko config (with CA): %w", err)
+				}
+				apkoData = []byte(apkoYAML)
+				if err := os.WriteFile(apkoFile, apkoData, 0o644); err != nil {
+					return fmt.Errorf("writing apko.yaml (with CA): %w", err)
 				}
 
 				if pipelineModified {
@@ -689,11 +743,12 @@ func runMelange(configFile string, opts Options) error {
 		return fmt.Errorf("creating packages dir: %w", err)
 	}
 
-	// melange signs every APK it builds. Generate a key pair locally —
-	// keygen is pure Go and works on any OS. The key pair is stored in
-	// the output directory and reused on subsequent builds.
 	keyFile := filepath.Join(opts.OutputDir, "melange.rsa")
-	if err := ensureSigningKey(keyFile); err != nil {
+	if opts.SigningKey != "" {
+		if err := copySigningKey(opts.SigningKey, keyFile); err != nil {
+			return fmt.Errorf("copying signing key: %w", err)
+		}
+	} else if err := ensureSigningKey(keyFile); err != nil {
 		return fmt.Errorf("generating signing key: %w", err)
 	}
 
@@ -834,6 +889,22 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 	)
 
 	return runTool("docker", args)
+}
+
+// copySigningKey copies src (private key) and src+".pub" (public key) to dst
+// and dst+".pub" so the rest of the build can reference them by convention.
+func copySigningKey(src, dst string) error {
+	for _, pair := range [][2]string{{src, dst}, {src + ".pub", dst + ".pub"}} {
+		data, err := os.ReadFile(pair[0])
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", pair[0], err)
+		}
+		if err := os.WriteFile(pair[1], data, 0o600); err != nil {
+			return fmt.Errorf("writing %s: %w", pair[1], err)
+		}
+	}
+	fmt.Println("  → Using cluster signing key")
+	return nil
 }
 
 // ensureSigningKey generates a melange RSA key pair at keyFile if one does

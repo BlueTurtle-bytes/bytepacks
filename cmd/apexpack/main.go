@@ -226,6 +226,7 @@ func buildCmd() *cobra.Command {
 		arch        string
 		dryRun      bool
 		localBuild  bool
+		signingKey  string
 	)
 
 	cmd := &cobra.Command{
@@ -339,6 +340,7 @@ Examples:
 				TLSExtraCA:      tlsExtraCA,
 				Arch:            arch,
 				LocalBuild:      localBuild,
+				SigningKey:      signingKey,
 			}
 
 			plan, err := build.Plan(matchedProfile, opts)
@@ -424,6 +426,9 @@ Examples:
 		"Target build architecture: x86_64 or aarch64 (default: host arch)")
 	cmd.Flags().BoolVar(&localBuild, "local", false,
 		"Build tarball only, skip registry push (apko build). Default pushes directly via apko publish.")
+	cmd.Flags().StringVar(&signingKey, "signing-key", "",
+		"Path to an existing melange RSA private key (PEM). The .pub file must be at <path>.pub. "+
+			"When empty, a key pair is generated in the output directory.")
 
 	return cmd
 }
