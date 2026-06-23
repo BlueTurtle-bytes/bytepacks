@@ -499,6 +499,17 @@ Examples:
 				return fmt.Errorf("grype not found in PATH\n\nInstall: brew install grype  or  go install github.com/anchore/grype@latest")
 			}
 
+			// Update grype's CVE database before scanning so results reflect
+			// current vulnerability data. Best-effort: a network failure is
+			// logged but does not abort the scan (cached DB is still used).
+			fmt.Println("Updating grype CVE database...")
+			dbUpdateCmd := exec.Command(grypePath, "db", "update")
+			dbUpdateCmd.Stdout = cmd.OutOrStdout()
+			dbUpdateCmd.Stderr = cmd.ErrOrStderr()
+			if err := dbUpdateCmd.Run(); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "WARN: grype db update failed (%v) — using cached DB\n", err)
+			}
+
 			// Normalise SBOM version strings so grype can correlate packages.
 			normalizedPath, err := patch.NormalizeSBOMFile(sbomPath)
 			if err != nil {
