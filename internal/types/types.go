@@ -367,13 +367,18 @@ type MelangeConfig struct {
 }
 
 type MelangePackage struct {
-	Name        string             `yaml:"name"`
-	Version     string             `yaml:"version"`
-	Epoch       int                `yaml:"epoch"`
-	Description string             `yaml:"description,omitempty"`
-	Copyright   []MelangeCopyright `yaml:"copyright,omitempty"`
-	Replaces    []string           `yaml:"replaces,omitempty"`
-	Provides    []string           `yaml:"provides,omitempty"`
+	Name         string                    `yaml:"name"`
+	Version      string                    `yaml:"version"`
+	Epoch        int                       `yaml:"epoch"`
+	Description  string                    `yaml:"description,omitempty"`
+	Copyright    []MelangeCopyright        `yaml:"copyright,omitempty"`
+	Dependencies MelangePackageDependencies `yaml:"dependencies,omitempty"`
+}
+
+type MelangePackageDependencies struct {
+	Runtime  []string `yaml:"runtime,omitempty"`
+	Provides []string `yaml:"provides,omitempty"`
+	Replaces []string `yaml:"replaces,omitempty"`
 }
 
 type MelangeCopyright struct {

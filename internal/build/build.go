@@ -305,14 +305,14 @@ fi`
 						break
 					}
 				}
-				plan.Melange.Package.Replaces = []string{"ca-certificates-bundle"}
+				plan.Melange.Package.Dependencies.Replaces = []string{"ca-certificates-bundle"}
 				if caBundleVersion != "" {
-					plan.Melange.Package.Provides = []string{
+					plan.Melange.Package.Dependencies.Provides = []string{
 						"ca-certificates-bundle=" + caBundleVersion,
 						"ca-certificates=" + caBundleVersion,
 					}
 				} else {
-					plan.Melange.Package.Provides = []string{"ca-certificates-bundle", "ca-certificates"}
+					plan.Melange.Package.Dependencies.Provides = []string{"ca-certificates-bundle", "ca-certificates"}
 				}
 
 				// Remove ca-certificates-bundle from the runtime image package list.
