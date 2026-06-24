@@ -372,6 +372,8 @@ type MelangePackage struct {
 	Epoch       int                `yaml:"epoch"`
 	Description string             `yaml:"description,omitempty"`
 	Copyright   []MelangeCopyright `yaml:"copyright,omitempty"`
+	Replaces    []string           `yaml:"replaces,omitempty"`
+	Provides    []string           `yaml:"provides,omitempty"`
 }
 
 type MelangeCopyright struct {

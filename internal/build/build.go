@@ -293,6 +293,28 @@ fi`
 					plan.Melange.Pipeline = append(plan.Melange.Pipeline, types.MelangePipeline{Runs: jvmCACertsStep})
 				}
 
+				// Set replaces + provides on the melange package so APK treats our
+				// APK as the drop-in replacement for ca-certificates-bundle. Without
+				// this, ca-certificates-bundle is still pulled in as a transitive
+				// dependency (e.g. openjdk-*-jre → ca-certificates virtual package),
+				// causing a file conflict on /etc/ssl/certs/ca-certificates.crt.
+				var caBundleVersion string
+				for _, pkg := range plan.Apko.Contents.Packages {
+					if strings.HasPrefix(pkg, "ca-certificates-bundle=") {
+						caBundleVersion = strings.TrimPrefix(pkg, "ca-certificates-bundle=")
+						break
+					}
+				}
+				plan.Melange.Package.Replaces = []string{"ca-certificates-bundle"}
+				if caBundleVersion != "" {
+					plan.Melange.Package.Provides = []string{
+						"ca-certificates-bundle=" + caBundleVersion,
+						"ca-certificates=" + caBundleVersion,
+					}
+				} else {
+					plan.Melange.Package.Provides = []string{"ca-certificates-bundle", "ca-certificates"}
+				}
+
 				// Remove ca-certificates-bundle from the runtime image package list.
 				// Our APK now owns /etc/ssl/certs/ca-certificates.crt (the updated bundle),
 				// so keeping ca-certificates-bundle would cause an apk file conflict.
