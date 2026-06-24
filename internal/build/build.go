@@ -279,18 +279,26 @@ fi`
 				plan.Melange.Pipeline = append(plan.Melange.Pipeline, types.MelangePipeline{Runs: imageCAStep})
 				pipelineModified = true
 
-				// Java: also copy the JVM cacerts (already has corp CA imported by
-				// tls_ca_pre_step's keytool call) into destdir so the JRE in the
-				// runtime image trusts it without any -Djavax.net.ssl flags at deploy time.
+				// Java: copy the JVM cacerts (already has corp CA imported by
+				// tls_ca_pre_step's keytool call) to /etc/ssl/certs/cacerts — a path
+				// our APK owns. We cannot put it at the JRE's own cacerts path
+				// (/usr/lib/jvm/.../security/cacerts) because openjdk-*-jre owns that
+				// file and apko would report a file conflict.
+				// JAVA_TOOL_OPTIONS (added to the apko environment below) points the
+				// JVM at our path at runtime — no startup script changes needed.
 				if opts.Profile != nil && opts.Profile.Runtime == "java" {
 					const jvmCACertsStep = `JAVA_CACERTS=$(find /usr/lib/jvm -name "cacerts" 2>/dev/null | head -1)
 if [ -n "$JAVA_CACERTS" ]; then
-  DEST="${{targets.destdir}}${JAVA_CACERTS}"
-  mkdir -p "$(dirname "$DEST")"
-  cp "$JAVA_CACERTS" "$DEST"
-  echo "  → JVM cacerts (with corp CA) baked into runtime image"
+  mkdir -p "${{targets.destdir}}/etc/ssl/certs"
+  cp "$JAVA_CACERTS" "${{targets.destdir}}/etc/ssl/certs/cacerts"
+  echo "  → JVM cacerts (with corp CA) baked into runtime image at /etc/ssl/certs/cacerts"
 fi`
 					plan.Melange.Pipeline = append(plan.Melange.Pipeline, types.MelangePipeline{Runs: jvmCACertsStep})
+
+					if plan.Apko.Environment == nil {
+						plan.Apko.Environment = make(map[string]string)
+					}
+					plan.Apko.Environment["JAVA_TOOL_OPTIONS"] = "-Djavax.net.ssl.trustStore=/etc/ssl/certs/cacerts -Djavax.net.ssl.trustStorePassword=changeit"
 				}
 
 				// Set replaces + provides on the melange package so APK treats our
