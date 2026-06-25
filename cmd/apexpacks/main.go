@@ -315,6 +315,7 @@ Examples:
 				fmt.Printf("  → Detected: %s (%.0f%% confidence) — %s%s\n",
 					result.Profile.Runtime, result.Confidence*100, fw, versionSuffix)
 			}
+			runtime_ = matchedProfile.Runtime
 
 			projCfg, err := profile.LoadProjectConfig(absSrcDir)
 			if err != nil {
@@ -390,6 +391,8 @@ Examples:
 			ctx.Image = imageTag
 			ctx.SBOMPath = sbomFile
 			ctx.APKPath = apkPath
+			ctx.Runtime = runtime_
+			ctx.Arch = actualArch
 			if localBuild || runtime.GOOS == "darwin" {
 				// Local build: tarball written to OutputDir, no registry push.
 				ctx.ImageTarball = filepath.Join(outputDir, build.SanitizeImageName(projectName)+".tar")
@@ -675,18 +678,18 @@ func patchCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "patch [output-dir]",
-		Short: "Check for package updates and patch language profiles",
+		Short: "Check for package updates and CVEs in installed packages",
 		Long: `Compares installed package versions (from the last build SBOM) against
 the latest versions in the Wolfi package index. Cross-references with
 grype to identify which outdated packages have known CVEs.
 
-With --apply, updates the language profile YAML files to pin the
+With --apply, updates apexpacks.yaml in the project root to pin the
 patched package versions. Writes patch results to .apexpack/context.json.
 
 Examples:
   apexpacks patch
   apexpacks patch /path/to/.apexpack-output
-  apexpacks patch --apply --profiles-dir ./profiles
+  apexpacks patch --apply
   apexpacks build .`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -764,41 +767,16 @@ Examples:
 
 			if !apply {
 				fmt.Printf("\n%d package update(s) available.\n", len(result.Updates))
-				fmt.Println("\nTo update profiles and rebuild:")
-				fmt.Printf("  apexpacks patch --apply --profiles-dir %s\n", profilesDir)
-				fmt.Printf("  apexpacks build .\n")
+				fmt.Println("\nTo update apexpacks.yaml and rebuild:")
+				fmt.Println("  apexpacks patch --apply")
+				fmt.Println("  apexpacks build .")
 				return nil
 			}
 
-			fmt.Printf("\n[2/2] Applying patches to profiles in %s...\n", profilesDir)
-
-			profiles, err := profile.LoadAll(resolveProfilesDir(profilesDir))
-			if err != nil {
-				return err
-			}
+			fmt.Printf("\n[2/2] Applying patches...\n")
 
 			var allApplied []string
-			for _, p := range profiles {
-				if runtime_ != "" && p.Runtime != runtime_ {
-					continue
-				}
-				profilePath := filepath.Join(profilesDir, p.Runtime+".yaml")
-				applied, applyErr := patch.ApplyToProfile(profilePath, result.Updates)
-				if applyErr != nil {
-					fmt.Printf("  warning: %s: %v\n", p.Runtime, applyErr)
-					continue
-				}
-				if len(applied) > 0 {
-					fmt.Printf("\n  %s.yaml:\n", p.Runtime)
-					for _, change := range applied {
-						fmt.Printf("    ↑ %s\n", change)
-					}
-					allApplied = append(allApplied, applied...)
-				}
-			}
 
-			// Also patch the project-level apexpacks.yaml (project overrides live here,
-			// not in the language profile directory).
 			projectConfigPath := filepath.Join(absSource, "apexpacks.yaml")
 			if _, statErr := os.Stat(projectConfigPath); statErr == nil {
 				applied, applyErr := patch.ApplyToProfile(projectConfigPath, result.Updates)
