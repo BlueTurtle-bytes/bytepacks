@@ -22,6 +22,11 @@
     "patch",
     "build",
     "scan",
+    "patch",
+    "patch",
+    "build",
+    "scan",
+    "scan",
     "patch"
   ],
   "runtime": "golang",
@@ -38,9 +43,9 @@
   "scan_low": "0",
   "patches_applied": "8",
   "patched_packages": [
+    "git  git=2.50.0-r1 → git=2.54.0-r1",
     "brotli  (transitive) → brotli=1.2.0-r3",
     "e2fsprogs  (transitive) → e2fsprogs=1.47.4-r1",
-    "git  (transitive) → git=2.54.0-r1",
     "heimdal  (transitive) → heimdal=7.8.0-r49",
     "ncurses  (transitive) → ncurses=6.6_p20251230-r7",
     "ncurses-terminfo-base  (transitive) → ncurses-terminfo-base=6.6_p20251230-r7",
