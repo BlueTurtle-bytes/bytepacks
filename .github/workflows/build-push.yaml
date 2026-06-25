@@ -111,7 +111,7 @@ jobs:
 
       - name: Build apexpack binary
         working-directory: apexpack
-        run: go build -o ${{ github.workspace }}/bin/apexpack ./cmd/apexpack
+        run: go build -o ${{ github.workspace }}/bin/apexpacks ./cmd/apexpacks
 
       # ── 4. Install melange, apko, and crane ─────────────────────────────────
       - name: Install melange
@@ -154,7 +154,7 @@ jobs:
           RUNTIME_FLAG=""
           [ -n "${{ inputs.runtime }}" ] && RUNTIME_FLAG="--runtime ${{ inputs.runtime }}"
 
-          ${{ github.workspace }}/bin/apexpack build . \
+          ${{ github.workspace }}/bin/apexpacks build . \
             --tag "${{ secrets.ARTIFACTORY_REGISTRY }}/${{ inputs.image-name }}:${{ inputs.version }}" \
             --version "${{ inputs.version }}" \
             --profiles-dir ${{ github.workspace }}/apexpack/profiles \

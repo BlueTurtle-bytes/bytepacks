@@ -82,12 +82,12 @@ spec:
           SOFT_FAIL_FLAG="--soft-fail"
         fi
 
-        # apexpack scan:
+        # apexpacks scan:
         #   - normalises the SBOM automatically
         #   - runs grype JSON to extract severity counts
         #   - writes scan_* (or rescan_*) fields to context.json
         #   - exits 1 on CVE threshold breach unless --soft-fail is set
-        apexpack scan \
+        apexpacks scan \
           --source  "$(workspaces.source.path)" \
           --output  "$(workspaces.shared.path)" \
           --fail-on "$(params.FAIL_ON)" \

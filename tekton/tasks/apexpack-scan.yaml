@@ -55,7 +55,7 @@ spec:
         # Grype can only correlate packages when versions are in standard APK
         # format ("3.6.2-r5"). Without this, packages like openssl ("openssl-3.6.2")
         # or brotli ("v1.2.0") are missed by the CVE database lookup.
-        NORMALIZED=$(apexpack normalize-sbom "$(params.SBOM_PATH)")
+        NORMALIZED=$(apexpacks normalize-sbom "$(params.SBOM_PATH)")
         SBOM="sbom:$NORMALIZED"
 
         echo "=== CVE Scan Results ==="

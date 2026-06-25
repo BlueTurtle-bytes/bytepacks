@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/version: "1.0"
   annotations:
-    tekton.dev/displayName: "apexpack build"
+    tekton.dev/displayName: "apexpacks build"
     tekton.dev/description: >-
       Builds a minimal Wolfi-based OCI image from source using melange + apko.
       Designed to slot into the corporate Docker pipeline in place of
@@ -134,7 +134,7 @@ spec:
 
         # Build — apko publish pushes directly to the registry.
         # Writes .apexpack/context.json with artifact paths as a side effect.
-        apexpack build \
+        apexpacks build \
           $(workspaces.source.path) \
           --tag     $(params.IMAGE) \
           --version $(params.VERSION) \

@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/version: "1.0"
   annotations:
-    tekton.dev/displayName: "apexpack detect"
+    tekton.dev/displayName: "apexpacks detect"
     tekton.dev/description: >-
       Detects the language and framework of a source repository.
       Seeds the profiles workspace from the apexpack image on every run
@@ -98,7 +98,7 @@ spec:
         fi
 
         # Run detect — writes .apexpack/context.json as a side effect.
-        apexpack detect "$(workspaces.source.path)" \
+        apexpacks detect "$(workspaces.source.path)" \
           --profiles-dir "$PROFILES_DIR" \
           --project-name "$(params.PROJECT_NAME)" \
           --git-url     "$(params.GIT_URL)" \

@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/version: "1.0"
   annotations:
-    tekton.dev/displayName: "apexpack build"
+    tekton.dev/displayName: "apexpacks build"
     tekton.dev/description: >-
       Builds a minimal, secure OCI image from source using melange and apko.
       Reads language profiles from a cloned git workspace.
@@ -118,7 +118,7 @@ spec:
           TLS_CA_FLAG="--tls-extra-ca $CA_FILE"
         fi
 
-        apexpack build \
+        apexpacks build \
           $(workspaces.source.path) \
           --tag $(params.IMAGE) \
           --version $(params.VERSION) \

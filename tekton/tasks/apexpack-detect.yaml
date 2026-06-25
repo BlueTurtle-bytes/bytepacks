@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/version: "1.0"
   annotations:
-    tekton.dev/displayName: "apexpack detect"
+    tekton.dev/displayName: "apexpacks detect"
     tekton.dev/description: >-
       Detects the language and framework of a source repository.
       Reads profiles from a cloned git workspace — no ConfigMap sync needed.
@@ -70,7 +70,7 @@ spec:
           RUNTIME="$(params.RUNTIME_OVERRIDE)"
           echo "Runtime overridden to: $RUNTIME"
         else
-          apexpack detect \
+          apexpacks detect \
             $(workspaces.source.path) \
             --profiles-dir "$PROFILES_DIR" \
             2>&1 | tee /tmp/detect-output.txt

@@ -31,17 +31,17 @@ func main() {
 
 func rootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "apexpack",
+		Use:   "apexpacks",
 		Short: "Build secure OCI images from language profiles",
-		Long: `apexpack builds minimal, secure OCI images using melange and apko.
+		Long: `apexpacks builds minimal, secure OCI images using melange and apko.
 
 Language profiles (profiles/*.yaml) define how each language is detected,
 built, and assembled into an image. No Dockerfiles required.
 
 Quick start:
-  apexpack detect .              # detect the language in current directory
-  apexpack build .               # build an OCI image
-  apexpack profiles              # list available language profiles`,
+  apexpacks detect .              # detect the language in current directory
+  apexpacks build .               # build an OCI image
+  apexpacks profiles              # list available language profiles`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -80,9 +80,9 @@ the profiles/ directory. Prints every match sorted by confidence.
 Writes detection results to .apexpack/context.json as a side effect.
 
 Examples:
-  apexpack detect .
-  apexpack detect /path/to/my-project
-  apexpack detect . --profiles-dir /custom/profiles`,
+  apexpacks detect .
+  apexpacks detect /path/to/my-project
+  apexpacks detect . --profiles-dir /custom/profiles`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			srcDir := "."
@@ -133,7 +133,7 @@ Examples:
 					r.MatchedFiles,
 				)
 			}
-			fmt.Printf("\nTo build: apexpack build %s\n", srcDir)
+			fmt.Printf("\nTo build: apexpacks build %s\n", srcDir)
 
 			// Write context.json
 			best := results[0]
@@ -237,10 +237,10 @@ melange.yaml and apko.yaml, then runs melange and apko to produce an OCI image.
 Writes build artifact paths to .apexpack/context.json as a side effect.
 
 Examples:
-  apexpack build .
-  apexpack build . --tag ghcr.io/myorg/myapp:v1.0
-  apexpack build . --runtime golang          # skip detection, use golang profile
-  apexpack build . --dry-run                 # print generated configs, don't build`,
+  apexpacks build .
+  apexpacks build . --tag ghcr.io/myorg/myapp:v1.0
+  apexpacks build . --runtime golang          # skip detection, use golang profile
+  apexpacks build . --dry-run                 # print generated configs, don't build`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			srcDir := "."
@@ -260,7 +260,7 @@ Examples:
 				outputDir = filepath.Join(absSrcDir, ".apexpack-output")
 			}
 
-			fmt.Println("⚡ apexpack build")
+			fmt.Println("⚡ apexpacks build")
 			fmt.Println()
 
 			fmt.Printf("[1/3] Loading profiles from %s...\n", profilesDir)
@@ -298,7 +298,7 @@ Examples:
 				fmt.Printf("[2/3] Detecting language in %s...\n", absSrcDir)
 				result := detect.Best(profiles, absSrcDir)
 				if result == nil {
-					return fmt.Errorf("could not detect language in %s\n\nTry: apexpack detect %s", absSrcDir, srcDir)
+					return fmt.Errorf("could not detect language in %s\n\nTry: apexpacks detect %s", absSrcDir, srcDir)
 				}
 				matchedProfile = result.Profile
 				detectedFramework = result.Framework
@@ -458,18 +458,18 @@ func scanCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scan [output-dir]",
 		Short: "Scan the built image SBOM for CVEs using grype",
-		Long: `Scans the SBOM produced by 'apexpack build' for known CVEs.
+		Long: `Scans the SBOM produced by 'apexpacks build' for known CVEs.
 Normalises SBOM version strings automatically before scanning.
 Writes severity counts and scan result to .apexpack/context.json.
 
 Examples:
-  apexpack scan
-  apexpack scan /path/to/.apexpack-output
-  apexpack scan --sbom /path/to/sbom-x86_64.spdx.json
-  apexpack scan --fail-on high
-  apexpack scan --format sarif --output results.sarif
-  apexpack scan --soft-fail    # exit 0 even on failure (for auto-patch flows)
-  apexpack scan --rescan       # write results to rescan_* fields in context.json`,
+  apexpacks scan
+  apexpacks scan /path/to/.apexpack-output
+  apexpacks scan --sbom /path/to/sbom-x86_64.spdx.json
+  apexpacks scan --fail-on high
+  apexpacks scan --format sarif --output results.sarif
+  apexpacks scan --soft-fail    # exit 0 even on failure (for auto-patch flows)
+  apexpacks scan --rescan       # write results to rescan_* fields in context.json`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Resolve SBOM path: flag → context.json → conventional default.
@@ -491,7 +491,7 @@ Examples:
 			}
 
 			if _, err := os.Stat(sbomPath); err != nil {
-				return fmt.Errorf("SBOM not found at %s\n\nRun 'apexpack build' first to produce an SBOM", sbomPath)
+				return fmt.Errorf("SBOM not found at %s\n\nRun 'apexpacks build' first to produce an SBOM", sbomPath)
 			}
 
 			grypePath, err := findTool("grype")
@@ -684,10 +684,10 @@ With --apply, updates the language profile YAML files to pin the
 patched package versions. Writes patch results to .apexpack/context.json.
 
 Examples:
-  apexpack patch
-  apexpack patch /path/to/.apexpack-output
-  apexpack patch --apply --profiles-dir ./profiles
-  apexpack build .`,
+  apexpacks patch
+  apexpacks patch /path/to/.apexpack-output
+  apexpacks patch --apply --profiles-dir ./profiles
+  apexpacks build .`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			absSource, err := filepath.Abs(sourceDir)
@@ -714,10 +714,10 @@ Examples:
 			}
 
 			if _, err := os.Stat(sbomPath); err != nil {
-				return fmt.Errorf("SBOM not found at %s\n\nRun 'apexpack build' first", sbomPath)
+				return fmt.Errorf("SBOM not found at %s\n\nRun 'apexpacks build' first", sbomPath)
 			}
 
-			fmt.Println("⚡ apexpack patch")
+			fmt.Println("⚡ apexpacks patch")
 			fmt.Printf("\n[1/2] Checking packages against Wolfi index...\n")
 
 			result, err := patch.Check(sbomPath, arch)
@@ -759,8 +759,8 @@ Examples:
 			if !apply {
 				fmt.Printf("\n%d package update(s) available.\n", len(result.Updates))
 				fmt.Println("\nTo update profiles and rebuild:")
-				fmt.Printf("  apexpack patch --apply --profiles-dir %s\n", profilesDir)
-				fmt.Printf("  apexpack build .\n")
+				fmt.Printf("  apexpacks patch --apply --profiles-dir %s\n", profilesDir)
+				fmt.Printf("  apexpacks build .\n")
 				return nil
 			}
 
@@ -797,7 +797,7 @@ Examples:
 			} else {
 				fmt.Printf("\n✓ %d package(s) pinned to patched versions across profiles.\n", len(allApplied))
 				fmt.Println("\nNext step — rebuild to apply the patches:")
-				fmt.Println("  apexpack build .")
+				fmt.Println("  apexpacks build .")
 			}
 
 			// Write patch results to context.json.
@@ -838,11 +838,11 @@ func normalizeSBOMCmd() *cobra.Command {
 Strips non-APK prefixes (e.g. "openssl-3.6.2" → "3.6.2", "v1.2.0" → "1.2.0")
 so grype can match packages against its CVE database correctly.
 
-Note: 'apexpack scan' now normalises automatically. This command remains
+Note: 'apexpacks scan' now normalises automatically. This command remains
 available for scripting and debugging.
 
 Prints the temp file path (no newline) — designed for shell substitution:
-  NORMALIZED=$(apexpack normalize-sbom sbom.json)
+  NORMALIZED=$(apexpacks normalize-sbom sbom.json)
   grype sbom:$NORMALIZED ...
   rm -f "$NORMALIZED"`,
 		Args: cobra.ExactArgs(1),
@@ -924,7 +924,7 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version",
 		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Printf("apexpack %s\n", version)
+			fmt.Printf("apexpacks %s\n", version)
 		},
 	}
 }

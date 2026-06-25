@@ -10,16 +10,16 @@ Language support is driven by **YAML profiles** in the `profiles/` directory. Ad
 
 ```bash
 # Build the CLI
-go build -o bin/apexpack ./cmd/apexpack
+go build -o bin/apexpacks ./cmd/apexpacks
 
 # Detect your project language and package manager
-./bin/apexpack detect .
+./bin/apexpacks detect .
 
 # Preview what will be built (no tools run)
-./bin/apexpack build . --dry-run
+./bin/apexpacks build . --dry-run
 
 # Build a real OCI image
-./bin/apexpack build . --tag ghcr.io/myorg/myapp:v1.0
+./bin/apexpacks build . --tag ghcr.io/myorg/myapp:v1.0
 ```
 
 ---
@@ -32,7 +32,7 @@ go build -o bin/apexpack ./cmd/apexpack
 # Clone and build
 git clone https://github.com/apexpack/apexpack
 cd apexpack
-go build -o bin/apexpack ./cmd/apexpack
+go build -o bin/apexpacks ./cmd/apexpacks
 
 # Or install directly into your Go bin
 go install ./cmd/apexpack
@@ -49,14 +49,14 @@ go install ./cmd/apexpack
 
 ## Commands
 
-### `apexpack detect [source-dir]`
+### `apexpacks detect [source-dir]`
 
 Scans a source directory against all profiles and reports matches sorted by confidence. Identifies the runtime, the specific framework, and the package manager in use.
 
 ```bash
-apexpack detect .
-apexpack detect /path/to/my-project
-apexpack detect . --profiles-dir /custom/profiles
+apexpacks detect .
+apexpacks detect /path/to/my-project
+apexpacks detect . --profiles-dir /custom/profiles
 ```
 
 Example output:
@@ -66,7 +66,7 @@ Detected 1 match(es) in .:
 
 → node           90%  framework: nextjs   (matched: [package.json])
 
-To build: apexpack build .
+To build: apexpacks build .
 ```
 
 For a pnpm project the same command also picks up the package manager:
@@ -77,28 +77,28 @@ For a pnpm project the same command also picks up the package manager:
 
 ---
 
-### `apexpack build [source-dir]`
+### `apexpacks build [source-dir]`
 
 Detects the language, loads the matching profile, resolves any framework or package-manager build overrides, generates `melange.yaml` and `apko.yaml`, then runs melange and apko to produce an OCI image tarball. Build caches are mounted as named Docker volumes on macOS so package managers reuse their download caches across builds.
 
 ```bash
 # Auto-detect language and build
-apexpack build .
+apexpacks build .
 
 # Specify the image tag
-apexpack build . --tag ghcr.io/myorg/myapp:v1.0.0
+apexpacks build . --tag ghcr.io/myorg/myapp:v1.0.0
 
 # Skip detection — use a specific runtime profile
-apexpack build . --runtime java
+apexpacks build . --runtime java
 
 # Preview generated configs without running tools
-apexpack build . --dry-run
+apexpacks build . --dry-run
 
 # Custom output directory
-apexpack build . --output /tmp/my-build
+apexpacks build . --output /tmp/my-build
 
 # Corporate proxy — trust an extra CA certificate
-apexpack build . --tls-extra-ca ~/corp-ca.pem
+apexpacks build . --tls-extra-ca ~/corp-ca.pem
 ```
 
 | Flag | Default | Description |
@@ -113,19 +113,19 @@ apexpack build . --tls-extra-ca ~/corp-ca.pem
 
 ---
 
-### `apexpack scan [output-dir]`
+### `apexpacks scan [output-dir]`
 
-Scans the SBOM produced by `apexpack build` for known CVEs using [grype](https://github.com/anchore/grype).
+Scans the SBOM produced by `apexpacks build` for known CVEs using [grype](https://github.com/anchore/grype).
 
 ```bash
 # Scan the last build (default output dir)
-apexpack scan
+apexpacks scan
 
 # Fail if any HIGH or above CVE is found (for CI)
-apexpack scan --fail-on high
+apexpacks scan --fail-on high
 
 # Output SARIF for GitHub Code Scanning
-apexpack scan --format sarif --output results/
+apexpacks scan --format sarif --output results/
 ```
 
 | Flag | Default | Description |
@@ -137,30 +137,30 @@ apexpack scan --format sarif --output results/
 
 ---
 
-### `apexpack patch [output-dir]`
+### `apexpacks patch [output-dir]`
 
 Compares installed package versions (from the last build SBOM) against the latest Wolfi index and cross-references with grype to identify which outdated packages have CVEs. With `--apply`, updates profile YAML files to pin the patched versions.
 
 ```bash
 # Show available updates
-apexpack patch
+apexpacks patch
 
 # Apply patches — updates profile YAML files
-apexpack patch --apply --profiles-dir ./profiles
+apexpacks patch --apply --profiles-dir ./profiles
 
 # Then rebuild to apply
-apexpack build .
+apexpacks build .
 ```
 
 ---
 
-### `apexpack profiles`
+### `apexpacks profiles`
 
 Lists all loaded language profiles with their detection rules and build dependencies.
 
 ```bash
-apexpack profiles
-apexpack profiles --profiles-dir /custom/profiles
+apexpacks profiles
+apexpacks profiles --profiles-dir /custom/profiles
 ```
 
 ---
@@ -411,7 +411,7 @@ Framework-level `caches` replace (not append to) the top-level `build.caches`. I
 
 ### Procfile support
 
-If a project has a `Procfile` with a `web:` process and the detected profile has no explicit `image.entrypoint`, apexpack parses the Procfile and uses the `web:` command as the container entrypoint:
+If a project has a `Procfile` with a `web:` process and the detected profile has no explicit `image.entrypoint`, apexpacks parses the Procfile and uses the `web:` command as the container entrypoint:
 
 ```
 # Procfile
@@ -478,9 +478,9 @@ build:
 3. Add `package-managers` rules if the language supports multiple build tools
 4. Add `frameworks` entries only for cases that need different `command`, `dependencies`, `env`, or `caches`
 5. Add a `scan` block to configure CVE auto-patch behaviour (optional, defaults to disabled)
-6. Run `apexpack profiles` to verify it loads
-7. Run `apexpack detect /path/to/sample-project` to test detection
-8. Run `apexpack build /path/to/sample-project --dry-run` to verify generated configs
+6. Run `apexpacks profiles` to verify it loads
+7. Run `apexpacks detect /path/to/sample-project` to test detection
+8. Run `apexpacks build /path/to/sample-project --dry-run` to verify generated configs
 
 Example — Rust:
 
@@ -678,11 +678,11 @@ Or ask your IT / security team for the root CA certificate in PEM format.
 
 ```bash
 # Via flag
-apexpack build . --tls-extra-ca ~/corp-ca.pem
+apexpacks build . --tls-extra-ca ~/corp-ca.pem
 
 # Via environment variable — set once in your shell profile
 export APEXPACK_EXTRA_CA=~/corp-ca.pem
-apexpack build .
+apexpacks build .
 ```
 
 The flag takes precedence over the environment variable. Both the system CAs and the corporate CA are trusted — the corporate cert is added alongside, not instead of, the container's existing trust store.
@@ -691,7 +691,7 @@ The flag takes precedence over the environment variable. Both the system CAs and
 
 ## Tekton Pipeline Integration
 
-apexpack ships Tekton Tasks and a Pipeline that clone the source, detect the language, build the image, scan for CVEs — and when CVEs are found, automatically patch and rebuild before pushing.
+apexpacks ships Tekton Tasks and a Pipeline that clone the source, detect the language, build the image, scan for CVEs — and when CVEs are found, automatically patch and rebuild before pushing.
 
 ### Installing Tekton
 
@@ -812,10 +812,10 @@ The pipeline implements a detect-patch-rebuild loop controlled entirely by the l
 scan (CVEs found, soft-fail)
     │
     ▼
-patch (apexpack patch --apply → pins updated Wolfi packages in profile YAML)
+patch (apexpacks patch --apply → pins updated Wolfi packages in profile YAML)
     │  optionally: git commit + push if patch-persist: true
     ▼
-rebuild (apexpack build with patched profile → clean image)
+rebuild (apexpacks build with patched profile → clean image)
     │
     ▼
 push (crane push → registry)
@@ -886,9 +886,9 @@ To rebuild and reload into a kind cluster:
 3. Add `package-managers` rules if the language has multiple build tools (pnpm, uv, etc.)
 4. Add `frameworks` entries for any cases that need a different `command`, `dependencies`, `env`, or `caches`
 5. Add a `scan` block (`auto-patch: false`, `patch-persist: false` is a safe default)
-6. Run `apexpack profiles` to verify it loads
-7. Run `apexpack detect /path/to/sample-project` to test detection
-8. Run `apexpack build /path/to/sample-project --dry-run` to verify generated configs
+6. Run `apexpacks profiles` to verify it loads
+7. Run `apexpacks detect /path/to/sample-project` to test detection
+8. Run `apexpacks build /path/to/sample-project --dry-run` to verify generated configs
 9. Rebuild `apexpack:latest` so the new profile is baked in: `./rebuild-image.sh`
 
 ### Modifying the Go code

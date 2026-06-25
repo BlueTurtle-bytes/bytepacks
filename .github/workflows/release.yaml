@@ -31,7 +31,7 @@ jobs:
           cache: true
 
       - name: Build apexpack binary
-        run: go build -o bin/apexpack ./cmd/apexpack
+        run: go build -o bin/apexpacks ./cmd/apexpacks
 
       # ── 3. Install melange and apko ──────────────────────────────────────────
       # On Linux (ubuntu-latest) melange runs natively via bubblewrap.
@@ -61,7 +61,7 @@ jobs:
           SHA_TAG="ghcr.io/${{ github.repository }}:${{ github.sha }}"
           LATEST_TAG="ghcr.io/${{ github.repository }}:latest"
 
-          ./bin/apexpack build . \
+          ./bin/apexpacks build . \
             --tag "$SHA_TAG" \
             --output /tmp/apexpack-output \
             --project-name apexpack

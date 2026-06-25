@@ -3,7 +3,7 @@ build:
   command: |
     mkdir -p ${{targets.destdir}}/usr/bin
     mkdir -p ${{targets.destdir}}/etc/apexpack/profiles
-    go build -o ${{targets.destdir}}/usr/bin/{APP_NAME} ./cmd/apexpack
+    go build -o ${{targets.destdir}}/usr/bin/{APP_NAME} ./cmd/apexpacks
     cp profiles/*.yaml ${{targets.destdir}}/etc/apexpack/profiles/
 image:
   packages:

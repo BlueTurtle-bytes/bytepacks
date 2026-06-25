@@ -7,7 +7,7 @@ metadata:
   annotations:
     tekton.dev/displayName: "apexpack CVE auto-patch"
     tekton.dev/description: >-
-      Runs 'apexpack patch --apply' to update profile YAML files with pinned
+      Runs 'apexpacks patch --apply' to update profile YAML files with pinned
       package versions that fix CVEs found during the scan step.
       When PERSIST=true, commits the updated profiles back to git so future
       pipeline runs start with the patched versions already pinned.
@@ -62,7 +62,7 @@ spec:
         echo "Profiles: $PROFILES_PATH"
         echo ""
 
-        apexpack patch \
+        apexpacks patch \
           --sbom "$(params.SBOM_PATH)" \
           --apply \
           --profiles-dir "$PROFILES_PATH" \
