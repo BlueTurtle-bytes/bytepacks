@@ -32,6 +32,52 @@ func golangProfile() *types.Profile {
 	}
 }
 
+// ── javaHomeDirVersion / fixJavaHome ──────────────────────────────────────────
+
+func TestJavaHomeDirVersion(t *testing.T) {
+	cases := []struct{ major, want string }{
+		{"8", "1.8"},
+		{"17", "17"},
+		{"21", "21"},
+		{"11", "11"},
+	}
+	for _, c := range cases {
+		if got := javaHomeDirVersion(c.major); got != c.want {
+			t.Errorf("javaHomeDirVersion(%q) = %q, want %q", c.major, got, c.want)
+		}
+	}
+}
+
+func TestFixJavaHomeJava8(t *testing.T) {
+	env := map[string]string{
+		"JAVA_HOME": "/usr/lib/jvm/java-8-openjdk",
+		"OTHER":     "unchanged",
+	}
+	got := fixJavaHome(env, "java", "8")
+	if got["JAVA_HOME"] != "/usr/lib/jvm/java-1.8-openjdk" {
+		t.Errorf("JAVA_HOME: got %q, want /usr/lib/jvm/java-1.8-openjdk", got["JAVA_HOME"])
+	}
+	if got["OTHER"] != "unchanged" {
+		t.Errorf("OTHER should be unchanged: %q", got["OTHER"])
+	}
+}
+
+func TestFixJavaHomeJava17NoChange(t *testing.T) {
+	env := map[string]string{"JAVA_HOME": "/usr/lib/jvm/java-17-openjdk"}
+	got := fixJavaHome(env, "java", "17")
+	if got["JAVA_HOME"] != "/usr/lib/jvm/java-17-openjdk" {
+		t.Errorf("Java 17 should be unchanged: %q", got["JAVA_HOME"])
+	}
+}
+
+func TestFixJavaHomeNonJavaRuntime(t *testing.T) {
+	env := map[string]string{"SOME_HOME": "/usr/lib/jvm/java-8-openjdk"}
+	got := fixJavaHome(env, "golang", "8")
+	if got["SOME_HOME"] != "/usr/lib/jvm/java-8-openjdk" {
+		t.Errorf("non-java runtime should not be modified: %q", got["SOME_HOME"])
+	}
+}
+
 // ── vsub ──────────────────────────────────────────────────────────────────────
 
 func TestVsub(t *testing.T) {
@@ -489,6 +535,45 @@ func TestPlanProcfileFallback(t *testing.T) {
 	}
 	if plan.Apko.Entrypoint.Command != "./bin/server" {
 		t.Errorf("entrypoint: got %q, want ./bin/server", plan.Apko.Entrypoint.Command)
+	}
+}
+
+func TestPlanJava8EntrypointUsesLegacyPath(t *testing.T) {
+	p := &types.Profile{
+		Runtime: "java",
+		Build: types.BuildConfig{
+			Dependencies: []string{"openjdk-{JAVA_VERSION}"},
+			Command:      "mvn package",
+			Env:          map[string]string{"JAVA_HOME": "/usr/lib/jvm/java-{JAVA_VERSION}-openjdk"},
+		},
+		Image: types.ImageConfig{
+			Packages:   []string{"openjdk-{JAVA_VERSION}-jre"},
+			Entrypoint: "java",
+			Env:        map[string]string{"JAVA_HOME": "/usr/lib/jvm/java-{JAVA_VERSION}-openjdk"},
+		},
+	}
+	plan, err := Plan(p, Options{
+		SourceDir:       t.TempDir(),
+		ProjectName:     "myapp",
+		LanguageVersion: "8",
+	})
+	if err != nil {
+		t.Fatalf("Plan() error: %v", err)
+	}
+	// Entrypoint must use the 1.8 directory name, not 8
+	if plan.Apko.Entrypoint.Command != "/usr/lib/jvm/java-1.8-openjdk/bin/java" {
+		t.Errorf("entrypoint: got %q, want /usr/lib/jvm/java-1.8-openjdk/bin/java",
+			plan.Apko.Entrypoint.Command)
+	}
+	// JAVA_HOME must also be corrected in the image env
+	if plan.Apko.Environment["JAVA_HOME"] != "/usr/lib/jvm/java-1.8-openjdk" {
+		t.Errorf("JAVA_HOME: got %q, want /usr/lib/jvm/java-1.8-openjdk",
+			plan.Apko.Environment["JAVA_HOME"])
+	}
+	// Build env must also be corrected
+	if plan.Melange.Environment.Env["JAVA_HOME"] != "/usr/lib/jvm/java-1.8-openjdk" {
+		t.Errorf("build JAVA_HOME: got %q, want /usr/lib/jvm/java-1.8-openjdk",
+			plan.Melange.Environment.Env["JAVA_HOME"])
 	}
 }
 

@@ -425,7 +425,7 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 				Repositories: []string{"https://packages.wolfi.dev/os"},
 				Packages:     packages,
 			},
-			Env: vsubMap(p.Build.Env, token, version),
+			Env: fixJavaHome(vsubMap(p.Build.Env, token, version), p.Runtime, version),
 		},
 		Pipeline: []types.MelangePipeline{{Runs: vsub(applyProjectTemplates(p.Build.Command, opts.ProjectName), token, version)}},
 	}
@@ -636,7 +636,7 @@ func buildApkoConfig(p *types.Profile, opts Options) types.ApkoConfig {
 			Users: []types.ApkoUser{{Username: "nonroot", UID: runAs, GID: runAs}},
 			Groups: []types.ApkoGroup{{Groupname: "nonroot", GID: runAs}},
 		},
-		Environment: vsubMap(p.Image.Env, token, version),
+		Environment: fixJavaHome(vsubMap(p.Image.Env, token, version), p.Runtime, version),
 	}
 
 	if len(cmd) > 0 {
@@ -696,6 +696,37 @@ func langVersionToken(runtime string) string {
 // Versions not in this set will cause an apk solve failure at build time.
 var supportedLangVersions = map[string][]string{
 	"dotnet": {"8", "9", "10"},
+}
+
+// javaHomeDirVersion returns the JVM directory version for JAVA_HOME paths.
+// Java 8 uses the pre-9 "1.N" naming convention in its directory name:
+//   openjdk-8-jre  →  /usr/lib/jvm/java-1.8-openjdk  (Wolfi convention)
+//   openjdk-17-jre →  /usr/lib/jvm/java-17-openjdk
+func javaHomeDirVersion(major string) string {
+	if major == "8" {
+		return "1.8"
+	}
+	return major
+}
+
+// fixJavaHome corrects JAVA_HOME paths after {JAVA_VERSION} token substitution.
+// For Java 8, Wolfi installs the JRE at java-1.8-openjdk, not java-8-openjdk.
+// This only touches the JAVA_HOME key; all other env vars are passed through unchanged.
+func fixJavaHome(env map[string]string, runtime, version string) map[string]string {
+	if runtime != "java" || env == nil {
+		return env
+	}
+	dirVer := javaHomeDirVersion(version)
+	if dirVer == version {
+		return env // no correction needed
+	}
+	wrong := "/java-" + version + "-openjdk"
+	right := "/java-" + dirVer + "-openjdk"
+	out := make(map[string]string, len(env))
+	for k, v := range env {
+		out[k] = strings.ReplaceAll(v, wrong, right)
+	}
+	return out
 }
 
 // resolveVersion returns the detected version, falling back to the built-in default.
