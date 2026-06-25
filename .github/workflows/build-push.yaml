@@ -145,7 +145,7 @@ jobs:
       # ── 7. Build the OCI image ───────────────────────────────────────────────
       # Profiles are read from the checked-out apexpack repo (not embedded in
       # the binary), so --profiles-dir must point there explicitly.
-      # Mirror URLs come from the project's apexpack.yaml or profile YAML.
+      # Mirror URLs come from the project's apexpacks.yaml or profile YAML.
       # Credentials are forwarded here so build.go injects them into the
       # melange sandbox environment.
       - name: Build image with apexpack

@@ -76,8 +76,8 @@ spec:
       script: |
         #!/bin/sh
         set -e
-        go build -o $(workspaces.shared.path)/apexpack ./cmd/apexpack
-        echo "Binary: $(du -sh $(workspaces.shared.path)/apexpack | cut -f1)"
+        go build -o $(workspaces.shared.path)/apexpacks ./cmd/apexpacks
+        echo "Binary: $(du -sh $(workspaces.shared.path)/apexpacks | cut -f1)"
 
     # ── Step 2: Build and publish OCI image ──────────────────────────────────
     # Uses a plain Wolfi base — no apexpack image needed. Installs melange, apko,
@@ -114,11 +114,11 @@ spec:
           TLS_CA_FLAG="--tls-extra-ca $(params.TLS_CA_PATH)"
         fi
 
-        $(workspaces.shared.path)/apexpack build . \
+        $(workspaces.shared.path)/apexpacks build . \
           --tag $(params.IMAGE) \
           --version $(params.VERSION) \
           --output $(workspaces.shared.path)/output \
-          --project-name apexpack \
+          --project-name apexpacks \
           $TLS_CA_FLAG
 
         printf "%s" "$(params.IMAGE)" > $(results.pushed-image.path)

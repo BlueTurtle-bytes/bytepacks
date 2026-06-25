@@ -2,7 +2,7 @@
 set -e
 
 go build -o bin/apexpacks ./cmd/apexpacks
-./bin/apexpacks build . --tag apexpack:latest
+./bin/apexpacks build . --tag apexpack:latest --project-name apexpacks
 
 docker load < .apexpack-output/apexpack.tar
 

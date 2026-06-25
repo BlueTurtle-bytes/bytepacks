@@ -430,12 +430,12 @@ The profile's `image.entrypoint` always takes precedence. Procfile is only used 
 
 ---
 
-### Per-project `apexpack.yaml` overrides
+### Per-project `apexpacks.yaml` overrides
 
-Place an `apexpack.yaml` in the project root to override or extend the detected profile. Only set what you need to change — everything else is inherited from the profile.
+Place an `apexpacks.yaml` in the project root to override or extend the detected profile. Only set what you need to change — everything else is inherited from the profile.
 
 ```yaml
-# apexpack.yaml
+# apexpacks.yaml
 runtime: golang          # optional — overrides auto-detection
 
 build:
@@ -461,7 +461,7 @@ image:
 Go projects where `main.go` lives in `cmd/<name>/` (not at the root) need this override, since the default `find`-based command would locate the right `main.go` but may resolve the wrong package path in monorepos:
 
 ```yaml
-# apexpack.yaml
+# apexpacks.yaml
 runtime: golang
 build:
   command: |
@@ -587,7 +587,7 @@ apexpack/
 │   ├── python.yaml
 │   └── webserver.yaml
 │
-├── apexpack.yaml            Per-project overrides for building apexpack itself
+├── apexpacks.yaml            Per-project overrides for building apexpack itself
 │                            (binary name, extra packages: busybox, git, melange, apko, grype)
 │
 ├── rebuild-image.sh         Rebuilds apexpack:latest and loads it into the kind cluster
@@ -648,7 +648,7 @@ On macOS, each declared cache path becomes a persistent named Docker volume. The
 `build.Plan()` generates config content. `build.Run()` writes files and runs tools. The `--dry-run` flag uses Plan without Run, so you can inspect exactly what will be built — including which package manager override fired — before committing.
 
 **7. Profiles are baked into the `apexpack:latest` image**
-Profiles are embedded at `/etc/apexpack/profiles/` when the image is built (`cp profiles/*.yaml` runs as part of the Go build step in `apexpack.yaml`). The Tekton detect task seeds the profiles PVC from the image on every run — no manual `kubectl cp` or separate profiles repository is needed. Updating profiles requires only a rebuild of `apexpack:latest`.
+Profiles are embedded at `/etc/apexpack/profiles/` when the image is built (`cp profiles/*.yaml` runs as part of the Go build step in `apexpacks.yaml`). The Tekton detect task seeds the profiles PVC from the image on every run — no manual `kubectl cp` or separate profiles repository is needed. Updating profiles requires only a rebuild of `apexpack:latest`.
 
 ---
 
@@ -847,7 +847,7 @@ params:
 
 All pipeline tasks run inside `apexpack:latest` — a self-built image that bundles the CLI together with melange, apko, grype, busybox, and git. On Linux (inside pods) these tools are called natively, not via Docker.
 
-The image builds itself using `apexpack.yaml` at the repo root:
+The image builds itself using `apexpacks.yaml` at the repo root:
 
 ```yaml
 runtime: golang

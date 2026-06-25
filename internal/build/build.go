@@ -142,7 +142,7 @@ type Options struct {
 }
 
 // Plan builds a MelangeConfig and ApkoConfig from the profile and options.
-// The profile has already been merged with per-project apexpack.yaml overrides
+// The profile has already been merged with per-project apexpacks.yaml overrides
 // by the caller (main.go). Does NOT write files or run tools.
 func Plan(p *types.Profile, opts Options) (*types.BuildPlan, error) {
 	opts = applyDefaults(opts)

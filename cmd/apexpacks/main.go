@@ -318,11 +318,11 @@ Examples:
 
 			projCfg, err := profile.LoadProjectConfig(absSrcDir)
 			if err != nil {
-				return fmt.Errorf("loading apexpack.yaml: %w", err)
+				return fmt.Errorf("loading apexpacks.yaml: %w", err)
 			}
 			if projCfg != nil {
 				matchedProfile = profile.MergeProjectConfig(matchedProfile, projCfg)
-				fmt.Println("  → Merged apexpack.yaml project overrides")
+				fmt.Println("  → Merged apexpacks.yaml project overrides")
 			}
 
 			ver = strings.TrimPrefix(ver, "v")
@@ -695,7 +695,7 @@ Examples:
 				return fmt.Errorf("resolving source dir: %w", err)
 			}
 
-			// Read sbom_path and runtime from context.json when not given as flags.
+			// Read sbom_path, runtime, and arch from context.json when not given as flags.
 			if ctxData, cerr := apexctx.Load(absSource); cerr == nil {
 				if sbomPath == "" && ctxData.SBOMPath != "" {
 					sbomPath = ctxData.SBOMPath
@@ -703,6 +703,12 @@ Examples:
 				if runtime_ == "" && ctxData.Runtime != "" {
 					runtime_ = ctxData.Runtime
 				}
+				if arch == "" && ctxData.Arch != "" {
+					arch = ctxData.Arch
+				}
+			}
+			if arch == "" {
+				arch, _ = hostArch()
 			}
 
 			if sbomPath == "" {
@@ -791,6 +797,22 @@ Examples:
 				}
 			}
 
+			// Also patch the project-level apexpacks.yaml (project overrides live here,
+			// not in the language profile directory).
+			projectConfigPath := filepath.Join(absSource, "apexpacks.yaml")
+			if _, statErr := os.Stat(projectConfigPath); statErr == nil {
+				applied, applyErr := patch.ApplyToProfile(projectConfigPath, result.Updates)
+				if applyErr != nil {
+					fmt.Printf("  warning: apexpacks.yaml: %v\n", applyErr)
+				} else if len(applied) > 0 {
+					fmt.Printf("\n  apexpacks.yaml:\n")
+					for _, change := range applied {
+						fmt.Printf("    ↑ %s\n", change)
+					}
+					allApplied = append(allApplied, applied...)
+				}
+			}
+
 			if len(allApplied) == 0 {
 				fmt.Println("\nNo profiles contained the affected packages.")
 				fmt.Println("Packages are floating — rebuilding will pick up the latest versions automatically.")
@@ -818,8 +840,8 @@ Examples:
 		"Directory containing language profile YAML files")
 	cmd.Flags().BoolVar(&apply, "apply", false,
 		"Update profile YAML files with pinned patched versions")
-	cmd.Flags().StringVar(&arch, "arch", "x86_64",
-		"Architecture to check against the Wolfi index")
+	cmd.Flags().StringVar(&arch, "arch", "",
+		"Architecture to check against the Wolfi index (default: from context.json or host arch)")
 	cmd.Flags().StringVar(&runtime_, "runtime", "",
 		"Only patch the profile for this runtime (e.g. java). Empty = patch all profiles.")
 	cmd.Flags().StringVar(&sourceDir, "source", ".",

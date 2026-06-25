@@ -40,7 +40,7 @@ type Profile struct {
 	Image ImageConfig `yaml:"image"`
 
 	// Scan configures CVE scanning and auto-patch defaults for this language profile.
-	// Projects can override these via apexpack.yaml. In the Tekton pipeline the
+	// Projects can override these via apexpacks.yaml. In the Tekton pipeline the
 	// AUTO_PATCH and PATCH_PERSIST params take precedence.
 	Scan ScanConfig `yaml:"scan,omitempty"`
 }
@@ -252,13 +252,13 @@ type ImageConfig struct {
 }
 
 // ============================================================================
-// ProjectConfig — per-project apexpack.yaml override file
+// ProjectConfig — per-project apexpacks.yaml override file
 // ============================================================================
 
-// ProjectConfig is an optional file placed in the project root (apexpack.yaml).
+// ProjectConfig is an optional file placed in the project root (apexpacks.yaml).
 // It overrides or extends the detected language profile for this specific project.
 //
-// Example apexpack.yaml in a Go project that uses SQLite:
+// Example apexpacks.yaml in a Go project that uses SQLite:
 //
 //	runtime: golang          # optional — overrides auto-detection
 //	image:

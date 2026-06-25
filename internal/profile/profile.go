@@ -100,20 +100,20 @@ func GetByRuntime(profiles []*types.Profile, runtime string) *types.Profile {
 	return nil
 }
 
-// LoadProjectConfig reads an optional apexpack.yaml from the project root.
+// LoadProjectConfig reads an optional apexpacks.yaml from the project root.
 // Returns nil (not an error) if no file exists — per-project config is optional.
 func LoadProjectConfig(srcDir string) (*types.ProjectConfig, error) {
-	path := filepath.Join(srcDir, "apexpack.yaml")
+	path := filepath.Join(srcDir, "apexpacks.yaml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil // no project config is fine
 		}
-		return nil, fmt.Errorf("reading apexpack.yaml: %w", err)
+		return nil, fmt.Errorf("reading apexpacks.yaml: %w", err)
 	}
 	var cfg types.ProjectConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing apexpack.yaml: %w", err)
+		return nil, fmt.Errorf("parsing apexpacks.yaml: %w", err)
 	}
 	return &cfg, nil
 }

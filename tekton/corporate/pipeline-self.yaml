@@ -6,7 +6,7 @@ metadata:
     tekton.dev/description: >-
       CI pipeline for the apexpack project itself.
       Clones the apexpack repo, scans for secrets, calculates a version,
-      compiles the Go binary, builds the OCI image via apexpack.yaml,
+      compiles the Go binary, builds the OCI image via apexpacks.yaml,
       pushes to Artifactory, then stamps the git tag.
       Same corporate params/workspaces as apexpack pipeline.
 spec:
