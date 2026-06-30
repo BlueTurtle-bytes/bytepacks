@@ -198,5 +198,6 @@ test:
   pipeline:
     - runs: |
         test -s /app/app.jar || { echo "ERROR: /app/app.jar not found or empty"; exit 1; }
+        export PATH="/usr/lib/jvm/java-{JAVA_VERSION}-openjdk/bin:$PATH"
         java -version 2>&1 | head -2
         echo "✓ /app/app.jar present, Java runtime available"

@@ -116,5 +116,5 @@ test:
   pipeline:
     - runs: |
         test -f /app/app.dll || { echo "ERROR: /app/app.dll not found"; exit 1; }
-        dotnet --version
+        dotnet --list-runtimes
         echo "✓ /app/app.dll present, ASP.NET runtime available"
