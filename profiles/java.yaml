@@ -79,13 +79,20 @@ build:
   caches:
     - /home/build/.m2/repository
 
-  # Corporate Artifactory / Nexus mirror for Maven.
-  # Set to your actual URL; leave empty to resolve directly from Maven Central.
-  # settings.xml is only injected when this is non-empty AND ARTI_USER is set
-  # (decoded from the regcred docker secret by the build task).
-  # Replace with your Artifactory virtual repo URL, e.g.:
-  # https://<host>/artifactory/maven-virtual
+  # Corporate Artifactory / Nexus mirror for Maven projects (pom.xml / Maven multi-module).
+  # Set to your Artifactory virtual repo URL; leave empty to resolve from Maven Central.
+  # Injected as ~/.m2/settings.xml when ARTI_USER is set. Skipped for Gradle frameworks.
+  # Example: https://<host>/artifactory/maven-virtual
   maven_mirror_url: ""
+
+  # Corporate Artifactory / Nexus mirror for Gradle projects (build.gradle / build.gradle.kts).
+  # Injected as ~/.gradle/init.d/artifactory.gradle when ARTI_USER is set.
+  # Covers project repos, buildscript classpath, and plugin resolution.
+  # Example: https://<host>/artifactory/gradle-virtual
+  gradle_mirror_url: ""
+
+  # Gradle init script template. Built-ins: "default", "corporate" (adds Gradle 7+ support).
+  gradle_settings_template: "corporate"
 
   # settings.xml template to use. Built-ins: "default" (mirrors+servers only),
   # "corporate" (adds pluginRepositories + profiles + activeProfiles).

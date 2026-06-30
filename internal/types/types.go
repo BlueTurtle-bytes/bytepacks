@@ -204,6 +204,19 @@ type BuildConfig struct {
 	// Defaults to "default" when empty.
 	MavenSettingsTemplate string `yaml:"maven_settings_template,omitempty"`
 
+	// GradleMirrorURL is the URL of a corporate Artifactory (or Nexus) Gradle/Maven proxy.
+	// When set, apexpack writes a ~/.gradle/init.d/artifactory.gradle init script that
+	// routes all repository resolution (project deps, buildscript classpath, plugins)
+	// through this URL. Fires only when ARTI_USER is also present.
+	// Example: "https://artifactory.corp.example.com/artifactory/gradle-virtual"
+	GradleMirrorURL string `yaml:"gradle_mirror_url,omitempty"`
+
+	// GradleSettingsTemplate selects which Gradle init script template to inject.
+	// Built-in templates: "default" and "corporate" (adds Gradle 7+ dependencyResolutionManagement).
+	// Custom templates can be placed at <profiles-dir>/templates/gradle/<name>.gradle.
+	// Defaults to "corporate" when empty.
+	GradleSettingsTemplate string `yaml:"gradle_settings_template,omitempty"`
+
 	// NuGetMirrorURL is the URL of a corporate Artifactory (or Nexus) NuGet proxy.
 	// When set, apexpack injects a NuGet.Config into every build that replaces
 	// nuget.org with this feed. Fires only when ARTI_USER is also present.
