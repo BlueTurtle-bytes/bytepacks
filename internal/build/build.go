@@ -541,6 +541,8 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 	// Fires when gradle_mirror_url is set AND either:
 	//   a) ARTI_USER is present, or
 	//   b) a custom template exists in the profiles dir.
+	fmt.Printf("  [gradle-debug] framework=%q isGradleFramework=%v gradleMirrorURL=%q gradleTemplate=%q profilesDir=%q\n",
+		opts.Framework, isGradleFramework, p.Build.GradleMirrorURL, p.Build.GradleSettingsTemplate, opts.ProfilesDir)
 	if isGradleFramework {
 		gradleTmplName := p.Build.GradleSettingsTemplate
 		if gradleTmplName == "" {
@@ -548,6 +550,8 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 		}
 		gradleCustomPath := filepath.Join(opts.ProfilesDir, "templates", "gradle", gradleTmplName+".gradle")
 		_, gradleCustomExists := os.Stat(gradleCustomPath)
+		fmt.Printf("  [gradle-debug] tmplName=%q customPath=%q customExists=%v artiUser=%v\n",
+			gradleTmplName, gradleCustomPath, gradleCustomExists == nil, os.Getenv("ARTI_USER") != "")
 		if p.Build.GradleMirrorURL != "" && (os.Getenv("ARTI_USER") != "" || gradleCustomExists == nil) {
 			if cfg.Environment.Env == nil {
 				cfg.Environment.Env = make(map[string]string)
