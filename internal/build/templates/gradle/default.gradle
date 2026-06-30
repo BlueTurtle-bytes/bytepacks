@@ -1,0 +1,33 @@
+// Gradle init script written by apexpacks.
+// Routes all repository resolution through Artifactory.
+def artUser = System.getenv("ARTI_USER") ?: ""
+def artPassword = System.getenv("ARTI_PASSWORD") ?: ""
+def mirrorUrl = "{{GRADLE_MIRROR_URL}}"
+
+settingsEvaluated { settings ->
+    settings.pluginManagement {
+        repositories {
+            maven {
+                url mirrorUrl
+                credentials { username artUser; password artPassword }
+            }
+        }
+    }
+}
+
+allprojects {
+    buildscript {
+        repositories {
+            maven {
+                url mirrorUrl
+                credentials { username artUser; password artPassword }
+            }
+        }
+    }
+    repositories {
+        maven {
+            url mirrorUrl
+            credentials { username artUser; password artPassword }
+        }
+    }
+}
