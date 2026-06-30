@@ -167,3 +167,14 @@ image:
 scan:
   auto-patch: false
   patch-persist: false
+
+test:
+  packages:
+    - busybox
+    - nodejs-{NODE_VERSION}
+  pipeline:
+    - runs: |
+        test -d /app || { echo "ERROR: /app directory not found"; exit 1; }
+        test -f /app/package.json || { echo "ERROR: /app/package.json not found"; exit 1; }
+        node --version
+        echo "✓ Node app structure at /app is valid"

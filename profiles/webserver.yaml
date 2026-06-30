@@ -116,3 +116,12 @@ image:
 scan:
   auto-patch: false
   patch-persist: false
+
+test:
+  packages:
+    - busybox
+    - nginx
+  pipeline:
+    - runs: |
+        nginx -v 2>&1
+        echo "✓ nginx is installed"

@@ -362,6 +362,14 @@ fi`
 		return fmt.Errorf("melange: %w", err)
 	}
 
+	// Run melange test when the profile defines a test pipeline.
+	if plan.Melange.Test != nil {
+		fmt.Println("\n  → Running melange test...")
+		if err := runMelangeTest(melangeFile, opts); err != nil {
+			return fmt.Errorf("melange test: %w", err)
+		}
+	}
+
 	// Run apko.
 	fmt.Println("\n  → Running apko...")
 	if err := runApko(apkoFile, opts); err != nil {
@@ -531,6 +539,35 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 			[]types.MelangePipeline{{Runs: nugetConfigStep}},
 			cfg.Pipeline...,
 		)
+	}
+
+	// Build the test section when the profile defines test steps.
+	// The test sandbox always includes the local packages repo (where the built APK lives)
+	// and the local signing key so the APK can be verified and installed.
+	if len(p.Test.Pipeline) > 0 {
+		testPkgs := vsubSlice(p.Test.Packages, token, version)
+		steps := make([]types.MelangePipeline, len(p.Test.Pipeline))
+		for i, step := range p.Test.Pipeline {
+			steps[i] = types.MelangePipeline{
+				Runs: vsub(applyProjectTemplates(step.Runs, opts.ProjectName), token, version),
+			}
+		}
+		cfg.Test = &types.MelangeTest{
+			Environment: types.MelangeTestEnvironment{
+				Contents: types.MelangeContents{
+					Keyring: []string{
+						"https://packages.wolfi.dev/os/wolfi-signing.rsa.pub",
+						"./melange.rsa.pub",
+					},
+					Repositories: []string{
+						"https://packages.wolfi.dev/os",
+						"./packages",
+					},
+					Packages: testPkgs,
+				},
+			},
+			Pipeline: steps,
+		}
 	}
 
 	// Propagate Go module env vars from the host into the melange.yaml environment
@@ -946,6 +983,81 @@ func runMelangeInDocker(configFile, keyFile string, opts Options) error {
 		"--source-dir", "/work/src",
 		"--out-dir", "/work/output/packages",
 		"--signing-key", containerKey,
+		"--arch", arch,
+	)
+
+	return runTool("docker", args)
+}
+
+// runMelangeTest runs `melange test` against the already-built APK.
+// melange installs the built package into a fresh sandbox and runs the test pipeline
+// defined in the test: block of the melange.yaml config.
+func runMelangeTest(configFile string, opts Options) error {
+	if runtime.GOOS == "darwin" {
+		return runMelangeTestInDocker(configFile, opts)
+	}
+
+	arch := melangeArch(opts.Arch)
+	args := []string{
+		"test", configFile,
+		"--arch", arch,
+		"--runner", "bubblewrap",
+	}
+
+	if opts.TLSExtraCA == "" {
+		return runToolInDir(opts.OutputDir, "melange", args)
+	}
+
+	absCA, _ := filepath.Abs(opts.TLSExtraCA)
+	merged, err := mergeCABundles(absCA)
+	if err != nil {
+		fmt.Printf("  → WARN: could not prepare merged CA bundle for melange test (%v)\n", err)
+		return runToolInDir(opts.OutputDir, "melange", args)
+	}
+	defer os.Remove(merged)
+
+	return runToolInDirEnv(opts.OutputDir, "melange", args, append(os.Environ(),
+		"SSL_CERT_FILE="+merged,
+		"SSL_CERT_DIR=/etc/ssl/certs",
+	))
+}
+
+// runMelangeTestInDocker runs `melange test` inside the cgr.dev/chainguard/melange
+// container on macOS. The output directory (containing the built APK and signing key)
+// is mounted at /work/output so the test environment can install the package.
+func runMelangeTestInDocker(configFile string, opts Options) error {
+	fmt.Println("  → macOS detected: running melange test inside Linux container")
+
+	absOut, err := filepath.Abs(opts.OutputDir)
+	if err != nil {
+		return fmt.Errorf("resolving output dir: %w", err)
+	}
+
+	containerConfig := "/work/output/" + filepath.Base(configFile)
+	arch := melangeArch(opts.Arch)
+
+	args := []string{
+		"run", "--rm",
+		"--privileged",
+		"--platform", archToDockerPlatform(arch),
+		"-w", "/work/output",
+		"-v", absOut + ":/work/output",
+	}
+
+	if opts.TLSExtraCA != "" {
+		absCA, err := filepath.Abs(opts.TLSExtraCA)
+		if err != nil {
+			return fmt.Errorf("resolving TLS CA path: %w", err)
+		}
+		args = append(args,
+			"-v", absCA+":/extra-certs/"+filepath.Base(absCA)+":ro",
+			"-e", "SSL_CERT_DIR=/etc/ssl/certs:/extra-certs",
+		)
+	}
+
+	args = append(args,
+		"cgr.dev/chainguard/melange",
+		"test", containerConfig,
 		"--arch", arch,
 	)
 

@@ -73,3 +73,12 @@ image:
 scan:
   auto-patch: false
   patch-persist: false
+
+test:
+  packages:
+    - busybox
+  pipeline:
+    - runs: |
+        test -x /usr/bin/{APP_NAME} || { echo "ERROR: /usr/bin/{APP_NAME} not found or not executable"; exit 1; }
+        /usr/bin/{APP_NAME} --version 2>&1 || /usr/bin/{APP_NAME} --help 2>&1 || true
+        echo "✓ /usr/bin/{APP_NAME} is present and executable"

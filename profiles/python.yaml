@@ -156,3 +156,14 @@ image:
 scan:
   auto-patch: false
   patch-persist: false
+
+test:
+  packages:
+    - busybox
+    - python-{PYTHON_VERSION}
+  pipeline:
+    - runs: |
+        test -d /app/src || { echo "ERROR: /app/src not found"; exit 1; }
+        test -d /app/deps || { echo "ERROR: /app/deps not found"; exit 1; }
+        python3 --version
+        echo "✓ Python app structure at /app is valid"

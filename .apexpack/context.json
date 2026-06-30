@@ -27,7 +27,8 @@
     "build",
     "scan",
     "scan",
-    "patch"
+    "patch",
+    "scan"
   ],
   "runtime": "golang",
   "arch": "aarch64",

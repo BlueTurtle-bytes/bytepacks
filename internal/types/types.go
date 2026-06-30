@@ -43,6 +43,23 @@ type Profile struct {
 	// Projects can override these via apexpacks.yaml. In the Tekton pipeline the
 	// AUTO_PATCH and PATCH_PERSIST params take precedence.
 	Scan ScanConfig `yaml:"scan,omitempty"`
+
+	// Test defines the melange test pipeline for this profile.
+	// When set, apexpacks runs `melange test` after a successful build to verify
+	// the packaged binary/artifact works correctly inside a clean sandbox.
+	Test TestConfig `yaml:"test,omitempty"`
+}
+
+// TestConfig is the test: block in a language profile YAML.
+// These steps run inside the melange test sandbox with the built package installed.
+// {APP_NAME} and language version tokens are substituted before execution.
+type TestConfig struct {
+	// Packages are extra APK packages installed in the test sandbox alongside
+	// the built package. Keep minimal — only what the test commands need.
+	Packages []string `yaml:"packages,omitempty"`
+
+	// Pipeline is the list of test steps to run.
+	Pipeline []MelangePipeline `yaml:"pipeline,omitempty"`
 }
 
 // ============================================================================
@@ -364,6 +381,20 @@ type MelangeConfig struct {
 	Package     MelangePackage     `yaml:"package"`
 	Environment MelangeEnvironment `yaml:"environment"`
 	Pipeline    []MelangePipeline  `yaml:"pipeline"`
+	Test        *MelangeTest       `yaml:"test,omitempty"`
+}
+
+// MelangeTest is the test: block in melange.yaml.
+// melange test installs the built package into a fresh sandbox and runs these steps.
+type MelangeTest struct {
+	Environment MelangeTestEnvironment `yaml:"environment,omitempty"`
+	Pipeline    []MelangePipeline      `yaml:"pipeline"`
+}
+
+// MelangeTestEnvironment defines packages available in the test sandbox.
+// The built package is installed automatically; list only extra test dependencies here.
+type MelangeTestEnvironment struct {
+	Contents MelangeContents `yaml:"contents"`
 }
 
 type MelangePackage struct {

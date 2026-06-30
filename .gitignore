@@ -6,6 +6,9 @@ bin/
 *.rsa
 *.rsa.pub
 
+# Demo prep notes (never commit)
+DEMO_BRIEF.md
+
 # macOS
 .DS_Store
 
