@@ -64,7 +64,8 @@ build:
   # Default: pip from requirements.txt
   command: |
     pip install --no-cache-dir -r requirements.txt --target ${{targets.destdir}}/app/deps
-    cp -r . ${{targets.destdir}}/app/src
+    mkdir -p ${{targets.destdir}}/app/src
+    tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
   env:
     PYTHONDONTWRITEBYTECODE: "1"
     PYTHONUNBUFFERED: "1"
@@ -89,7 +90,8 @@ build:
         - postgresql-dev
       command: |
         uv pip install -r requirements.txt --target ${{targets.destdir}}/app/deps
-        cp -r . ${{targets.destdir}}/app/src
+        mkdir -p ${{targets.destdir}}/app/src
+        tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
       env:
         PYTHONDONTWRITEBYTECODE: "1"
         PYTHONUNBUFFERED: "1"
@@ -109,7 +111,8 @@ build:
       command: |
         poetry export -f requirements.txt --output /tmp/requirements.txt --without-hashes --without dev
         pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
-        cp -r . ${{targets.destdir}}/app/src
+        mkdir -p ${{targets.destdir}}/app/src
+        tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
       env:
         PYTHONDONTWRITEBYTECODE: "1"
         PYTHONUNBUFFERED: "1"
@@ -124,7 +127,8 @@ build:
         pip install pipenv
         pipenv requirements > /tmp/requirements.txt
         pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
-        cp -r . ${{targets.destdir}}/app/src
+        mkdir -p ${{targets.destdir}}/app/src
+        tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
       env:
         PYTHONDONTWRITEBYTECODE: "1"
         PYTHONUNBUFFERED: "1"
