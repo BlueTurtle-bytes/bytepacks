@@ -66,6 +66,9 @@ build:
     pip install --no-cache-dir -r requirements.txt --target ${{targets.destdir}}/app/deps
     mkdir -p ${{targets.destdir}}/app/src
     tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
+    SITE_PKG=$(python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+    mkdir -p "${{targets.destdir}}${SITE_PKG}"
+    printf '/app/deps\n/app/src\n' > "${{targets.destdir}}${SITE_PKG}/apexpack-app.pth"
   env:
     PYTHONDONTWRITEBYTECODE: "1"
     PYTHONUNBUFFERED: "1"
@@ -92,6 +95,9 @@ build:
         uv pip install -r requirements.txt --target ${{targets.destdir}}/app/deps
         mkdir -p ${{targets.destdir}}/app/src
         tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
+        SITE_PKG=$(python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+        mkdir -p "${{targets.destdir}}${SITE_PKG}"
+        printf '/app/deps\n/app/src\n' > "${{targets.destdir}}${SITE_PKG}/apexpack-app.pth"
       env:
         PYTHONDONTWRITEBYTECODE: "1"
         PYTHONUNBUFFERED: "1"
@@ -113,6 +119,9 @@ build:
         pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
         mkdir -p ${{targets.destdir}}/app/src
         tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
+        SITE_PKG=$(python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+        mkdir -p "${{targets.destdir}}${SITE_PKG}"
+        printf '/app/deps\n/app/src\n' > "${{targets.destdir}}${SITE_PKG}/apexpack-app.pth"
       env:
         PYTHONDONTWRITEBYTECODE: "1"
         PYTHONUNBUFFERED: "1"
@@ -129,6 +138,9 @@ build:
         pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
         mkdir -p ${{targets.destdir}}/app/src
         tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
+        SITE_PKG=$(python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+        mkdir -p "${{targets.destdir}}${SITE_PKG}"
+        printf '/app/deps\n/app/src\n' > "${{targets.destdir}}${SITE_PKG}/apexpack-app.pth"
       env:
         PYTHONDONTWRITEBYTECODE: "1"
         PYTHONUNBUFFERED: "1"
