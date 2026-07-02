@@ -568,14 +568,12 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 				return types.MelangeConfig{}, fmt.Errorf("gradle init script template: %w", err)
 			}
 			initScript := strings.ReplaceAll(gradleTmpl, "{{GRADLE_MIRROR_URL}}", p.Build.GradleMirrorURL)
-			gradleStep := fmt.Sprintf(
-				"mkdir -p /home/build/.gradle/init.d\n"+
-					"cat > /home/build/.gradle/init.d/artifactory.gradle << APEXPACK_GRADLE_EOF\n"+
-					"%s"+
-					"APEXPACK_GRADLE_EOF\n"+
-					"echo \"→ Gradle init script: %s template, mirror: %s\"",
-				initScript, gradleTmplName, p.Build.GradleMirrorURL,
-			)
+			gradleStep := "mkdir -p /home/build/.gradle/init.d\n" +
+				"cat > /home/build/.gradle/init.d/artifactory.gradle << APEXPACK_GRADLE_EOF\n" +
+				initScript +
+				"APEXPACK_GRADLE_EOF\n" +
+				fmt.Sprintf("echo \"→ Gradle init script: %s template, mirror: %s\"", gradleTmplName, p.Build.GradleMirrorURL)
+
 			cfg.Pipeline = append(
 				[]types.MelangePipeline{{Runs: gradleStep}},
 				cfg.Pipeline...,

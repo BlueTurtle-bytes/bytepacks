@@ -326,6 +326,10 @@ type ProjectImageOverride struct {
 
 	// Entrypoint overrides the profile's entrypoint.
 	Entrypoint string `yaml:"entrypoint,omitempty"`
+
+	// Cmd overrides the profile's default cmd arguments.
+	// Example: ["-m", "uvicorn", "myapp:app", "--host=0.0.0.0", "--port=8000"]
+	Cmd []string `yaml:"cmd,omitempty"`
 }
 
 // ProjectBuildOverride lets a project add extra build deps or env vars.

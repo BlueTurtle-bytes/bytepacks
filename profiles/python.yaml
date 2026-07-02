@@ -155,12 +155,10 @@ image:
     - python-{PYTHON_VERSION}
     - ca-certificates-bundle=20260413-r0
   entrypoint: python3
+  # Default: run main.py directly. FastAPI/ASGI projects should override via
+  # apexpacks.yaml image.cmd: ["-m", "uvicorn", "main:app", "--host=0.0.0.0", "--port=8000"]
   cmd:
-    - "-m"
-    - "uvicorn"
-    - "main:app"
-    - "--host=0.0.0.0"
-    - "--port=8000"
+    - "main.py"
   run-as: 65532
   ports:
     - "8000"

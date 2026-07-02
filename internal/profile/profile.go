@@ -146,6 +146,9 @@ func MergeProjectConfig(p *types.Profile, proj *types.ProjectConfig) *types.Prof
 		if proj.Image.Entrypoint != "" {
 			merged.Image.Entrypoint = proj.Image.Entrypoint
 		}
+		if len(proj.Image.Cmd) > 0 {
+			merged.Image.Cmd = proj.Image.Cmd
+		}
 		if merged.Image.Env == nil {
 			merged.Image.Env = make(map[string]string)
 		}
