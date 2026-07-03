@@ -64,11 +64,11 @@ build:
     - unixodbc-dev    # odbc.h for pyodbc source builds on aarch64
   # Default: pip from requirements.txt
   command: |
-    pip install --no-cache-dir -r requirements.txt --target ${{targets.destdir}}/app/deps
+    python{PYTHON_VERSION} -m pip install --no-cache-dir -r requirements.txt --target ${{targets.destdir}}/app/deps
     mkdir -p ${{targets.destdir}}/app/src
     tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
     chmod -R a+rX ${{targets.destdir}}/app
-    SITE_PKG=$(python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+    SITE_PKG=$(python{PYTHON_VERSION} -c "import sysconfig; print(sysconfig.get_path('purelib'))")
     mkdir -p "${{targets.destdir}}${SITE_PKG}"
     printf '/app/deps\n/app/src\n' > "${{targets.destdir}}${SITE_PKG}/apexpack-app.pth"
   env:
@@ -95,11 +95,11 @@ build:
         - postgresql-dev
         - unixodbc-dev
       command: |
-        uv pip install -r requirements.txt --target ${{targets.destdir}}/app/deps
+        uv pip install --python python{PYTHON_VERSION} -r requirements.txt --target ${{targets.destdir}}/app/deps
         mkdir -p ${{targets.destdir}}/app/src
         tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
         chmod -R a+rX ${{targets.destdir}}/app
-        SITE_PKG=$(python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+        SITE_PKG=$(python{PYTHON_VERSION} -c "import sysconfig; print(sysconfig.get_path('purelib'))")
         mkdir -p "${{targets.destdir}}${SITE_PKG}"
         printf '/app/deps\n/app/src\n' > "${{targets.destdir}}${SITE_PKG}/apexpack-app.pth"
       env:
@@ -121,11 +121,11 @@ build:
         - unixodbc-dev
       command: |
         poetry export -f requirements.txt --output /tmp/requirements.txt --without-hashes --without dev
-        pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
+        python{PYTHON_VERSION} -m pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
         mkdir -p ${{targets.destdir}}/app/src
         tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
         chmod -R a+rX ${{targets.destdir}}/app
-        SITE_PKG=$(python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+        SITE_PKG=$(python{PYTHON_VERSION} -c "import sysconfig; print(sysconfig.get_path('purelib'))")
         mkdir -p "${{targets.destdir}}${SITE_PKG}"
         printf '/app/deps\n/app/src\n' > "${{targets.destdir}}${SITE_PKG}/apexpack-app.pth"
       env:
@@ -139,13 +139,13 @@ build:
 
     pipenv:
       command: |
-        pip install pipenv
+        python{PYTHON_VERSION} -m pip install pipenv
         pipenv requirements > /tmp/requirements.txt
-        pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
+        python{PYTHON_VERSION} -m pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
         mkdir -p ${{targets.destdir}}/app/src
         tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
         chmod -R a+rX ${{targets.destdir}}/app
-        SITE_PKG=$(python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+        SITE_PKG=$(python{PYTHON_VERSION} -c "import sysconfig; print(sysconfig.get_path('purelib'))")
         mkdir -p "${{targets.destdir}}${SITE_PKG}"
         printf '/app/deps\n/app/src\n' > "${{targets.destdir}}${SITE_PKG}/apexpack-app.pth"
       env:
@@ -189,14 +189,3 @@ test:
         python3 --version
         echo "✓ Python app structure at /app is valid"
 
-
-docker run --rm --entrypoint python3 <your-image> -c "
-import os, sys
-print('PYTHONPATH:', os.environ.get('PYTHONPATH', 'NOT SET'))
-print('Python:', sys.version)
-try:
-    deps = os.listdir('/app/deps')
-    print('pyodbc in deps:', [f for f in deps if 'odbc' in f.lower()] or 'NOT FOUND')
-except Exception as e:
-    print('/app/deps error:', e)
-"
