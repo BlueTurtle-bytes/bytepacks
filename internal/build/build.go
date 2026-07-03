@@ -516,23 +516,95 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 		}
 	}
 
-	// isGradleFramework is true for any framework that uses Gradle as its build tool.
-	// Maven settings.xml injection must be skipped for these; they need an init script instead.
-	isGradleFramework := strings.HasSuffix(opts.Framework, "-gradle")
+	// Java only: inject Maven settings.xml and/or Gradle init script for corporate mirrors.
+	if p.Runtime == "java" {
+		isGradleFramework := strings.HasSuffix(opts.Framework, "-gradle")
 
-	// Inject a Maven settings.xml step for corporate Artifactory mirrors.
-	// Fires when maven_mirror_url is set AND either:
-	//   a) ARTI_USER is present (credentials from regcred docker secret), or
-	//   b) a custom template exists in the profiles dir (template supplies its own auth).
-	// Skipped for Gradle frameworks — Gradle does not read ~/.m2/settings.xml.
-	if !isGradleFramework {
-		tmplName := p.Build.MavenSettingsTemplate
-		if tmplName == "" {
-			tmplName = "default"
+		// Maven: skipped for Gradle frameworks — Gradle does not read ~/.m2/settings.xml.
+		if !isGradleFramework {
+			tmplName := p.Build.MavenSettingsTemplate
+			if tmplName == "" {
+				tmplName = "default"
+			}
+			customTemplatePath := filepath.Join(opts.ProfilesDir, "templates", "maven", tmplName+".xml")
+			_, customTemplateExists := os.Stat(customTemplatePath)
+			if p.Build.MavenMirrorURL != "" && (os.Getenv("ARTI_USER") != "" || customTemplateExists == nil) {
+				if cfg.Environment.Env == nil {
+					cfg.Environment.Env = make(map[string]string)
+				}
+				for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD"} {
+					if val := os.Getenv(key); val != "" {
+						if _, exists := cfg.Environment.Env[key]; !exists {
+							cfg.Environment.Env[key] = val
+						}
+					}
+				}
+				tmpl, err := loadMavenTemplate(tmplName, opts.ProfilesDir)
+				if err != nil {
+					return types.MelangeConfig{}, fmt.Errorf("maven settings template: %w", err)
+				}
+				settingsXML := strings.ReplaceAll(tmpl, "{{MAVEN_MIRROR_URL}}", p.Build.MavenMirrorURL)
+				mirrorStep := fmt.Sprintf(
+					"mkdir -p /home/build/.m2\n"+
+						"cat > /home/build/.m2/settings.xml << APEXPACK_SETTINGS_EOF\n"+
+						"%s"+
+						"APEXPACK_SETTINGS_EOF\n"+
+						"echo \"→ Maven settings: %s template, mirror: %s\"",
+					settingsXML, tmplName, p.Build.MavenMirrorURL,
+				)
+				cfg.Pipeline = append(
+					[]types.MelangePipeline{{Runs: mirrorStep}},
+					cfg.Pipeline...,
+				)
+			}
 		}
-		customTemplatePath := filepath.Join(opts.ProfilesDir, "templates", "maven", tmplName+".xml")
-		_, customTemplateExists := os.Stat(customTemplatePath)
-		if p.Build.MavenMirrorURL != "" && (os.Getenv("ARTI_USER") != "" || customTemplateExists == nil) {
+
+		// Gradle: inject init script for corporate Artifactory mirrors.
+		if isGradleFramework {
+			gradleTmplName := p.Build.GradleSettingsTemplate
+			if gradleTmplName == "" {
+				gradleTmplName = "corporate"
+			}
+			gradleCustomPath := filepath.Join(opts.ProfilesDir, "templates", "gradle", gradleTmplName+".gradle")
+			_, gradleCustomExists := os.Stat(gradleCustomPath)
+			if p.Build.GradleMirrorURL != "" && (os.Getenv("ARTI_USER") != "" || gradleCustomExists == nil) {
+				if cfg.Environment.Env == nil {
+					cfg.Environment.Env = make(map[string]string)
+				}
+				for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD"} {
+					if val := os.Getenv(key); val != "" {
+						if _, exists := cfg.Environment.Env[key]; !exists {
+							cfg.Environment.Env[key] = val
+						}
+					}
+				}
+				gradleTmpl, err := loadGradleTemplate(gradleTmplName, opts.ProfilesDir)
+				if err != nil {
+					return types.MelangeConfig{}, fmt.Errorf("gradle init script template: %w", err)
+				}
+				initScript := strings.ReplaceAll(gradleTmpl, "{{GRADLE_MIRROR_URL}}", p.Build.GradleMirrorURL)
+				gradleStep := "mkdir -p /home/build/.gradle/init.d\n" +
+					"cat > /home/build/.gradle/init.d/artifactory.gradle << APEXPACK_GRADLE_EOF\n" +
+					initScript +
+					"APEXPACK_GRADLE_EOF\n" +
+					fmt.Sprintf("echo \"→ Gradle init script: %s template, mirror: %s\"", gradleTmplName, p.Build.GradleMirrorURL)
+				cfg.Pipeline = append(
+					[]types.MelangePipeline{{Runs: gradleStep}},
+					cfg.Pipeline...,
+				)
+			}
+		}
+	}
+
+	// .NET only: inject NuGet.Config for corporate Artifactory NuGet feeds.
+	if p.Runtime == "dotnet" {
+		nugetTmplName := p.Build.NuGetSettingsTemplate
+		if nugetTmplName == "" {
+			nugetTmplName = "default"
+		}
+		nugetCustomTemplatePath := filepath.Join(opts.ProfilesDir, "templates", "nuget", nugetTmplName+".xml")
+		_, nugetCustomTemplateExists := os.Stat(nugetCustomTemplatePath)
+		if p.Build.NuGetMirrorURL != "" && (os.Getenv("ARTI_USER") != "" || nugetCustomTemplateExists == nil) {
 			if cfg.Environment.Env == nil {
 				cfg.Environment.Env = make(map[string]string)
 			}
@@ -543,111 +615,24 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 					}
 				}
 			}
-			tmpl, err := loadMavenTemplate(tmplName, opts.ProfilesDir)
+			nugetTmpl, err := loadNuGetTemplate(nugetTmplName, opts.ProfilesDir)
 			if err != nil {
-				return types.MelangeConfig{}, fmt.Errorf("maven settings template: %w", err)
+				return types.MelangeConfig{}, fmt.Errorf("nuget config template: %w", err)
 			}
-			settingsXML := strings.ReplaceAll(tmpl, "{{MAVEN_MIRROR_URL}}", p.Build.MavenMirrorURL)
-			mirrorStep := fmt.Sprintf(
-				"mkdir -p /home/build/.m2\n"+
-					"cat > /home/build/.m2/settings.xml << APEXPACK_SETTINGS_EOF\n"+
+			nugetConfigXML := strings.ReplaceAll(nugetTmpl, "{{NUGET_MIRROR_URL}}", p.Build.NuGetMirrorURL)
+			nugetConfigStep := fmt.Sprintf(
+				"mkdir -p /home/build/.nuget/NuGet\n"+
+					"cat > /home/build/.nuget/NuGet/NuGet.Config << APEXPACK_NUGET_EOF\n"+
 					"%s"+
-					"APEXPACK_SETTINGS_EOF\n"+
-					"echo \"→ Maven settings: %s template, mirror: %s\"",
-				settingsXML, tmplName, p.Build.MavenMirrorURL,
+					"APEXPACK_NUGET_EOF\n"+
+					"echo \"→ NuGet config: %s template, mirror: %s\"",
+				nugetConfigXML, nugetTmplName, p.Build.NuGetMirrorURL,
 			)
 			cfg.Pipeline = append(
-				[]types.MelangePipeline{{Runs: mirrorStep}},
+				[]types.MelangePipeline{{Runs: nugetConfigStep}},
 				cfg.Pipeline...,
 			)
 		}
-	}
-
-	// Inject a Gradle init script for corporate Artifactory mirrors.
-	// Written to ~/.gradle/init.d/artifactory.gradle so Gradle picks it up automatically.
-	// Covers project repositories, buildscript classpath, and plugin resolution.
-	// Fires when gradle_mirror_url is set AND either:
-	//   a) ARTI_USER is present, or
-	//   b) a custom template exists in the profiles dir.
-	fmt.Printf("  [gradle-debug] framework=%q isGradleFramework=%v gradleMirrorURL=%q gradleTemplate=%q profilesDir=%q\n",
-		opts.Framework, isGradleFramework, p.Build.GradleMirrorURL, p.Build.GradleSettingsTemplate, opts.ProfilesDir)
-	if isGradleFramework {
-		gradleTmplName := p.Build.GradleSettingsTemplate
-		if gradleTmplName == "" {
-			gradleTmplName = "corporate"
-		}
-		gradleCustomPath := filepath.Join(opts.ProfilesDir, "templates", "gradle", gradleTmplName+".gradle")
-		_, gradleCustomExists := os.Stat(gradleCustomPath)
-		fmt.Printf("  [gradle-debug] tmplName=%q customPath=%q customExists=%v artiUser=%v\n",
-			gradleTmplName, gradleCustomPath, gradleCustomExists == nil, os.Getenv("ARTI_USER") != "")
-		if p.Build.GradleMirrorURL != "" && (os.Getenv("ARTI_USER") != "" || gradleCustomExists == nil) {
-			if cfg.Environment.Env == nil {
-				cfg.Environment.Env = make(map[string]string)
-			}
-			for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD"} {
-				if val := os.Getenv(key); val != "" {
-					if _, exists := cfg.Environment.Env[key]; !exists {
-						cfg.Environment.Env[key] = val
-					}
-				}
-			}
-			gradleTmpl, err := loadGradleTemplate(gradleTmplName, opts.ProfilesDir)
-			if err != nil {
-				return types.MelangeConfig{}, fmt.Errorf("gradle init script template: %w", err)
-			}
-			initScript := strings.ReplaceAll(gradleTmpl, "{{GRADLE_MIRROR_URL}}", p.Build.GradleMirrorURL)
-			gradleStep := "mkdir -p /home/build/.gradle/init.d\n" +
-				"cat > /home/build/.gradle/init.d/artifactory.gradle << APEXPACK_GRADLE_EOF\n" +
-				initScript +
-				"APEXPACK_GRADLE_EOF\n" +
-				fmt.Sprintf("echo \"→ Gradle init script: %s template, mirror: %s\"", gradleTmplName, p.Build.GradleMirrorURL)
-
-			cfg.Pipeline = append(
-				[]types.MelangePipeline{{Runs: gradleStep}},
-				cfg.Pipeline...,
-			)
-		}
-	}
-
-	// Inject a NuGet.Config for corporate Artifactory NuGet feeds.
-	// Fires when nuget_mirror_url is set AND either:
-	//   a) ARTI_USER is present (credentials from regcred docker secret), or
-	//   b) a custom template exists in the profiles dir (template supplies its own auth).
-	// Without either, skipped so builds work locally and in OSS CI without Artifactory.
-	nugetTmplName := p.Build.NuGetSettingsTemplate
-	if nugetTmplName == "" {
-		nugetTmplName = "default"
-	}
-	nugetCustomTemplatePath := filepath.Join(opts.ProfilesDir, "templates", "nuget", nugetTmplName+".xml")
-	_, nugetCustomTemplateExists := os.Stat(nugetCustomTemplatePath)
-	if p.Build.NuGetMirrorURL != "" && (os.Getenv("ARTI_USER") != "" || nugetCustomTemplateExists == nil) {
-		if cfg.Environment.Env == nil {
-			cfg.Environment.Env = make(map[string]string)
-		}
-		for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD"} {
-			if val := os.Getenv(key); val != "" {
-				if _, exists := cfg.Environment.Env[key]; !exists {
-					cfg.Environment.Env[key] = val
-				}
-			}
-		}
-		nugetTmpl, err := loadNuGetTemplate(nugetTmplName, opts.ProfilesDir)
-		if err != nil {
-			return types.MelangeConfig{}, fmt.Errorf("nuget config template: %w", err)
-		}
-		nugetConfigXML := strings.ReplaceAll(nugetTmpl, "{{NUGET_MIRROR_URL}}", p.Build.NuGetMirrorURL)
-		nugetConfigStep := fmt.Sprintf(
-			"mkdir -p /home/build/.nuget/NuGet\n"+
-				"cat > /home/build/.nuget/NuGet/NuGet.Config << APEXPACK_NUGET_EOF\n"+
-				"%s"+
-				"APEXPACK_NUGET_EOF\n"+
-				"echo \"→ NuGet config: %s template, mirror: %s\"",
-			nugetConfigXML, nugetTmplName, p.Build.NuGetMirrorURL,
-		)
-		cfg.Pipeline = append(
-			[]types.MelangePipeline{{Runs: nugetConfigStep}},
-			cfg.Pipeline...,
-		)
 	}
 
 	// Build the test section when the profile defines test steps.
