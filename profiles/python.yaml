@@ -61,6 +61,7 @@ build:
     - build-base
     - git
     - postgresql-dev  # pg_config for psycopg2/psycopg2-binary source builds on aarch64
+    - unixodbc-dev    # odbc.h for pyodbc source builds on aarch64
   # Default: pip from requirements.txt
   command: |
     pip install --no-cache-dir -r requirements.txt --target ${{targets.destdir}}/app/deps
@@ -92,6 +93,7 @@ build:
         - build-base
         - git
         - postgresql-dev
+        - unixodbc-dev
       command: |
         uv pip install -r requirements.txt --target ${{targets.destdir}}/app/deps
         mkdir -p ${{targets.destdir}}/app/src
@@ -116,6 +118,7 @@ build:
         - build-base
         - git
         - postgresql-dev
+        - unixodbc-dev
       command: |
         poetry export -f requirements.txt --output /tmp/requirements.txt --without-hashes --without dev
         pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
