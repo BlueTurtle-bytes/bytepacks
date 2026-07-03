@@ -225,11 +225,24 @@ func detectNodeVersion(srcDir string) string {
 			return m[1]
 		}
 	}
-	// package.json engines.node: ">=20", "20.x", "^20.0.0"
+	// package.json — volta.node (pinned exact version, highest priority)
 	if data, err := os.ReadFile(filepath.Join(srcDir, "package.json")); err == nil {
-		re := regexp.MustCompile(`"node"\s*:\s*"[><=^~v]*(\d+)`)
-		if m := re.FindSubmatch(data); len(m) == 2 {
+		reVolta := regexp.MustCompile(`"volta"\s*:\s*\{[^}]*"node"\s*:\s*"v?(\d+)`)
+		if m := reVolta.FindSubmatch(data); len(m) == 2 {
 			return string(m[1])
+		}
+		// engines.node minimum range ">=18", ">18", ">=18.*.*":
+		// treat as "18 or higher" — return "" so the default (Node 20) applies.
+		reMin := regexp.MustCompile(`"node"\s*:\s*">=?v?(\d+)`)
+		if reMin.Match(data) {
+			return ""
+		}
+		// engines.node pinned to a major: "18", "18.x", "^18.0.0", "~18"
+		rePinned := regexp.MustCompile(`"node"\s*:\s*"[^><=\s][^"]*"`)
+		if m := rePinned.Find(data); m != nil {
+			if n := regexp.MustCompile(`\d+`).Find(m); n != nil {
+				return string(n)
+			}
 		}
 	}
 	return ""
