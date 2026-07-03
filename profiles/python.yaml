@@ -64,6 +64,7 @@ build:
     - unixodbc-dev    # odbc.h for pyodbc source builds on aarch64
   # Default: pip from requirements.txt
   command: |
+    python{PYTHON_VERSION} -m ensurepip --upgrade
     python{PYTHON_VERSION} -m pip install --no-cache-dir -r requirements.txt --target ${{targets.destdir}}/app/deps
     mkdir -p ${{targets.destdir}}/app/src
     tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
@@ -121,6 +122,7 @@ build:
         - unixodbc-dev
       command: |
         poetry export -f requirements.txt --output /tmp/requirements.txt --without-hashes --without dev
+        python{PYTHON_VERSION} -m ensurepip --upgrade
         python{PYTHON_VERSION} -m pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
         mkdir -p ${{targets.destdir}}/app/src
         tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
@@ -139,6 +141,7 @@ build:
 
     pipenv:
       command: |
+        python{PYTHON_VERSION} -m ensurepip --upgrade
         python{PYTHON_VERSION} -m pip install pipenv
         pipenv requirements > /tmp/requirements.txt
         python{PYTHON_VERSION} -m pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
