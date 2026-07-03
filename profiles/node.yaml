@@ -59,11 +59,14 @@ build:
     - git
   # Default: npm. Installs prod deps only in final output.
   command: |
-    npm ci --prefer-offline
+    if [ -f "package-lock.json" ]; then
+      npm ci --prefer-offline
+    else
+      npm install --prefer-offline
+    fi
     npm run build --if-present
     mkdir -p ${{targets.destdir}}/app
-    cp -r . ${{targets.destdir}}/app/
-    rm -rf ${{targets.destdir}}/app/node_modules
+    tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . | tar -C ${{targets.destdir}}/app -xf -
     cd ${{targets.destdir}}/app && npm ci --omit=dev --prefer-offline
   env:
     NODE_ENV: "production"
@@ -87,11 +90,14 @@ build:
         - git
       command: |
         npm install -g pnpm
-        pnpm install --frozen-lockfile
+        if [ -f "pnpm-lock.yaml" ]; then
+          pnpm install --frozen-lockfile
+        else
+          pnpm install
+        fi
         pnpm run build --if-present
         mkdir -p ${{targets.destdir}}/app
-        cp -r . ${{targets.destdir}}/app/
-        rm -rf ${{targets.destdir}}/app/node_modules
+        tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . | tar -C ${{targets.destdir}}/app -xf -
         cd ${{targets.destdir}}/app && pnpm install --frozen-lockfile --prod
       env:
         NODE_ENV: "production"
@@ -123,11 +129,14 @@ build:
 
     yarn:
       command: |
-        yarn install --frozen-lockfile
+        if [ -f "yarn.lock" ]; then
+          yarn install --frozen-lockfile
+        else
+          yarn install
+        fi
         yarn build --if-present
         mkdir -p ${{targets.destdir}}/app
-        cp -r . ${{targets.destdir}}/app/
-        rm -rf ${{targets.destdir}}/app/node_modules
+        tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . | tar -C ${{targets.destdir}}/app -xf -
         cd ${{targets.destdir}}/app && yarn install --frozen-lockfile --production
       env:
         NODE_ENV: "production"
@@ -141,7 +150,7 @@ build:
         yarn install --immutable
         yarn build --if-present
         mkdir -p ${{targets.destdir}}/app
-        cp -r . ${{targets.destdir}}/app/
+        tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . | tar -C ${{targets.destdir}}/app -xf -
         cd ${{targets.destdir}}/app && yarn workspaces focus --production
       env:
         NODE_ENV: "production"

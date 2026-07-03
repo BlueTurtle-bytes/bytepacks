@@ -323,6 +323,10 @@ Examples:
 			}
 			if projCfg != nil {
 				matchedProfile = profile.MergeProjectConfig(matchedProfile, projCfg)
+				if projCfg.LanguageVersion != "" {
+					detectedLangVersion = projCfg.LanguageVersion
+					fmt.Printf("  → language_version overridden by apexpacks.yaml: %s\n", detectedLangVersion)
+				}
 				fmt.Println("  → Merged apexpacks.yaml project overrides")
 			}
 

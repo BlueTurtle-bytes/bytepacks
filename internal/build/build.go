@@ -814,6 +814,16 @@ func langVersionToken(runtime string) string {
 // Versions not in this set will cause an apk solve failure at build time.
 var supportedLangVersions = map[string][]string{
 	"dotnet": {"8", "9", "10"},
+	"node":   {"18", "20", "22"},
+}
+
+// warnFallbackRuntimes are runtimes where an unsupported detected version produces
+// a warning and falls back to the default rather than a hard error. This is appropriate
+// for Node where EOL versions (.nvmrc says "14") are common but the app usually runs
+// fine on the current LTS. dotnet is NOT in this set because version mismatches there
+// are a hard compile-time failure.
+var warnFallbackRuntimes = map[string]bool{
+	"node": true,
 }
 
 // javaHomeDirVersion returns the JVM directory version for JAVA_HOME paths.
@@ -847,12 +857,27 @@ func fixJavaHome(env map[string]string, runtime, version string) map[string]stri
 	return out
 }
 
-// resolveVersion returns the detected version, falling back to the built-in default.
+// resolveVersion returns the effective language version for the given runtime.
+// Falls back to the built-in default when nothing was detected.
+// For runtimes in warnFallbackRuntimes, if the detected version is not in
+// supportedLangVersions it warns and returns the default instead of passing
+// through an unsupported version that will fail at apk solve time.
 func resolveVersion(runtime, detected string) string {
-	if detected != "" {
-		return detected
+	def := defaultLangVersions[runtime]
+	if detected == "" {
+		return def
 	}
-	return defaultLangVersions[runtime]
+	if supported, ok := supportedLangVersions[runtime]; ok && warnFallbackRuntimes[runtime] {
+		for _, v := range supported {
+			if v == detected {
+				return detected
+			}
+		}
+		fmt.Printf("  → WARN: %s version %q is not available in Wolfi (supported: %s) — using %s instead\n",
+			runtime, detected, strings.Join(supported, ", "), def)
+		return def
+	}
+	return detected
 }
 
 // validateRuntimeVersion returns an error if the resolved version is not available

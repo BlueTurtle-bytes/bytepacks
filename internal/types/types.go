@@ -305,6 +305,10 @@ type ProjectConfig struct {
 	// Runtime overrides auto-detection (e.g. "golang", "java").
 	Runtime string `yaml:"runtime,omitempty"`
 
+	// LanguageVersion overrides the version detected from source files
+	// (e.g. "22" to force Node 22 when engines field is absent or too broad).
+	LanguageVersion string `yaml:"language_version,omitempty"`
+
 	// Image overrides are merged on top of the profile's image config.
 	// Packages are appended, not replaced. Env vars are merged (project wins).
 	Image *ProjectImageOverride `yaml:"image,omitempty"`
