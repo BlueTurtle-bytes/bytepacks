@@ -68,6 +68,7 @@ build:
     mkdir -p ${{targets.destdir}}/app
     tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . | tar -C ${{targets.destdir}}/app -xf -
     cd ${{targets.destdir}}/app && npm ci --omit=dev --prefer-offline
+    chmod -R a+rX ${{targets.destdir}}/app
   env:
     NODE_ENV: "production"
     NPM_CONFIG_CACHE: "/home/build/.npm"
@@ -99,6 +100,7 @@ build:
         mkdir -p ${{targets.destdir}}/app
         tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . | tar -C ${{targets.destdir}}/app -xf -
         cd ${{targets.destdir}}/app && pnpm install --frozen-lockfile --prod
+        chmod -R a+rX ${{targets.destdir}}/app
       env:
         NODE_ENV: "production"
         PNPM_HOME: "/home/build/.local/share/pnpm"
@@ -117,9 +119,9 @@ build:
         bun install --frozen-lockfile
         bun run build --if-present
         mkdir -p ${{targets.destdir}}/app
-        cp -r . ${{targets.destdir}}/app/
-        rm -rf ${{targets.destdir}}/app/node_modules
+        tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . | tar -C ${{targets.destdir}}/app -xf -
         cd ${{targets.destdir}}/app && bun install --frozen-lockfile --production
+        chmod -R a+rX ${{targets.destdir}}/app
       env:
         NODE_ENV: "production"
         BUN_INSTALL_CACHE_DIR: "/home/build/.bun/install/cache"
@@ -138,6 +140,7 @@ build:
         mkdir -p ${{targets.destdir}}/app
         tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . | tar -C ${{targets.destdir}}/app -xf -
         cd ${{targets.destdir}}/app && yarn install --frozen-lockfile --production
+        chmod -R a+rX ${{targets.destdir}}/app
       env:
         NODE_ENV: "production"
         YARN_CACHE_FOLDER: "/home/build/.yarn/cache"
@@ -152,6 +155,7 @@ build:
         mkdir -p ${{targets.destdir}}/app
         tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . | tar -C ${{targets.destdir}}/app -xf -
         cd ${{targets.destdir}}/app && yarn workspaces focus --production
+        chmod -R a+rX ${{targets.destdir}}/app
       env:
         NODE_ENV: "production"
         YARN_CACHE_FOLDER: "/home/build/.yarn/cache"
