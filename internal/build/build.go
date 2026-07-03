@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -191,6 +192,33 @@ func Plan(p *types.Profile, opts Options) (*types.BuildPlan, error) {
 		Melange:        melangeCfg,
 		Apko:           buildApkoConfig(p, opts),
 	}, nil
+}
+
+// readNodeEntrypoint detects the Node.js entry point from package.json.
+// Checks scripts.start (for "node <file>") then the main field.
+// Returns an absolute /app/... path, or "" if nothing useful is found.
+func readNodeEntrypoint(srcDir string) string {
+	data, err := os.ReadFile(filepath.Join(srcDir, "package.json"))
+	if err != nil {
+		return ""
+	}
+	// scripts.start: "node server.js" or "node dist/index.js"
+	if m := regexp.MustCompile(`"start"\s*:\s*"node\s+(\S+\.m?js)"`).FindSubmatch(data); len(m) == 2 {
+		entry := string(m[1])
+		if !strings.HasPrefix(entry, "/") {
+			entry = "/app/" + entry
+		}
+		return entry
+	}
+	// main: "index.js" or "dist/server.js"
+	if m := regexp.MustCompile(`"main"\s*:\s*"([^"]+\.m?js)"`).FindSubmatch(data); len(m) == 2 {
+		entry := string(m[1])
+		if !strings.HasPrefix(entry, "/") {
+			entry = "/app/" + entry
+		}
+		return entry
+	}
+	return ""
 }
 
 // readProcfileCmd parses the "web:" process from a Procfile and returns its command.
@@ -733,6 +761,14 @@ func buildApkoConfig(p *types.Profile, opts Options) types.ApkoConfig {
 			if len(parts) > 1 {
 				cmd = parts[1:]
 			}
+		}
+	}
+	// Node: auto-detect entry point from package.json when cmd is still the profile default.
+	// Priority: apexpacks.yaml image.cmd > package.json scripts.start / main > /app (directory fallback).
+	if p.Runtime == "node" && len(cmd) == 1 && cmd[0] == "/app/server.js" {
+		if entry := readNodeEntrypoint(opts.SourceDir); entry != "" {
+			fmt.Printf("  → node entry point detected: %s\n", entry)
+			cmd = []string{entry}
 		}
 	}
 
