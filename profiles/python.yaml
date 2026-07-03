@@ -188,3 +188,15 @@ test:
         test -d /app/deps || { echo "ERROR: /app/deps not found"; exit 1; }
         python3 --version
         echo "✓ Python app structure at /app is valid"
+
+
+docker run --rm --entrypoint python3 <your-image> -c "
+import os, sys
+print('PYTHONPATH:', os.environ.get('PYTHONPATH', 'NOT SET'))
+print('Python:', sys.version)
+try:
+    deps = os.listdir('/app/deps')
+    print('pyodbc in deps:', [f for f in deps if 'odbc' in f.lower()] or 'NOT FOUND')
+except Exception as e:
+    print('/app/deps error:', e)
+"
