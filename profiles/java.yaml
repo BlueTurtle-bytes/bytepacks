@@ -128,11 +128,14 @@ build:
     fi
     echo "→ cacerts: type=${CACERTS_TYPE}, password='${CACERTS_PASS}'"
     # PRIMARY: import corp CA directly into system cacerts — every JVM process uses it
-    # by default, including the Gradle wrapper that downloads the distribution
+    # by default, including the Gradle wrapper that downloads the distribution.
+    # Write a marker file on success so Gradle build commands can skip the
+    # JAVA_TOOL_OPTIONS override and let the wrapper use system cacerts natively.
+    rm -f /home/build/.apexpack-syscacerts-ok
     "$KEYTOOL" -importcert -noprompt -alias apexpack-corp-ca \
       -file /home/build/.apexpack-ca.crt \
       -keystore "$JAVA_CACERTS" -storetype "$CACERTS_TYPE" -storepass "$CACERTS_PASS" 2>&1 \
-      && echo "→ Corp CA imported into system cacerts" \
+      && { echo "→ Corp CA imported into system cacerts"; touch /home/build/.apexpack-syscacerts-ok; } \
       || echo "WARN: system cacerts import failed (read-only?)"
     # FALLBACK: copy system cacerts exactly (no format conversion — preserves all public
     # CA trust entries in native format), then add corp CA to the copy.
@@ -172,7 +175,9 @@ build:
       command: |
         [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
         export PATH="$JAVA_HOME/bin:$PATH"
-        if [ -f "/home/build/.apexpack-truststore.jks" ]; then
+        if [ ! -f "/home/build/.apexpack-syscacerts-ok" ] && [ -f "/home/build/.apexpack-truststore.jks" ]; then
+          # System cacerts import failed — fall back to explicit truststore override.
+          # When system cacerts succeeds, the wrapper uses it directly (no override needed).
           TS_TYPE=$(cat /home/build/.apexpack-ts-type 2>/dev/null || echo "JKS")
           TS_PASS=$(cat /home/build/.apexpack-ts-pass 2>/dev/null || echo "changeit")
           export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=${TS_TYPE} -Djavax.net.ssl.trustStorePassword=${TS_PASS}"
@@ -187,7 +192,9 @@ build:
       command: |
         [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
         export PATH="$JAVA_HOME/bin:$PATH"
-        if [ -f "/home/build/.apexpack-truststore.jks" ]; then
+        if [ ! -f "/home/build/.apexpack-syscacerts-ok" ] && [ -f "/home/build/.apexpack-truststore.jks" ]; then
+          # System cacerts import failed — fall back to explicit truststore override.
+          # When system cacerts succeeds, the wrapper uses it directly (no override needed).
           TS_TYPE=$(cat /home/build/.apexpack-ts-type 2>/dev/null || echo "JKS")
           TS_PASS=$(cat /home/build/.apexpack-ts-pass 2>/dev/null || echo "changeit")
           export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=${TS_TYPE} -Djavax.net.ssl.trustStorePassword=${TS_PASS}"
@@ -202,7 +209,9 @@ build:
       command: |
         [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
         export PATH="$JAVA_HOME/bin:$PATH"
-        if [ -f "/home/build/.apexpack-truststore.jks" ]; then
+        if [ ! -f "/home/build/.apexpack-syscacerts-ok" ] && [ -f "/home/build/.apexpack-truststore.jks" ]; then
+          # System cacerts import failed — fall back to explicit truststore override.
+          # When system cacerts succeeds, the wrapper uses it directly (no override needed).
           TS_TYPE=$(cat /home/build/.apexpack-ts-type 2>/dev/null || echo "JKS")
           TS_PASS=$(cat /home/build/.apexpack-ts-pass 2>/dev/null || echo "changeit")
           export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=${TS_TYPE} -Djavax.net.ssl.trustStorePassword=${TS_PASS}"
