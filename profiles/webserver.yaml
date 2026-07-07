@@ -84,8 +84,8 @@ build:
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
         if [ -f "nginx.conf" ]; then
-          mkdir -p ${{targets.destdir}}/etc/nginx
-          cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
+          mkdir -p ${{targets.destdir}}/etc/nginx/http.d
+          cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
         fi
     vite:
       command: |
@@ -100,8 +100,8 @@ build:
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
         if [ -f "nginx.conf" ]; then
-          mkdir -p ${{targets.destdir}}/etc/nginx
-          cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
+          mkdir -p ${{targets.destdir}}/etc/nginx/http.d
+          cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
         fi
     react:
       # CRA output is build/, not dist/. Vite+React projects are detected as vite, not react.
@@ -117,8 +117,8 @@ build:
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r build/. ${{targets.destdir}}/usr/share/nginx/html/
         if [ -f "nginx.conf" ]; then
-          mkdir -p ${{targets.destdir}}/etc/nginx
-          cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
+          mkdir -p ${{targets.destdir}}/etc/nginx/http.d
+          cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
         fi
     vue:
       command: |
@@ -133,8 +133,8 @@ build:
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
         if [ -f "nginx.conf" ]; then
-          mkdir -p ${{targets.destdir}}/etc/nginx
-          cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
+          mkdir -p ${{targets.destdir}}/etc/nginx/http.d
+          cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
         fi
     svelte:
       command: |
@@ -149,8 +149,8 @@ build:
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r build/. ${{targets.destdir}}/usr/share/nginx/html/
         if [ -f "nginx.conf" ]; then
-          mkdir -p ${{targets.destdir}}/etc/nginx
-          cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
+          mkdir -p ${{targets.destdir}}/etc/nginx/http.d
+          cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
         fi
 
 image:
