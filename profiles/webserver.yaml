@@ -54,7 +54,7 @@ detect:
 
 build:
   # For plain static sites, no build step is needed — just copy files.
-  # For SPAs (React/Vue/Vite), npm ci && npm run build compiles assets.
+  # For SPAs (React/Vue/Vite), the framework command installs deps and builds.
   dependencies:
     - busybox
     - nodejs
@@ -62,8 +62,12 @@ build:
     - git
   # Default: plain HTML — no build tool, just copy static files.
   command: |
-    mkdir -p /home/build/output/html
-    cp -r . /home/build/output/html/
+    mkdir -p ${{targets.destdir}}/usr/share/nginx/html
+    cp -r . ${{targets.destdir}}/usr/share/nginx/html/
+    if [ -f "nginx.conf" ]; then
+      mkdir -p ${{targets.destdir}}/etc/nginx
+      cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
+    fi
   env:
     NODE_ENV: "production"
     CI: "true"
@@ -71,35 +75,82 @@ build:
   frameworks:
     angular:
       command: |
-        npm ci --prefer-offline
-        npm run build
-        mkdir -p /home/build/output/html
-        cp -r dist/. /home/build/output/html/
+        if [ -f "yarn.lock" ]; then yarn install --frozen-lockfile
+        elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
+        elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
+        else npm ci --prefer-offline; fi
+        npm run build 2>/dev/null || yarn build 2>/dev/null || pnpm run build 2>/dev/null || bun run build
+        mkdir -p ${{targets.destdir}}/usr/share/nginx/html
+        cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
+        if [ -f "nginx.conf" ]; then
+          mkdir -p ${{targets.destdir}}/etc/nginx
+          cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
+        fi
     vite:
       command: |
-        npm ci --prefer-offline
-        npm run build
-        mkdir -p /home/build/output/html
-        cp -r dist/. /home/build/output/html/
+        if [ -f "yarn.lock" ]; then yarn install --frozen-lockfile
+        elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
+        elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
+        else npm ci --prefer-offline; fi
+        if [ -f "yarn.lock" ]; then yarn build
+        elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
+        elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
+        else npm run build; fi
+        mkdir -p ${{targets.destdir}}/usr/share/nginx/html
+        cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
+        if [ -f "nginx.conf" ]; then
+          mkdir -p ${{targets.destdir}}/etc/nginx
+          cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
+        fi
     react:
       # CRA output is build/, not dist/. Vite+React projects are detected as vite, not react.
       command: |
-        npm ci --prefer-offline
-        npm run build
-        mkdir -p /home/build/output/html
-        cp -r build/. /home/build/output/html/
+        if [ -f "yarn.lock" ]; then yarn install --frozen-lockfile
+        elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
+        elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
+        else npm ci --prefer-offline; fi
+        if [ -f "yarn.lock" ]; then yarn build
+        elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
+        elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
+        else npm run build; fi
+        mkdir -p ${{targets.destdir}}/usr/share/nginx/html
+        cp -r build/. ${{targets.destdir}}/usr/share/nginx/html/
+        if [ -f "nginx.conf" ]; then
+          mkdir -p ${{targets.destdir}}/etc/nginx
+          cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
+        fi
     vue:
       command: |
-        npm ci --prefer-offline
-        npm run build
-        mkdir -p /home/build/output/html
-        cp -r dist/. /home/build/output/html/
+        if [ -f "yarn.lock" ]; then yarn install --frozen-lockfile
+        elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
+        elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
+        else npm ci --prefer-offline; fi
+        if [ -f "yarn.lock" ]; then yarn build
+        elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
+        elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
+        else npm run build; fi
+        mkdir -p ${{targets.destdir}}/usr/share/nginx/html
+        cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
+        if [ -f "nginx.conf" ]; then
+          mkdir -p ${{targets.destdir}}/etc/nginx
+          cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
+        fi
     svelte:
       command: |
-        npm ci --prefer-offline
-        npm run build
-        mkdir -p /home/build/output/html
-        cp -r build/. /home/build/output/html/
+        if [ -f "yarn.lock" ]; then yarn install --frozen-lockfile
+        elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
+        elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
+        else npm ci --prefer-offline; fi
+        if [ -f "yarn.lock" ]; then yarn build
+        elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
+        elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
+        else npm run build; fi
+        mkdir -p ${{targets.destdir}}/usr/share/nginx/html
+        cp -r build/. ${{targets.destdir}}/usr/share/nginx/html/
+        if [ -f "nginx.conf" ]; then
+          mkdir -p ${{targets.destdir}}/etc/nginx
+          cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
+        fi
 
 image:
   # nginx serves the static files.
