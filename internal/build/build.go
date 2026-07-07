@@ -526,8 +526,6 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 			if tmplName == "" {
 				tmplName = "default"
 			}
-			customTemplatePath := filepath.Join(opts.ProfilesDir, "templates", "maven", tmplName+".xml")
-			_, customTemplateExists := os.Stat(customTemplatePath)
 			if p.Build.MavenMirrorURL != "" {
 				if cfg.Environment.Env == nil {
 					cfg.Environment.Env = make(map[string]string)
@@ -565,8 +563,6 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 			if gradleTmplName == "" {
 				gradleTmplName = "corporate"
 			}
-			gradleCustomPath := filepath.Join(opts.ProfilesDir, "templates", "gradle", gradleTmplName+".gradle")
-			_, gradleCustomExists := os.Stat(gradleCustomPath)
 			if p.Build.GradleMirrorURL != "" {
 				if cfg.Environment.Env == nil {
 					cfg.Environment.Env = make(map[string]string)
