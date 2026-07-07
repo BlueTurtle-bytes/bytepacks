@@ -120,8 +120,9 @@ build:
     "$KEYTOOL" -list -keystore "$JAVA_CACERTS" -storepass changeit 2>/dev/null \
       | grep -i "apexpack-corp-ca" \
       || { echo "ERROR: corp CA not found in cacerts after import" >&2; exit 1; }
-    # Also write a copy so the -Djavax.net.ssl.trustStore check in the build command
-    # still fires as belt-and-suspenders for any process that ignores cacerts.
+    # Also append to OS cert bundle so OpenSSL-based tools (wget, curl) trust the corp CA.
+    # JVM uses its own cacerts (above); OpenSSL uses /etc/ssl/certs/ca-certificates.crt.
+    cat /home/build/.apexpack-ca.crt >> /etc/ssl/certs/ca-certificates.crt
     STORE=/home/build/.apexpack-truststore.p12
     cp "$JAVA_CACERTS" "$STORE"
     echo "→ Truststore ready ($(basename $JAVA_CACERTS)): Java default CAs + corporate CA"
