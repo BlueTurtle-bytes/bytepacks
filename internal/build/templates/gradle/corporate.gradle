@@ -1,26 +1,25 @@
 // Gradle init script written by apexpacks (corporate profile).
-// Routes all repository resolution through Artifactory and handles
-// Gradle 7+ dependencyResolutionManagement in settings.gradle.
+// Replaces ALL repository declarations with the Artifactory mirror.
 def artUser = System.getenv("ARTI_USER") ?: ""
 def artPassword = System.getenv("ARTI_PASSWORD") ?: ""
 def mirrorUrl = "{{GRADLE_MIRROR_URL}}"
 
-def apexpackMirror = { repos ->
+def applyMirror = { RepositoryHandler repos ->
+    repos.clear()
     repos.maven {
         url mirrorUrl
-        credentials { username artUser; password artPassword }
+        if (artUser) { credentials { username artUser; password artPassword } }
+        allowInsecureProtocol = mirrorUrl.startsWith("http://")
     }
 }
 
 settingsEvaluated { settings ->
-    settings.pluginManagement {
-        repositories { apexpackMirror(delegate) }
-    }
-    // Gradle 7+: configure dependencyResolutionManagement if the project uses it
+    applyMirror(settings.pluginManagement.repositories)
     if (settings.metaClass.respondsTo(settings, 'getDependencyResolutionManagement')) {
         try {
             settings.dependencyResolutionManagement {
-                repositories { apexpackMirror(delegate) }
+                repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+                applyMirror(repositories)
             }
         } catch (ignored) {}
     }
@@ -28,7 +27,9 @@ settingsEvaluated { settings ->
 
 allprojects {
     buildscript {
-        repositories { apexpackMirror(delegate) }
+        applyMirror(repositories)
     }
-    repositories { apexpackMirror(delegate) }
+    afterEvaluate {
+        applyMirror(repositories)
+    }
 }
