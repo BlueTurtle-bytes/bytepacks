@@ -136,10 +136,19 @@ build:
       command: |
         [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
         export PATH="$JAVA_HOME/bin:$PATH"
-        if [ -f "/home/build/.apexpack-truststore.p12" ]; then
-          export GRADLE_OPTS="${GRADLE_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit"
+        JHOME=$(java -XshowSettings:property -version 2>&1 | grep 'java.home' | sed 's/.*= //')
+        echo "→ java.home at runtime: $JHOME"
+        echo "→ security dir:"; ls -la "$JHOME/lib/security/" 2>/dev/null
+        if [ -f "$JHOME/lib/security/jssecacerts" ]; then
+          EFFECTIVE_STORE="$JHOME/lib/security/jssecacerts"
+        else
+          EFFECTIVE_STORE="$JHOME/lib/security/cacerts"
         fi
+        echo "→ effective truststore: $EFFECTIVE_STORE"
+        keytool -list -keystore "$EFFECTIVE_STORE" -storepass changeit 2>/dev/null \
+          | grep -i "apexpack-corp-ca" && echo "→ corp CA present" || echo "WARN: corp CA NOT in effective truststore"
         chmod +x ./gradlew
+        JAVA_TOOL_OPTIONS="-Djavax.net.debug=ssl:trustmanager" ./gradlew dependencies --no-daemon 2>&1 | head -80
         ./gradlew build -x test --no-daemon -q
         mkdir -p ${{targets.destdir}}/app
         cp build/libs/*.jar ${{targets.destdir}}/app/app.jar
