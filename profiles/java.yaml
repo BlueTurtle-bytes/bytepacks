@@ -91,6 +91,13 @@ build:
   # Example: https://<host>/artifactory/gradle-virtual
   gradle_mirror_url: ""
 
+  # Base URL of the Artifactory repo that hosts Gradle distribution zips.
+  # When set, apexpack rewrites gradle-wrapper.properties distributionUrl so the
+  # wrapper fetches gradle-X.Y-bin.zip from here instead of services.gradle.org.
+  # This is separate from gradle_mirror_url — distributions live in a different repo.
+  # Example: https://<host>/artifactory/gradle-distributions
+  gradle_distribution_url: ""
+
   # Gradle init script template. Built-ins: "default", "corporate" (adds Gradle 7+ support).
   gradle_settings_template: "corporate"
 

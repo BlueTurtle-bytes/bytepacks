@@ -589,6 +589,25 @@ func buildMelangeConfig(p *types.Profile, opts Options) (types.MelangeConfig, er
 					cfg.Pipeline...,
 				)
 			}
+
+			// Rewrite gradle-wrapper.properties distributionUrl when a separate
+			// distribution repo is configured. The wrapper downloads its own zip from
+			// services.gradle.org before any init scripts or GRADLE_OPTS apply, so it
+			// bypasses cert fixes and may be blocked entirely in air-gapped clusters.
+			if p.Build.GradleDistributionURL != "" {
+				distBase := strings.TrimRight(p.Build.GradleDistributionURL, "/")
+				wrapperStep := "if [ -f \"gradle/wrapper/gradle-wrapper.properties\" ]; then\n" +
+					"  DIST_FILE=$(grep \"^distributionUrl=\" gradle/wrapper/gradle-wrapper.properties | sed 's/.*\\///')\n" +
+					"  NEW_URL=\"" + distBase + "/${DIST_FILE}\"\n" +
+					"  NEW_URL_ESC=$(printf '%s' \"$NEW_URL\" | sed 's/:/\\\\:/g')\n" +
+					"  sed -i \"s|^distributionUrl=.*|distributionUrl=${NEW_URL_ESC}|\" gradle/wrapper/gradle-wrapper.properties\n" +
+					"  echo \"→ Gradle wrapper distributionUrl → " + distBase + "\"\n" +
+					"fi"
+				cfg.Pipeline = append(
+					[]types.MelangePipeline{{Runs: wrapperStep}},
+					cfg.Pipeline...,
+				)
+			}
 		}
 	}
 

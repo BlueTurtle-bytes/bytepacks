@@ -211,6 +211,14 @@ type BuildConfig struct {
 	// Example: "https://artifactory.corp.example.com/artifactory/gradle-virtual"
 	GradleMirrorURL string `yaml:"gradle_mirror_url,omitempty"`
 
+	// GradleDistributionURL is the base URL of the Artifactory repository that hosts
+	// Gradle distribution zips (gradle-X.Y-bin.zip). When set, apexpack rewrites
+	// gradle/wrapper/gradle-wrapper.properties so the wrapper fetches its distribution
+	// from this URL instead of services.gradle.org. This is separate from GradleMirrorURL
+	// because distributions are typically served from a different Artifactory repo.
+	// Example: "https://artifactory.corp.example.com/artifactory/gradle-distributions"
+	GradleDistributionURL string `yaml:"gradle_distribution_url,omitempty"`
+
 	// GradleSettingsTemplate selects which Gradle init script template to inject.
 	// Built-in templates: "default" and "corporate" (adds Gradle 7+ dependencyResolutionManagement).
 	// Custom templates can be placed at <profiles-dir>/templates/gradle/<name>.gradle.
