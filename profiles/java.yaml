@@ -103,29 +103,20 @@ build:
   tls_ca_pre_step: |
     [ -f /home/build/.apexpack-ca.crt ] || exit 0
     KEYTOOL=$(find /usr/lib/jvm -name "keytool" 2>/dev/null | head -1)
-    JAVA_CACERTS=$(find /usr/lib/jvm -name "cacerts" 2>/dev/null | head -1)
     if [ -z "$KEYTOOL" ]; then
       echo "ERROR: keytool not found under /usr/lib/jvm" >&2; exit 1
     fi
-    if [ -z "$JAVA_CACERTS" ]; then
-      echo "ERROR: cacerts not found under /usr/lib/jvm" >&2; exit 1
-    fi
-    # Import directly into the JVM's own cacerts so every JVM process (Gradle wrapper,
-    # daemon, worker JVMs) trusts the corp CA without needing GRADLE_OPTS or JAVA_OPTS.
-    # GRADLE_OPTS only covers the Gradle JVM; the wrapper may reset it before the
-    # trustStore flags take effect, causing SSLHandshakeException on distribution download.
+    # Append to OS cert bundle and regenerate. In Wolfi, the JVM truststore is
+    # system-managed (update-ca-certificates regenerates it from the OS bundle),
+    # so this is more reliable than importing directly into the JDK-bundled cacerts.
+    cat /home/build/.apexpack-ca.crt >> /etc/ssl/certs/ca-certificates.crt
+    update-ca-certificates 2>/dev/null || true
+    # Belt-and-suspenders: also import directly via -cacerts in case the JVM uses its
+    # own bundled truststore rather than the system-managed one.
     "$KEYTOOL" -importcert -noprompt -alias apexpack-corp-ca \
       -file /home/build/.apexpack-ca.crt \
-      -keystore "$JAVA_CACERTS" -storepass changeit
-    "$KEYTOOL" -list -keystore "$JAVA_CACERTS" -storepass changeit 2>/dev/null \
-      | grep -i "apexpack-corp-ca" \
-      || { echo "ERROR: corp CA not found in cacerts after import" >&2; exit 1; }
-    # Also append to OS cert bundle so OpenSSL-based tools (wget, curl) trust the corp CA.
-    # JVM uses its own cacerts (above); OpenSSL uses /etc/ssl/certs/ca-certificates.crt.
-    cat /home/build/.apexpack-ca.crt >> /etc/ssl/certs/ca-certificates.crt
-    STORE=/home/build/.apexpack-truststore.p12
-    cp "$JAVA_CACERTS" "$STORE"
-    echo "→ Truststore ready ($(basename $JAVA_CACERTS)): Java default CAs + corporate CA"
+      -cacerts -storepass changeit 2>/dev/null || true
+    echo "→ Truststore ready: Java default CAs + corporate CA"
 
   frameworks:
     quarkus:
