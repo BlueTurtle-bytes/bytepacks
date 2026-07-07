@@ -149,6 +149,11 @@ build:
       command: |
         [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
         export PATH="$JAVA_HOME/bin:$PATH"
+        echo "→ distributionUrl after rewrite:"
+        grep "^distributionUrl=" gradle/wrapper/gradle-wrapper.properties || echo "  (not found)"
+        DIST_URL=$(grep "^distributionUrl=" gradle/wrapper/gradle-wrapper.properties | sed 's/distributionUrl=//' | sed 's/\\:/:/g')
+        echo "→ curl connectivity test to distribution URL:"
+        curl --connect-timeout 10 -sI "$DIST_URL" 2>&1 | head -5 || echo "  curl failed"
         chmod +x ./gradlew
         ./gradlew build -x test --no-daemon -q
         mkdir -p ${{targets.destdir}}/app
