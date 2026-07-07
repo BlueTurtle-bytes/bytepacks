@@ -157,7 +157,9 @@ build:
         chmod +x ./gradlew
         ./gradlew build -x test --no-daemon -q
         mkdir -p ${{targets.destdir}}/app
-        cp build/libs/*.jar ${{targets.destdir}}/app/app.jar
+        JAR=$(find build/libs -name "*.jar" ! -name "*-plain.jar" | head -1)
+        [ -n "$JAR" ] || { echo "ERROR: no bootJar found in build/libs" >&2; exit 1; }
+        cp "$JAR" ${{targets.destdir}}/app/app.jar
       caches:
         - /home/build/.gradle
     quarkus-gradle:
