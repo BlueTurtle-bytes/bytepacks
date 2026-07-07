@@ -794,7 +794,15 @@ func buildApkoConfig(p *types.Profile, opts Options) types.ApkoConfig {
 	}
 
 	if len(cmd) > 0 {
-		cfg.Cmd = strings.Join(cmd, " ")
+		quoted := make([]string, len(cmd))
+		for i, arg := range cmd {
+			if strings.ContainsAny(arg, " \t") {
+				quoted[i] = "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
+			} else {
+				quoted[i] = arg
+			}
+		}
+		cfg.Cmd = strings.Join(quoted, " ")
 	}
 
 	// If JAVA_HOME is set in the image env, derive PATH and resolve the bare
