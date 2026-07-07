@@ -65,7 +65,9 @@ build:
     [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
     export PATH="$JAVA_HOME/bin:$PATH"
     if [ -f "/home/build/.apexpack-truststore.jks" ]; then
-      export MAVEN_OPTS="${MAVEN_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=JKS -Djavax.net.ssl.trustStorePassword=changeit"
+      TS_TYPE=$(cat /home/build/.apexpack-ts-type 2>/dev/null || echo "JKS")
+      TS_PASS=$(cat /home/build/.apexpack-ts-pass 2>/dev/null || echo "changeit")
+      export MAVEN_OPTS="${MAVEN_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=${TS_TYPE} -Djavax.net.ssl.trustStorePassword=${TS_PASS}"
     fi
     MVN_SETTINGS=""
     if [ -f "/home/build/.m2/settings.xml" ]; then MVN_SETTINGS="-s /home/build/.m2/settings.xml"; fi
@@ -110,43 +112,45 @@ build:
     if [ -z "$JAVA_CACERTS" ]; then
       echo "ERROR: cacerts not found under /usr/lib/jvm" >&2; exit 1
     fi
-    # Detect the source cacerts password — Java 17 PKCS12 stores often use an empty
-    # password while older JKS stores use "changeit". Try both so the importkeystore
-    # step doesn't silently skip all public CAs, which would cause PKIX failures for
-    # any host NOT behind the corporate MITM proxy (e.g. services.gradle.org direct).
+    # Detect cacerts password (Java 17 PKCS12 stores typically use "changeit")
     CACERTS_PASS=""
     for TRY_PASS in changeit "" ; do
       if "$KEYTOOL" -list -keystore "$JAVA_CACERTS" -storepass "$TRY_PASS" -noprompt >/dev/null 2>&1; then
         CACERTS_PASS="$TRY_PASS"
-        echo "→ cacerts password detected: '${TRY_PASS}'"
         break
       fi
     done
-    # PRIMARY: import corp CA directly into the system cacerts. Melange runs as root so
-    # the file is writable. Every JVM process (including the Gradle wrapper) uses the
-    # system cacerts by default — no flags needed.
-    "$KEYTOOL" -importcert -noprompt -alias apexpack-corp-ca \
-      -file /home/build/.apexpack-ca.crt \
-      -keystore "$JAVA_CACERTS" -storepass "$CACERTS_PASS" 2>&1 \
-      && echo "→ Corp CA imported into system cacerts" \
-      || echo "WARN: system cacerts import failed (read-only?), falling back to custom store"
-    # FALLBACK: also build a custom JKS with corp CA + all system CAs.
-    # Used via JAVA_TOOL_OPTIONS in case the system cacerts import above didn't work.
-    STORE=/home/build/.apexpack-truststore.jks
-    "$KEYTOOL" -importcert -noprompt -alias apexpack-corp-ca \
-      -file /home/build/.apexpack-ca.crt \
-      -keystore "$STORE" -storetype JKS -storepass changeit
-    if [ $? -ne 0 ]; then
-      echo "ERROR: keytool import into custom store failed" >&2; exit 1
+    # Detect keystore type from keytool output (avoids PKCS12→JKS conversion which
+    # drops trust attributes in Java 17, causing PKIX failures for non-MITM hosts)
+    CACERTS_TYPE="JKS"
+    if "$KEYTOOL" -list -keystore "$JAVA_CACERTS" -storepass "$CACERTS_PASS" -noprompt 2>/dev/null | head -3 | grep -qi "PKCS12"; then
+      CACERTS_TYPE="PKCS12"
     fi
-    "$KEYTOOL" -importkeystore \
-      -srckeystore "$JAVA_CACERTS" -srcstorepass "$CACERTS_PASS" \
-      -destkeystore "$STORE" -deststorepass changeit \
-      -deststoretype JKS -noprompt 2>/dev/null \
-      && echo "→ System CAs merged into custom JKS" \
-      || echo "WARN: system CA merge failed — custom store has corp CA only"
-    ENTRY_COUNT=$("$KEYTOOL" -list -keystore "$STORE" -storepass changeit 2>/dev/null | grep -c "trustedCertEntry" || echo 0)
-    echo "→ Custom JKS truststore: ${ENTRY_COUNT} trusted entries"
+    echo "→ cacerts: type=${CACERTS_TYPE}, password='${CACERTS_PASS}'"
+    # PRIMARY: import corp CA directly into system cacerts — every JVM process uses it
+    # by default, including the Gradle wrapper that downloads the distribution
+    "$KEYTOOL" -importcert -noprompt -alias apexpack-corp-ca \
+      -file /home/build/.apexpack-ca.crt \
+      -keystore "$JAVA_CACERTS" -storetype "$CACERTS_TYPE" -storepass "$CACERTS_PASS" 2>&1 \
+      && echo "→ Corp CA imported into system cacerts" \
+      || echo "WARN: system cacerts import failed (read-only?)"
+    # FALLBACK: copy system cacerts exactly (no format conversion — preserves all public
+    # CA trust entries in native format), then add corp CA to the copy.
+    # Using -importkeystore to convert PKCS12→JKS silently drops trust attributes in
+    # Java 17, leaving only the corp CA trusted; public CAs appear in the list but are
+    # not used for path building, causing PKIX failures on non-MITM-proxied hosts.
+    STORE=/home/build/.apexpack-truststore.jks
+    cp "$JAVA_CACERTS" "$STORE"
+    "$KEYTOOL" -importcert -noprompt -alias apexpack-corp-ca \
+      -file /home/build/.apexpack-ca.crt \
+      -keystore "$STORE" -storetype "$CACERTS_TYPE" -storepass "$CACERTS_PASS" 2>&1 \
+      && echo "→ Corp CA added to custom truststore" \
+      || echo "WARN: custom truststore import failed"
+    # Write type and password for build commands to reference
+    printf '%s' "$CACERTS_TYPE" > /home/build/.apexpack-ts-type
+    printf '%s' "$CACERTS_PASS" > /home/build/.apexpack-ts-pass
+    ENTRY_COUNT=$("$KEYTOOL" -list -keystore "$STORE" -storetype "$CACERTS_TYPE" -storepass "$CACERTS_PASS" 2>/dev/null | grep -c "trustedCertEntry" || echo 0)
+    echo "→ Custom truststore: ${ENTRY_COUNT} trusted entries (type: ${CACERTS_TYPE})"
 
   frameworks:
     quarkus:
@@ -155,7 +159,9 @@ build:
         [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
         export PATH="$JAVA_HOME/bin:$PATH"
         if [ -f "/home/build/.apexpack-truststore.jks" ]; then
-          export MAVEN_OPTS="${MAVEN_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=JKS -Djavax.net.ssl.trustStorePassword=changeit"
+          TS_TYPE=$(cat /home/build/.apexpack-ts-type 2>/dev/null || echo "JKS")
+          TS_PASS=$(cat /home/build/.apexpack-ts-pass 2>/dev/null || echo "changeit")
+          export MAVEN_OPTS="${MAVEN_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=${TS_TYPE} -Djavax.net.ssl.trustStorePassword=${TS_PASS}"
         fi
         MVN_SETTINGS=""
         if [ -f "/home/build/.m2/settings.xml" ]; then MVN_SETTINGS="-s /home/build/.m2/settings.xml"; fi
@@ -167,7 +173,9 @@ build:
         [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
         export PATH="$JAVA_HOME/bin:$PATH"
         if [ -f "/home/build/.apexpack-truststore.jks" ]; then
-          export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=JKS -Djavax.net.ssl.trustStorePassword=changeit"
+          TS_TYPE=$(cat /home/build/.apexpack-ts-type 2>/dev/null || echo "JKS")
+          TS_PASS=$(cat /home/build/.apexpack-ts-pass 2>/dev/null || echo "changeit")
+          export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=${TS_TYPE} -Djavax.net.ssl.trustStorePassword=${TS_PASS}"
         fi
         chmod +x ./gradlew
         ./gradlew build -x test --no-daemon -q
@@ -180,7 +188,9 @@ build:
         [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
         export PATH="$JAVA_HOME/bin:$PATH"
         if [ -f "/home/build/.apexpack-truststore.jks" ]; then
-          export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=JKS -Djavax.net.ssl.trustStorePassword=changeit"
+          TS_TYPE=$(cat /home/build/.apexpack-ts-type 2>/dev/null || echo "JKS")
+          TS_PASS=$(cat /home/build/.apexpack-ts-pass 2>/dev/null || echo "changeit")
+          export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=${TS_TYPE} -Djavax.net.ssl.trustStorePassword=${TS_PASS}"
         fi
         chmod +x ./gradlew
         ./gradlew build -Dquarkus.package.jar.type=uber-jar -x test --no-daemon -q
@@ -193,7 +203,9 @@ build:
         [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
         export PATH="$JAVA_HOME/bin:$PATH"
         if [ -f "/home/build/.apexpack-truststore.jks" ]; then
-          export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=JKS -Djavax.net.ssl.trustStorePassword=changeit"
+          TS_TYPE=$(cat /home/build/.apexpack-ts-type 2>/dev/null || echo "JKS")
+          TS_PASS=$(cat /home/build/.apexpack-ts-pass 2>/dev/null || echo "changeit")
+          export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.jks -Djavax.net.ssl.trustStoreType=${TS_TYPE} -Djavax.net.ssl.trustStorePassword=${TS_PASS}"
         fi
         chmod +x ./gradlew
         ./gradlew build -x test --no-daemon -q
