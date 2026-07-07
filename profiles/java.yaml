@@ -106,17 +106,23 @@ build:
     if [ -z "$KEYTOOL" ]; then
       echo "ERROR: keytool not found under /usr/lib/jvm" >&2; exit 1
     fi
-    # Append to OS cert bundle and regenerate. In Wolfi, the JVM truststore is
-    # system-managed (update-ca-certificates regenerates it from the OS bundle),
-    # so this is more reliable than importing directly into the JDK-bundled cacerts.
     cat /home/build/.apexpack-ca.crt >> /etc/ssl/certs/ca-certificates.crt
     update-ca-certificates 2>/dev/null || true
-    # Belt-and-suspenders: also import directly via -cacerts in case the JVM uses its
-    # own bundled truststore rather than the system-managed one.
-    "$KEYTOOL" -importcert -noprompt -alias apexpack-corp-ca \
-      -file /home/build/.apexpack-ca.crt \
-      -cacerts -storepass changeit 2>/dev/null || true
-    echo "→ Truststore ready: Java default CAs + corporate CA"
+    # keytool -importcert only reads the first PEM block in a multi-cert bundle.
+    # Split the bundle into individual files and import each one separately so
+    # every CA in the bundle (e.g. Absa internal root + Netskope CertServiceCA)
+    # ends up in the JVM truststore.
+    awk '/-----BEGIN CERTIFICATE-----/{n++;f="/tmp/apexpack-cert-"n".pem"} f{print > f} /-----END CERTIFICATE-----/{f=""}' /home/build/.apexpack-ca.crt
+    CERT_COUNT=0
+    for certfile in /tmp/apexpack-cert-*.pem; do
+      [ -f "$certfile" ] || continue
+      idx=$(echo "$certfile" | grep -oE '[0-9]+')
+      "$KEYTOOL" -importcert -noprompt -alias "apexpack-corp-ca-${idx}" \
+        -file "$certfile" -cacerts -storepass changeit 2>/dev/null || true
+      rm -f "$certfile"
+      CERT_COUNT=$((CERT_COUNT + 1))
+    done
+    echo "→ Truststore ready: imported ${CERT_COUNT} corp CA cert(s)"
 
   frameworks:
     quarkus:
@@ -136,10 +142,6 @@ build:
       command: |
         [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
         export PATH="$JAVA_HOME/bin:$PATH"
-        echo "→ cert chain from services.gradle.org:"
-        keytool -printcert -sslserver services.gradle.org:443 2>&1 || true
-        echo "→ corp CA in truststore:"
-        keytool -list -cacerts -storepass changeit 2>/dev/null | grep -i "apexpack-corp-ca" || echo "NOT FOUND"
         chmod +x ./gradlew
         ./gradlew build -x test --no-daemon -q
         mkdir -p ${{targets.destdir}}/app
