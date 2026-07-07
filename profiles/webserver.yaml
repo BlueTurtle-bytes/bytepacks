@@ -16,7 +16,11 @@ detect:
     - hugo.toml
     - hugo.yaml
     - _config.yml
+    - nginx.conf
   content:
+    - file: nginx.conf
+      contains: "server"
+      boost-confidence: 0.20
     - file: package.json
       contains: "\"@angular/core\""
       boost-confidence: 0.05
