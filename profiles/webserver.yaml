@@ -63,7 +63,8 @@ build:
   # Default: plain HTML — no build tool, just copy static files.
   command: |
     mkdir -p ${{targets.destdir}}/usr/share/nginx/html
-    cp -r . ${{targets.destdir}}/usr/share/nginx/html/
+    tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . \
+      | tar -C ${{targets.destdir}}/usr/share/nginx/html -xf -
     if [ -f "nginx.conf" ]; then
       mkdir -p ${{targets.destdir}}/etc/nginx
       cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
