@@ -66,8 +66,8 @@ build:
     tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . \
       | tar -C ${{targets.destdir}}/usr/share/nginx/html -xf -
     if [ -f "nginx.conf" ]; then
-      mkdir -p ${{targets.destdir}}/etc/nginx
-      cp nginx.conf ${{targets.destdir}}/etc/nginx/nginx.conf
+      mkdir -p ${{targets.destdir}}/etc/nginx/http.d
+      cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
     fi
   env:
     NODE_ENV: "production"
