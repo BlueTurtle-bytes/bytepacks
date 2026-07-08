@@ -70,8 +70,11 @@ build:
              ${{targets.destdir}}/var/lib/nginx/tmp/proxy \
              ${{targets.destdir}}/var/lib/nginx/tmp/fastcgi \
              ${{targets.destdir}}/var/lib/nginx/tmp/uwsgi \
-             ${{targets.destdir}}/var/lib/nginx/tmp/scgi
+             ${{targets.destdir}}/var/lib/nginx/tmp/scgi \
+             ${{targets.destdir}}/run
     chmod -R 777 ${{targets.destdir}}/var/lib/nginx
+    touch ${{targets.destdir}}/run/nginx.pid
+    chmod 666 ${{targets.destdir}}/run/nginx.pid
     if [ -f "nginx.conf" ]; then
       mkdir -p ${{targets.destdir}}/etc/nginx/http.d
       cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -95,8 +98,11 @@ build:
                  ${{targets.destdir}}/var/lib/nginx/tmp/proxy \
                  ${{targets.destdir}}/var/lib/nginx/tmp/fastcgi \
                  ${{targets.destdir}}/var/lib/nginx/tmp/uwsgi \
-                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi
+                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi \
+                 ${{targets.destdir}}/run
         chmod -R 777 ${{targets.destdir}}/var/lib/nginx
+        touch ${{targets.destdir}}/run/nginx.pid
+        chmod 666 ${{targets.destdir}}/run/nginx.pid
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -118,8 +124,11 @@ build:
                  ${{targets.destdir}}/var/lib/nginx/tmp/proxy \
                  ${{targets.destdir}}/var/lib/nginx/tmp/fastcgi \
                  ${{targets.destdir}}/var/lib/nginx/tmp/uwsgi \
-                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi
+                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi \
+                 ${{targets.destdir}}/run
         chmod -R 777 ${{targets.destdir}}/var/lib/nginx
+        touch ${{targets.destdir}}/run/nginx.pid
+        chmod 666 ${{targets.destdir}}/run/nginx.pid
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -142,8 +151,11 @@ build:
                  ${{targets.destdir}}/var/lib/nginx/tmp/proxy \
                  ${{targets.destdir}}/var/lib/nginx/tmp/fastcgi \
                  ${{targets.destdir}}/var/lib/nginx/tmp/uwsgi \
-                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi
+                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi \
+                 ${{targets.destdir}}/run
         chmod -R 777 ${{targets.destdir}}/var/lib/nginx
+        touch ${{targets.destdir}}/run/nginx.pid
+        chmod 666 ${{targets.destdir}}/run/nginx.pid
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -165,8 +177,11 @@ build:
                  ${{targets.destdir}}/var/lib/nginx/tmp/proxy \
                  ${{targets.destdir}}/var/lib/nginx/tmp/fastcgi \
                  ${{targets.destdir}}/var/lib/nginx/tmp/uwsgi \
-                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi
+                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi \
+                 ${{targets.destdir}}/run
         chmod -R 777 ${{targets.destdir}}/var/lib/nginx
+        touch ${{targets.destdir}}/run/nginx.pid
+        chmod 666 ${{targets.destdir}}/run/nginx.pid
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -188,8 +203,11 @@ build:
                  ${{targets.destdir}}/var/lib/nginx/tmp/proxy \
                  ${{targets.destdir}}/var/lib/nginx/tmp/fastcgi \
                  ${{targets.destdir}}/var/lib/nginx/tmp/uwsgi \
-                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi
+                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi \
+                 ${{targets.destdir}}/run
         chmod -R 777 ${{targets.destdir}}/var/lib/nginx
+        touch ${{targets.destdir}}/run/nginx.pid
+        chmod 666 ${{targets.destdir}}/run/nginx.pid
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
