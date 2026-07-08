@@ -123,9 +123,11 @@ jobs:
           DEST="/tmp/corp-cert/${BASENAME%.tar}"
           mkdir -p "$DEST"
           curl -Lk "$CORP_CA_CERT_URL" | tar -xf - -C "$DEST"
-          CERT=$(find "$DEST" -maxdepth 2 -name "*.pem" -o -name "*.crt" | head -1)
-          echo "APEXPACK_EXTRA_CA=$CERT" >> $GITHUB_ENV
-          echo "→ CA cert: $CERT"
+          BUNDLE="/tmp/corp-ca-bundle.pem"
+          find "$DEST" -maxdepth 2 \( -name "*.pem" -o -name "*.crt" \) | sort | xargs cat > "$BUNDLE"
+          COUNT=$(grep -c "BEGIN CERTIFICATE" "$BUNDLE" || true)
+          echo "APEXPACK_EXTRA_CA=$BUNDLE" >> $GITHUB_ENV
+          echo "→ CA bundle: $COUNT cert(s) written to $BUNDLE"
 
       - name: Clone test repo
         run: git clone --depth 1 ${{ matrix.repo }} /tmp/testrepo
