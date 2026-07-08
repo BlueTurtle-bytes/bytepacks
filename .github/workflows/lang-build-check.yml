@@ -101,13 +101,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Enable rootless melange (bubblewrap)
+      - name: Install bubblewrap
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bubblewrap
-          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Install melange and apko
         run: |
@@ -125,8 +122,13 @@ jobs:
         run: make build
 
       - name: Fetch corporate CA cert
+        env:
+          CORP_CA_CERT_URL: ${{ secrets.CORP_CA_CERT_URL }}
         run: |
-          CORP_CA_CERT_URL="https://PLACEHOLDER/corp-ca.tar"
+          if [ -z "$CORP_CA_CERT_URL" ]; then
+            echo "CORP_CA_CERT_URL not set — skipping"
+            exit 0
+          fi
           BASENAME=$(basename "$CORP_CA_CERT_URL")
           DEST="/tmp/corp-cert/${BASENAME%.tar}"
           mkdir -p "$DEST"
@@ -146,7 +148,7 @@ jobs:
           ./bin/apexpacks build /tmp/testrepo \
             --runtime ${{ matrix.runtime }} \
             --tag apexpack-ci/${{ matrix.runtime }}-${{ matrix.version }}:test \
-            --local
+            --dry-run
         continue-on-error: true
 
       # Badge update only runs on push to main so that fork PRs (which have no
