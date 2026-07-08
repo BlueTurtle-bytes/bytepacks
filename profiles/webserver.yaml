@@ -66,12 +66,12 @@ build:
     tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . \
       | tar -C ${{targets.destdir}}/usr/share/nginx/html -xf -
     mkdir -p ${{targets.destdir}}/var/lib/nginx/logs \
-             ${{targets.destdir}}/tmp/nginx/client_body_temp \
-             ${{targets.destdir}}/tmp/nginx/proxy_temp \
-             ${{targets.destdir}}/tmp/nginx/fastcgi_temp \
-             ${{targets.destdir}}/tmp/nginx/uwsgi_temp \
-             ${{targets.destdir}}/tmp/nginx/scgi_temp
-    chmod 777 ${{targets.destdir}}/var/lib/nginx/logs ${{targets.destdir}}/tmp/nginx
+             ${{targets.destdir}}/var/lib/nginx/tmp/client_body \
+             ${{targets.destdir}}/var/lib/nginx/tmp/proxy \
+             ${{targets.destdir}}/var/lib/nginx/tmp/fastcgi \
+             ${{targets.destdir}}/var/lib/nginx/tmp/uwsgi \
+             ${{targets.destdir}}/var/lib/nginx/tmp/scgi
+    chmod -R 777 ${{targets.destdir}}/var/lib/nginx
     if [ -f "nginx.conf" ]; then
       mkdir -p ${{targets.destdir}}/etc/nginx/http.d
       cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -91,12 +91,12 @@ build:
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
         mkdir -p ${{targets.destdir}}/var/lib/nginx/logs \
-                 ${{targets.destdir}}/tmp/nginx/client_body_temp \
-                 ${{targets.destdir}}/tmp/nginx/proxy_temp \
-                 ${{targets.destdir}}/tmp/nginx/fastcgi_temp \
-                 ${{targets.destdir}}/tmp/nginx/uwsgi_temp \
-                 ${{targets.destdir}}/tmp/nginx/scgi_temp
-        chmod 777 ${{targets.destdir}}/var/lib/nginx/logs ${{targets.destdir}}/tmp/nginx
+                 ${{targets.destdir}}/var/lib/nginx/tmp/client_body \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/proxy \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/fastcgi \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/uwsgi \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi
+        chmod -R 777 ${{targets.destdir}}/var/lib/nginx
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -114,12 +114,12 @@ build:
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
         mkdir -p ${{targets.destdir}}/var/lib/nginx/logs \
-                 ${{targets.destdir}}/tmp/nginx/client_body_temp \
-                 ${{targets.destdir}}/tmp/nginx/proxy_temp \
-                 ${{targets.destdir}}/tmp/nginx/fastcgi_temp \
-                 ${{targets.destdir}}/tmp/nginx/uwsgi_temp \
-                 ${{targets.destdir}}/tmp/nginx/scgi_temp
-        chmod 777 ${{targets.destdir}}/var/lib/nginx/logs ${{targets.destdir}}/tmp/nginx
+                 ${{targets.destdir}}/var/lib/nginx/tmp/client_body \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/proxy \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/fastcgi \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/uwsgi \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi
+        chmod -R 777 ${{targets.destdir}}/var/lib/nginx
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -138,12 +138,12 @@ build:
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r build/. ${{targets.destdir}}/usr/share/nginx/html/
         mkdir -p ${{targets.destdir}}/var/lib/nginx/logs \
-                 ${{targets.destdir}}/tmp/nginx/client_body_temp \
-                 ${{targets.destdir}}/tmp/nginx/proxy_temp \
-                 ${{targets.destdir}}/tmp/nginx/fastcgi_temp \
-                 ${{targets.destdir}}/tmp/nginx/uwsgi_temp \
-                 ${{targets.destdir}}/tmp/nginx/scgi_temp
-        chmod 777 ${{targets.destdir}}/var/lib/nginx/logs ${{targets.destdir}}/tmp/nginx
+                 ${{targets.destdir}}/var/lib/nginx/tmp/client_body \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/proxy \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/fastcgi \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/uwsgi \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi
+        chmod -R 777 ${{targets.destdir}}/var/lib/nginx
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -161,12 +161,12 @@ build:
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
         mkdir -p ${{targets.destdir}}/var/lib/nginx/logs \
-                 ${{targets.destdir}}/tmp/nginx/client_body_temp \
-                 ${{targets.destdir}}/tmp/nginx/proxy_temp \
-                 ${{targets.destdir}}/tmp/nginx/fastcgi_temp \
-                 ${{targets.destdir}}/tmp/nginx/uwsgi_temp \
-                 ${{targets.destdir}}/tmp/nginx/scgi_temp
-        chmod 777 ${{targets.destdir}}/var/lib/nginx/logs ${{targets.destdir}}/tmp/nginx
+                 ${{targets.destdir}}/var/lib/nginx/tmp/client_body \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/proxy \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/fastcgi \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/uwsgi \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi
+        chmod -R 777 ${{targets.destdir}}/var/lib/nginx
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -184,12 +184,12 @@ build:
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r build/. ${{targets.destdir}}/usr/share/nginx/html/
         mkdir -p ${{targets.destdir}}/var/lib/nginx/logs \
-                 ${{targets.destdir}}/tmp/nginx/client_body_temp \
-                 ${{targets.destdir}}/tmp/nginx/proxy_temp \
-                 ${{targets.destdir}}/tmp/nginx/fastcgi_temp \
-                 ${{targets.destdir}}/tmp/nginx/uwsgi_temp \
-                 ${{targets.destdir}}/tmp/nginx/scgi_temp
-        chmod 777 ${{targets.destdir}}/var/lib/nginx/logs ${{targets.destdir}}/tmp/nginx
+                 ${{targets.destdir}}/var/lib/nginx/tmp/client_body \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/proxy \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/fastcgi \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/uwsgi \
+                 ${{targets.destdir}}/var/lib/nginx/tmp/scgi
+        chmod -R 777 ${{targets.destdir}}/var/lib/nginx
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
