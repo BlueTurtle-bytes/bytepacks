@@ -3,8 +3,11 @@
 # targeting main. Badge JSON in the Gist is updated only on push to main.
 #
 # Required secrets (set at repo level):
-#   GIST_TOKEN  — GitHub PAT with the `gist` scope
-#   GIST_ID     — ID of the Gist that holds the badge JSON files
+#   GIST_TOKEN       — GitHub PAT with the `gist` scope
+#   GIST_ID          — ID of the Gist that holds the badge JSON files
+#
+# Optional:
+#   Update the CORP_CA_CERT_URL placeholder in the "Fetch corporate CA cert" step
 #
 # To initialise the Gist, create one file per badge key listed in the
 # matrix below (e.g. java_17.json) with this starter content:
@@ -112,6 +115,17 @@ jobs:
 
       - name: Build apexpacks
         run: make build
+
+      - name: Fetch corporate CA cert
+        run: |
+          CORP_CA_CERT_URL="https://PLACEHOLDER/corp-ca.tar"
+          BASENAME=$(basename "$CORP_CA_CERT_URL")
+          DEST="/tmp/corp-cert/${BASENAME%.tar}"
+          mkdir -p "$DEST"
+          curl -Lk "$CORP_CA_CERT_URL" | tar -xf - -C "$DEST"
+          CERT=$(find "$DEST" -maxdepth 2 -name "*.pem" -o -name "*.crt" | head -1)
+          echo "APEXPACK_EXTRA_CA=$CERT" >> $GITHUB_ENV
+          echo "→ CA cert: $CERT"
 
       - name: Clone test repo
         run: git clone --depth 1 ${{ matrix.repo }} /tmp/testrepo
