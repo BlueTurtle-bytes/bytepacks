@@ -107,11 +107,17 @@ jobs:
           sudo apt-get install -y bubblewrap
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      - name: Install melange
-        uses: chainguard-dev/actions/setup-melange@main
+      - name: Install melange and apko
+        run: |
+          MELANGE_VER=$(curl -sf https://api.github.com/repos/chainguard-dev/melange/releases/latest | jq -r .tag_name)
+          curl -sL "https://github.com/chainguard-dev/melange/releases/download/${MELANGE_VER}/melange_linux_amd64.tar.gz" \
+            | tar -xz -C /tmp melange
+          sudo mv /tmp/melange /usr/local/bin/melange
 
-      - name: Install apko
-        uses: chainguard-dev/actions/setup-apko@main
+          APKO_VER=$(curl -sf https://api.github.com/repos/chainguard-dev/apko/releases/latest | jq -r .tag_name)
+          curl -sL "https://github.com/chainguard-dev/apko/releases/download/${APKO_VER}/apko_linux_amd64.tar.gz" \
+            | tar -xz -C /tmp apko
+          sudo mv /tmp/apko /usr/local/bin/apko
 
       - name: Build apexpacks
         run: make build
