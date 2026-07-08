@@ -13,12 +13,14 @@ type dotnetHook struct{}
 
 func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts Options) error {
 	nugetTmplName := p.Build.NuGetSettingsTemplate
-	if nugetTmplName == "" {
-		nugetTmplName = "default"
-	}
-	nugetCustomTemplatePath := filepath.Join(opts.ProfilesDir, "templates", "nuget", nugetTmplName+".xml")
-	_, nugetCustomTemplateExists := os.Stat(nugetCustomTemplatePath)
-	if p.Build.NuGetMirrorURL != "" && (os.Getenv("ARTI_USER") != "" || nugetCustomTemplateExists == nil) {
+	// Allow injection without ARTI_USER only when the user has dropped a custom
+	// template file in the profiles dir (nugetTmplName must be set for that to apply).
+	hasCustomTemplate := nugetTmplName != "" && func() bool {
+		customPath := filepath.Join(opts.ProfilesDir, "templates", "nuget", nugetTmplName+".xml")
+		_, err := os.Stat(customPath)
+		return err == nil
+	}()
+	if p.Build.NuGetMirrorURL != "" && (os.Getenv("ARTI_USER") != "" || hasCustomTemplate) {
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)
 		}
@@ -34,13 +36,17 @@ func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts 
 			return fmt.Errorf("nuget config template: %w", err)
 		}
 		nugetConfigXML := strings.ReplaceAll(nugetTmpl, "{{NUGET_MIRROR_URL}}", p.Build.NuGetMirrorURL)
+		tmplLabel := nugetTmplName
+		if tmplLabel == "" {
+			tmplLabel = "built-in"
+		}
 		nugetConfigStep := fmt.Sprintf(
 			"mkdir -p /home/build/.nuget/NuGet\n"+
 				"cat > /home/build/.nuget/NuGet/NuGet.Config << APEXPACK_NUGET_EOF\n"+
 				"%s"+
 				"APEXPACK_NUGET_EOF\n"+
 				"echo \"→ NuGet config: %s template, mirror: %s\"",
-			nugetConfigXML, nugetTmplName, p.Build.NuGetMirrorURL,
+			nugetConfigXML, tmplLabel, p.Build.NuGetMirrorURL,
 		)
 		cfg.Pipeline = append(
 			[]types.MelangePipeline{{Runs: nugetConfigStep}},

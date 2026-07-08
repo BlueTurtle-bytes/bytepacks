@@ -7,92 +7,59 @@ import (
 	"path/filepath"
 )
 
-//go:embed templates/maven/default.xml
-var mavenTemplateDefault string
+//go:embed templates/maven/maven_settings.xml
+var mavenSettingsTemplate string
 
-//go:embed templates/maven/corporate.xml
-var mavenTemplateCorporate string
+//go:embed templates/nuget/nuget_config.xml
+var nugetConfigTemplate string
 
-// loadMavenTemplate returns the settings.xml template for the given name.
-// Lookup order:
-//  1. <profilesDir>/templates/maven/<name>.xml  (user-supplied, wins over built-ins)
-//  2. Built-in embedded template (default / corporate)
+//go:embed templates/gradle/gradle_init.gradle
+var gradleInitTemplate string
+
+// loadMavenTemplate returns the Maven settings.xml template.
+// When name is empty the built-in maven_settings.xml is returned.
+// When name is non-empty a user-supplied file is expected at
+// <profilesDir>/templates/maven/<name>.xml — an error is returned if it is absent.
 func loadMavenTemplate(name, profilesDir string) (string, error) {
 	if name == "" {
-		name = "default"
+		return mavenSettingsTemplate, nil
 	}
-	if profilesDir != "" {
-		custom := filepath.Join(profilesDir, "templates", "maven", name+".xml")
-		if data, err := os.ReadFile(custom); err == nil {
-			return string(data), nil
-		}
+	custom := filepath.Join(profilesDir, "templates", "maven", name+".xml")
+	data, err := os.ReadFile(custom)
+	if err != nil {
+		return "", fmt.Errorf("maven settings template %q not found: place it at %s", name, custom)
 	}
-	switch name {
-	case "default":
-		return mavenTemplateDefault, nil
-	case "corporate":
-		return mavenTemplateCorporate, nil
-	default:
-		return "", fmt.Errorf("maven settings template %q not found (built-ins: default, corporate; custom: place at <profiles-dir>/templates/maven/%s.xml)", name, name)
-	}
+	return string(data), nil
 }
 
-//go:embed templates/nuget/default.xml
-var nugetTemplateDefault string
-
-//go:embed templates/nuget/corporate.xml
-var nugetTemplateCorporate string
-
-//go:embed templates/gradle/default.gradle
-var gradleTemplateDefault string
-
-//go:embed templates/gradle/corporate.gradle
-var gradleTemplateCorporate string
-
-// loadNuGetTemplate returns the NuGet.Config template for the given name.
-// Lookup order:
-//  1. <profilesDir>/templates/nuget/<name>.xml  (user-supplied, wins over built-ins)
-//  2. Built-in embedded template (default / corporate)
+// loadNuGetTemplate returns the NuGet.Config template.
+// When name is empty the built-in nuget_config.xml is returned.
+// When name is non-empty a user-supplied file is expected at
+// <profilesDir>/templates/nuget/<name>.xml — an error is returned if it is absent.
 func loadNuGetTemplate(name, profilesDir string) (string, error) {
 	if name == "" {
-		name = "default"
+		return nugetConfigTemplate, nil
 	}
-	if profilesDir != "" {
-		custom := filepath.Join(profilesDir, "templates", "nuget", name+".xml")
-		if data, err := os.ReadFile(custom); err == nil {
-			return string(data), nil
-		}
+	custom := filepath.Join(profilesDir, "templates", "nuget", name+".xml")
+	data, err := os.ReadFile(custom)
+	if err != nil {
+		return "", fmt.Errorf("nuget config template %q not found: place it at %s", name, custom)
 	}
-	switch name {
-	case "default":
-		return nugetTemplateDefault, nil
-	case "corporate":
-		return nugetTemplateCorporate, nil
-	default:
-		return "", fmt.Errorf("nuget config template %q not found (built-ins: default, corporate; custom: place at <profiles-dir>/templates/nuget/%s.xml)", name, name)
-	}
+	return string(data), nil
 }
 
-// loadGradleTemplate returns the Gradle init script template for the given name.
-// Lookup order:
-//  1. <profilesDir>/templates/gradle/<name>.gradle  (user-supplied, wins over built-ins)
-//  2. Built-in embedded template (default / corporate)
+// loadGradleTemplate returns the Gradle init script template.
+// When name is empty the built-in gradle_init.gradle is returned.
+// When name is non-empty a user-supplied file is expected at
+// <profilesDir>/templates/gradle/<name>.gradle — an error is returned if it is absent.
 func loadGradleTemplate(name, profilesDir string) (string, error) {
 	if name == "" {
-		name = "corporate"
+		return gradleInitTemplate, nil
 	}
-	if profilesDir != "" {
-		custom := filepath.Join(profilesDir, "templates", "gradle", name+".gradle")
-		if data, err := os.ReadFile(custom); err == nil {
-			return string(data), nil
-		}
+	custom := filepath.Join(profilesDir, "templates", "gradle", name+".gradle")
+	data, err := os.ReadFile(custom)
+	if err != nil {
+		return "", fmt.Errorf("gradle init script template %q not found: place it at %s", name, custom)
 	}
-	switch name {
-	case "default":
-		return gradleTemplateDefault, nil
-	case "corporate":
-		return gradleTemplateCorporate, nil
-	default:
-		return "", fmt.Errorf("gradle init script template %q not found (built-ins: default, corporate; custom: place at <profiles-dir>/templates/gradle/%s.gradle)", name, name)
-	}
+	return string(data), nil
 }

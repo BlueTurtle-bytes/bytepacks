@@ -19,9 +19,6 @@ func (javaHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts Op
 	// Maven: skipped for Gradle frameworks — Gradle does not read ~/.m2/settings.xml.
 	if !isGradleFramework {
 		tmplName := p.Build.MavenSettingsTemplate
-		if tmplName == "" {
-			tmplName = "default"
-		}
 		if p.Build.MavenMirrorURL != "" {
 			if cfg.Environment.Env == nil {
 				cfg.Environment.Env = make(map[string]string)
@@ -56,9 +53,6 @@ func (javaHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts Op
 	// Gradle: inject init script for corporate Artifactory mirrors.
 	if isGradleFramework {
 		gradleTmplName := p.Build.GradleSettingsTemplate
-		if gradleTmplName == "" {
-			gradleTmplName = "corporate"
-		}
 		if p.Build.GradleMirrorURL != "" {
 			if cfg.Environment.Env == nil {
 				cfg.Environment.Env = make(map[string]string)

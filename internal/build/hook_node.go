@@ -13,8 +13,9 @@ func (nodeHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts Op
 }
 
 func (nodeHook) PatchApko(cfg *types.ApkoConfig, p *types.Profile, opts Options) error {
-	// Node: auto-detect entry point from package.json when cmd is still the profile default.
-	// Priority: apexpacks.yaml image.cmd > package.json scripts.start / main > /app (directory fallback).
+	// Auto-detect entry point from package.json, but only when cmd is still the
+	// node profile default. A user-supplied apexpacks.yaml image.cmd override will
+	// already have changed cfg.Cmd away from this sentinel value, so we skip.
 	if cfg.Cmd == "/app/server.js" {
 		if entry := readNodeEntrypoint(opts.SourceDir); entry != "" {
 			fmt.Printf("  → node entry point detected: %s\n", entry)
