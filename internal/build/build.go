@@ -811,6 +811,8 @@ func buildApkoConfig(p *types.Profile, opts Options) types.ApkoConfig {
 	if p.Runtime == "webserver" {
 		cfg.Paths = []types.ApkoPath{
 			{Path: "/var/lib/nginx", Type: "directory", Permissions: 0o777},
+			{Path: "/var/lib/nginx/logs", Type: "directory", Permissions: 0o777},
+			{Path: "/var/lib/nginx/tmp", Type: "directory", Permissions: 0o777},
 			{Path: "/var/log/nginx", Type: "directory", Permissions: 0o777},
 			{Path: "/run", Type: "directory", Permissions: 0o777},
 		}
