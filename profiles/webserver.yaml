@@ -65,6 +65,13 @@ build:
     mkdir -p ${{targets.destdir}}/usr/share/nginx/html
     tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . \
       | tar -C ${{targets.destdir}}/usr/share/nginx/html -xf -
+    mkdir -p ${{targets.destdir}}/var/lib/nginx/logs \
+             ${{targets.destdir}}/tmp/nginx/client_body_temp \
+             ${{targets.destdir}}/tmp/nginx/proxy_temp \
+             ${{targets.destdir}}/tmp/nginx/fastcgi_temp \
+             ${{targets.destdir}}/tmp/nginx/uwsgi_temp \
+             ${{targets.destdir}}/tmp/nginx/scgi_temp
+    chmod 777 ${{targets.destdir}}/var/lib/nginx/logs ${{targets.destdir}}/tmp/nginx
     if [ -f "nginx.conf" ]; then
       mkdir -p ${{targets.destdir}}/etc/nginx/http.d
       cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -83,6 +90,13 @@ build:
         npm run build 2>/dev/null || yarn build 2>/dev/null || pnpm run build 2>/dev/null || bun run build
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
+        mkdir -p ${{targets.destdir}}/var/lib/nginx/logs \
+                 ${{targets.destdir}}/tmp/nginx/client_body_temp \
+                 ${{targets.destdir}}/tmp/nginx/proxy_temp \
+                 ${{targets.destdir}}/tmp/nginx/fastcgi_temp \
+                 ${{targets.destdir}}/tmp/nginx/uwsgi_temp \
+                 ${{targets.destdir}}/tmp/nginx/scgi_temp
+        chmod 777 ${{targets.destdir}}/var/lib/nginx/logs ${{targets.destdir}}/tmp/nginx
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -99,6 +113,13 @@ build:
         else npm run build; fi
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
+        mkdir -p ${{targets.destdir}}/var/lib/nginx/logs \
+                 ${{targets.destdir}}/tmp/nginx/client_body_temp \
+                 ${{targets.destdir}}/tmp/nginx/proxy_temp \
+                 ${{targets.destdir}}/tmp/nginx/fastcgi_temp \
+                 ${{targets.destdir}}/tmp/nginx/uwsgi_temp \
+                 ${{targets.destdir}}/tmp/nginx/scgi_temp
+        chmod 777 ${{targets.destdir}}/var/lib/nginx/logs ${{targets.destdir}}/tmp/nginx
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -116,6 +137,13 @@ build:
         else npm run build; fi
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r build/. ${{targets.destdir}}/usr/share/nginx/html/
+        mkdir -p ${{targets.destdir}}/var/lib/nginx/logs \
+                 ${{targets.destdir}}/tmp/nginx/client_body_temp \
+                 ${{targets.destdir}}/tmp/nginx/proxy_temp \
+                 ${{targets.destdir}}/tmp/nginx/fastcgi_temp \
+                 ${{targets.destdir}}/tmp/nginx/uwsgi_temp \
+                 ${{targets.destdir}}/tmp/nginx/scgi_temp
+        chmod 777 ${{targets.destdir}}/var/lib/nginx/logs ${{targets.destdir}}/tmp/nginx
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -132,6 +160,13 @@ build:
         else npm run build; fi
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
+        mkdir -p ${{targets.destdir}}/var/lib/nginx/logs \
+                 ${{targets.destdir}}/tmp/nginx/client_body_temp \
+                 ${{targets.destdir}}/tmp/nginx/proxy_temp \
+                 ${{targets.destdir}}/tmp/nginx/fastcgi_temp \
+                 ${{targets.destdir}}/tmp/nginx/uwsgi_temp \
+                 ${{targets.destdir}}/tmp/nginx/scgi_temp
+        chmod 777 ${{targets.destdir}}/var/lib/nginx/logs ${{targets.destdir}}/tmp/nginx
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
@@ -148,6 +183,13 @@ build:
         else npm run build; fi
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r build/. ${{targets.destdir}}/usr/share/nginx/html/
+        mkdir -p ${{targets.destdir}}/var/lib/nginx/logs \
+                 ${{targets.destdir}}/tmp/nginx/client_body_temp \
+                 ${{targets.destdir}}/tmp/nginx/proxy_temp \
+                 ${{targets.destdir}}/tmp/nginx/fastcgi_temp \
+                 ${{targets.destdir}}/tmp/nginx/uwsgi_temp \
+                 ${{targets.destdir}}/tmp/nginx/scgi_temp
+        chmod 777 ${{targets.destdir}}/var/lib/nginx/logs ${{targets.destdir}}/tmp/nginx
         if [ -f "nginx.conf" ]; then
           mkdir -p ${{targets.destdir}}/etc/nginx/http.d
           cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
