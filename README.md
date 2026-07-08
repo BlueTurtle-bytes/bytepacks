@@ -6,6 +6,34 @@ Language support is driven by **YAML profiles** in the `profiles/` directory. Ad
 
 ---
 
+## Build Status
+
+> Verified on every push to `main` against reference sample repositories.
+> Replace `YOUR_GIST_ID` below with your Gist ID once secrets are configured.
+
+**Java** &nbsp;
+![Java 17](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/BlueTurtle-bytes/YOUR_GIST_ID/raw/java_17.json&cacheSeconds=300)
+![Java 21](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/BlueTurtle-bytes/YOUR_GIST_ID/raw/java_21.json&cacheSeconds=300)
+
+**Node** &nbsp;
+![Node 18](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/BlueTurtle-bytes/YOUR_GIST_ID/raw/node_18.json&cacheSeconds=300)
+![Node 20](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/BlueTurtle-bytes/YOUR_GIST_ID/raw/node_20.json&cacheSeconds=300)
+![Node 22](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/BlueTurtle-bytes/YOUR_GIST_ID/raw/node_22.json&cacheSeconds=300)
+
+**Python** &nbsp;
+![Python 3.11](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/BlueTurtle-bytes/YOUR_GIST_ID/raw/python_311.json&cacheSeconds=300)
+![Python 3.12](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/BlueTurtle-bytes/YOUR_GIST_ID/raw/python_312.json&cacheSeconds=300)
+
+**.NET** &nbsp;
+![.NET 8](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/BlueTurtle-bytes/YOUR_GIST_ID/raw/dotnet_8.json&cacheSeconds=300)
+![.NET 9](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/BlueTurtle-bytes/YOUR_GIST_ID/raw/dotnet_9.json&cacheSeconds=300)
+
+**Go** &nbsp;
+![Go 1.22](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/BlueTurtle-bytes/YOUR_GIST_ID/raw/go_122.json&cacheSeconds=300)
+![Go 1.23](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/BlueTurtle-bytes/YOUR_GIST_ID/raw/go_123.json&cacheSeconds=300)
+
+---
+
 ## Quick Start
 
 ```bash

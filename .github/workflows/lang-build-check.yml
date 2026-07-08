@@ -1,0 +1,162 @@
+# Verifies that apexpack can build a real OCI image for every supported
+# language and version combination. Runs on push to main and on PRs
+# targeting main. Badge JSON in the Gist is updated only on push to main.
+#
+# Required secrets (set at repo level):
+#   GIST_TOKEN  — GitHub PAT with the `gist` scope
+#   GIST_ID     — ID of the Gist that holds the badge JSON files
+#
+# To initialise the Gist, create one file per badge key listed in the
+# matrix below (e.g. java_17.json) with this starter content:
+#   {"schemaVersion":1,"label":"java 17","message":"pending","color":"lightgrey"}
+#
+# Add the placeholder repo URLs before enabling this workflow.
+
+name: Language Version Build Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: ${{ matrix.runtime }} ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── Java ───────────────────────────────────────────────────────────
+          - runtime: java
+            version: "17"
+            repo: https://github.com/PLACEHOLDER/sample-java-17
+            badge: java_17
+
+          - runtime: java
+            version: "21"
+            repo: https://github.com/PLACEHOLDER/sample-java-21
+            badge: java_21
+
+          # ── Node ───────────────────────────────────────────────────────────
+          - runtime: node
+            version: "18"
+            repo: https://github.com/PLACEHOLDER/sample-node-18
+            badge: node_18
+
+          - runtime: node
+            version: "20"
+            repo: https://github.com/PLACEHOLDER/sample-node-20
+            badge: node_20
+
+          - runtime: node
+            version: "22"
+            repo: https://github.com/PLACEHOLDER/sample-node-22
+            badge: node_22
+
+          # ── Python ─────────────────────────────────────────────────────────
+          - runtime: python
+            version: "3.11"
+            repo: https://github.com/PLACEHOLDER/sample-python-311
+            badge: python_311
+
+          - runtime: python
+            version: "3.12"
+            repo: https://github.com/PLACEHOLDER/sample-python-312
+            badge: python_312
+
+          # ── .NET ───────────────────────────────────────────────────────────
+          - runtime: dotnet
+            version: "8"
+            repo: https://github.com/PLACEHOLDER/sample-dotnet-8
+            badge: dotnet_8
+
+          - runtime: dotnet
+            version: "9"
+            repo: https://github.com/PLACEHOLDER/sample-dotnet-9
+            badge: dotnet_9
+
+          # ── Go ─────────────────────────────────────────────────────────────
+          - runtime: golang
+            version: "1.22"
+            repo: https://github.com/PLACEHOLDER/sample-go-122
+            badge: go_122
+
+          - runtime: golang
+            version: "1.23"
+            repo: https://github.com/PLACEHOLDER/sample-go-123
+            badge: go_123
+
+    steps:
+      - name: Checkout apexpack
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install melange and apko
+        run: |
+          MELANGE_VER=$(curl -sf https://api.github.com/repos/chainguard-dev/melange/releases/latest | jq -r .tag_name)
+          curl -sL "https://github.com/chainguard-dev/melange/releases/download/${MELANGE_VER}/melange_linux_amd64.tar.gz" \
+            | tar -xz -C /tmp melange
+          sudo mv /tmp/melange /usr/local/bin/melange
+
+          APKO_VER=$(curl -sf https://api.github.com/repos/chainguard-dev/apko/releases/latest | jq -r .tag_name)
+          curl -sL "https://github.com/chainguard-dev/apko/releases/download/${APKO_VER}/apko_linux_amd64.tar.gz" \
+            | tar -xz -C /tmp apko
+          sudo mv /tmp/apko /usr/local/bin/apko
+
+      - name: Build apexpacks
+        run: make build
+
+      - name: Clone test repo
+        run: git clone --depth 1 ${{ matrix.repo }} /tmp/testrepo
+
+      - name: Build image (local, no push)
+        id: apexbuild
+        run: |
+          ./bin/apexpacks build /tmp/testrepo \
+            --runtime ${{ matrix.runtime }} \
+            --tag apexpack-ci/${{ matrix.runtime }}-${{ matrix.version }}:test \
+            --local
+        continue-on-error: true
+
+      # Badge update only runs on push to main so that fork PRs (which have no
+      # secret access) do not fail at this step.
+      - name: Update badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: |
+          if [ "${{ steps.apexbuild.outcome }}" = "success" ]; then
+            MESSAGE="passing"
+            COLOR="brightgreen"
+          else
+            MESSAGE="failing"
+            COLOR="red"
+          fi
+
+          BADGE_JSON=$(jq -cn \
+            --arg label "${{ matrix.runtime }} ${{ matrix.version }}" \
+            --arg message "$MESSAGE" \
+            --arg color "$COLOR" \
+            '{schemaVersion: 1, label: $label, message: $message, color: $color}')
+
+          jq -cn \
+            --arg fname "${{ matrix.badge }}.json" \
+            --arg content "$BADGE_JSON" \
+            '{files: {($fname): {content: $content}}}' \
+          | curl -sf -X PATCH \
+              -H "Authorization: token $GIST_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data-binary @- \
+              "https://api.github.com/gists/$GIST_ID"
+
+      - name: Fail if build failed
+        if: steps.apexbuild.outcome != 'success'
+        run: exit 1
