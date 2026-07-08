@@ -3,6 +3,8 @@
 // If you want to understand the shape of a profile YAML, read this file.
 package types
 
+import "os"
+
 // ============================================================================
 // Profile — the language profile YAML schema
 // ============================================================================
@@ -487,6 +489,17 @@ type ApkoConfig struct {
 	Cmd         string            `yaml:"cmd,omitempty"`
 	Accounts    ApkoAccounts      `yaml:"accounts"`
 	Environment map[string]string `yaml:"environment,omitempty"`
+	Paths       []ApkoPath        `yaml:"paths,omitempty"`
+}
+
+// ApkoPath sets ownership and permissions on a path after all packages are installed.
+// This runs after APK installation, so it overrides any permissions set by packages.
+type ApkoPath struct {
+	Path        string      `yaml:"path"`
+	Type        string      `yaml:"type"` // "directory" or "file"
+	Permissions os.FileMode `yaml:"permissions"`
+	UID         uint32      `yaml:"uid,omitempty"`
+	GID         uint32      `yaml:"gid,omitempty"`
 }
 
 type ApkoContents struct {

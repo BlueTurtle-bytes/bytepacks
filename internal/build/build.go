@@ -805,6 +805,17 @@ func buildApkoConfig(p *types.Profile, opts Options) types.ApkoConfig {
 		cfg.Cmd = strings.Join(quoted, " ")
 	}
 
+	// Webserver: set permissions on nginx runtime dirs after all packages are
+	// installed. This overrides any restrictive permissions nginx-mainline-config
+	// sets on these directories, allowing nginx to run as a non-root user.
+	if p.Runtime == "webserver" {
+		cfg.Paths = []types.ApkoPath{
+			{Path: "/var/lib/nginx", Type: "directory", Permissions: 0o777},
+			{Path: "/var/log/nginx", Type: "directory", Permissions: 0o777},
+			{Path: "/run", Type: "directory", Permissions: 0o777},
+		}
+	}
+
 	// If JAVA_HOME is set in the image env, derive PATH and resolve the bare
 	// "java" entrypoint to a full path. This keeps JAVA_HOME as the single
 	// version-pinned value — changing openjdk-21 → openjdk-17 only requires

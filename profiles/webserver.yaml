@@ -65,8 +65,6 @@ build:
     mkdir -p ${{targets.destdir}}/usr/share/nginx/html
     tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . \
       | tar -C ${{targets.destdir}}/usr/share/nginx/html -xf -
-    mkdir -p ${{targets.destdir}}/var/lib/nginx ${{targets.destdir}}/run
-    chmod 777 ${{targets.destdir}}/var/lib/nginx ${{targets.destdir}}/run
     if [ -f "nginx.conf" ]; then
       mkdir -p ${{targets.destdir}}/etc/nginx/http.d
       cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
