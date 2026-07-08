@@ -232,10 +232,10 @@ func detectNodeVersion(srcDir string) string {
 			return string(m[1])
 		}
 		// engines.node minimum range ">=18", ">18", ">=18.*.*":
-		// treat as "18 or higher" — return "" so the default (Node 20) applies.
+		// extract the minimum major version so callers can resolve it.
 		reMin := regexp.MustCompile(`"node"\s*:\s*">=?v?(\d+)`)
-		if reMin.Match(data) {
-			return ""
+		if m := reMin.FindSubmatch(data); len(m) == 2 {
+			return string(m[1])
 		}
 		// engines.node pinned to a major: "18", "18.x", "^18.0.0", "~18"
 		rePinned := regexp.MustCompile(`"node"\s*:\s*"[^><=\s][^"]*"`)

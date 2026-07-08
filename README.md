@@ -10,7 +10,7 @@ Language support is driven by **YAML profiles** in the `profiles/` directory. Ad
 
 ```bash
 # Build the CLI
-go build -o bin/apexpacks ./cmd/apexpacks
+make build   # or: go build -o bin/apexpacks ./cmd/apexpacks
 
 # Detect your project language and package manager
 ./bin/apexpacks detect .
@@ -32,10 +32,10 @@ go build -o bin/apexpacks ./cmd/apexpacks
 # Clone and build
 git clone https://github.com/apexpack/apexpack
 cd apexpack
-go build -o bin/apexpacks ./cmd/apexpacks
+make build   # or: go build -o bin/apexpacks ./cmd/apexpacks
 
 # Or install directly into your Go bin
-go install ./cmd/apexpack
+make install   # or: go install ./cmd/apexpacks
 
 # melange and apko are invoked automatically during builds.
 # On macOS they run inside Docker (cgr.dev/chainguard/melange and apko images).
@@ -552,13 +552,18 @@ Package manager rules do not affect confidence — they only set `DetectResult.P
 ```
 apexpack/
 │
-├── cmd/
-│   └── apexpack/
-│       └── main.go          CLI entry point — detect, build, scan, patch, profiles
+├── cmd/apexpacks/
+│   ├── main.go              rootCmd + main() only (~45 lines)
+│   ├── cmd_build.go         buildCmd()
+│   ├── cmd_detect.go        detectCmd()
+│   ├── cmd_scan.go          scanCmd()
+│   ├── cmd_patch.go         patchCmd()
+│   ├── cmd_profiles.go      profilesCmd(), normalizeSBOMCmd(), versionCmd()
+│   └── util.go              resolveProfilesDir, findTool, buildArch, git helpers
 │
 ├── internal/
 │   ├── types/
-│   │   └── types.go         ALL data structures — Profile, DetectResult, BuildPlan, ScanConfig, etc.
+│   │   └── types.go         ALL data structures — Profile, DetectResult, BuildPlan, etc.
 │   │                        Read this first to understand the shape of everything.
 │   │
 │   ├── profile/
@@ -572,9 +577,21 @@ apexpack/
 │   │                        Best() → *DetectResult (highest confidence only)
 │   │
 │   ├── build/
-│   │   └── build.go         Generates melange.yaml + apko.yaml, runs tools.
-│   │                        Plan() → *BuildPlan (generate only, no tools run)
-│   │                        Run()  → executes melange then apko
+│   │   ├── build.go         Public API — Plan(), Run(), MarshalMelange(), MarshalApko()
+│   │   ├── config.go        Config builders — buildMelangeConfig(), buildApkoConfig()
+│   │   ├── hook.go          LanguageHook interface + hooks registry map
+│   │   ├── hook_java.go     Java hook — Maven/Gradle injection, JAVA_HOME fix
+│   │   ├── hook_node.go     Node hook — auto-detect entrypoint from package.json
+│   │   ├── hook_dotnet.go   .NET hook — NuGet.Config injection
+│   │   ├── hook_python.go   Python hook (no-op, detection only)
+│   │   ├── hook_go.go       Go hook (no-op, detection only)
+│   │   ├── hook_webserver.go Webserver hook — nginx dir permissions
+│   │   ├── runner.go        Tool runners — runMelange, runApko, ensureSigningKey
+│   │   ├── version.go       Version maps, resolveVersion(), validateRuntimeVersion()
+│   │   ├── template.go      Template loaders — Maven settings, NuGet.Config, Gradle init
+│   │   ├── util.go          SanitizeImageName, readProcfileCmd, cacheVolumeName
+│   │   ├── ca.go            readCACerts(), mergeCABundles()
+│   │   └── exec.go          melangeArch(), runTool helpers
 │   │
 │   └── patch/
 │       └── patch.go         Checks Wolfi index for updates, applies version pins to profiles.
@@ -898,6 +915,9 @@ All data structures are in `internal/types/types.go`. Change the struct there fi
 - Adding a new detection method (currently: exact files, glob patterns, content string match, package manager file existence)
 - Adding a new build output format (currently: melange + apko)
 - Adding a new CLI command
+- Adding language-specific build or image patching that cannot be expressed in a YAML profile
+
+**Language hooks** (`internal/build/hook_<lang>.go`) handle runtime-specific logic like JAVA_HOME path fixes, NuGet.Config injection, and nginx directory permissions. Each hook implements `PatchMelange` and `PatchApko`. To add a new hook: implement the `LanguageHook` interface, register it in `hook.go`, and add test cases to `build_test.go`.
 
 The four internal packages have a strict one-way dependency: `types` ← `profile`, `detect`, `build`, `patch`. Nothing imports from `cmd/`.
 
