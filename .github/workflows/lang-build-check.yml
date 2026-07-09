@@ -5,6 +5,8 @@
 # Required secrets (set at repo level):
 #   GIST_TOKEN       — GitHub PAT with the `gist` scope
 #   GIST_ID          — ID of the Gist that holds the badge JSON files
+#   ARTI_USER        — Artifactory username
+#   ARTI_PASSWORD    — Artifactory password
 #
 # Optional:
 #   Update the CORP_CA_CERT_URL placeholder in the "Fetch corporate CA cert" step
@@ -24,8 +26,34 @@ on:
     branches: [main]
 
 jobs:
+  # ── Build the apexpacks binary once; all matrix jobs reuse it ──────────────
+  prepare:
+    name: Build apexpacks binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout apexpack
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build apexpacks
+        run: make build
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: apexpacks-binary
+          path: bin/apexpacks
+          retention-days: 1
+
+  # ── Per-language/version matrix — runs in parallel after prepare ───────────
   build:
     name: ${{ matrix.runtime }} ${{ matrix.version }}
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -95,12 +123,14 @@ jobs:
       - name: Checkout apexpack
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Download apexpacks binary
+        uses: actions/download-artifact@v4
         with:
-          go-version-file: go.mod
-          cache: true
+          name: apexpacks-binary
+          path: bin/
 
+      - name: Make binary executable
+        run: chmod +x bin/apexpacks
 
       - name: Install melange and apko
         run: |
@@ -113,9 +143,6 @@ jobs:
           curl -sL "https://github.com/chainguard-dev/apko/releases/download/${APKO_VER}/apko_linux_amd64.tar.gz" \
             | tar -xz -C /tmp apko
           sudo mv /tmp/apko /usr/local/bin/apko
-
-      - name: Build apexpacks
-        run: make build
 
       - name: Fetch corporate CA cert
         env:
