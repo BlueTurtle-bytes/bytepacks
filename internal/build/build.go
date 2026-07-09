@@ -68,6 +68,12 @@ type Options struct {
 	// On macOS this flag is a no-op — the darwin path always produces a tarball.
 	LocalBuild bool
 
+	// MelangeRunner selects the sandbox backend melange uses for builds.
+	// Accepted values: "bubblewrap" (default on Linux), "docker", "qemu".
+	// Use "docker" when bubblewrap user namespaces are unavailable (e.g. restricted
+	// Kubernetes pods) and a Docker socket is accessible in the build environment.
+	MelangeRunner string
+
 	// LanguageVersion is the detected language version (e.g. "17" for Java 17,
 	// "20" for Node 20, "3.12" for Python 3.12, "8" for .NET 8).
 	// Substituted for {JAVA_VERSION}, {NODE_VERSION}, {PYTHON_VERSION}, {DOTNET_VERSION}

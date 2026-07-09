@@ -23,11 +23,12 @@ func buildCmd() *cobra.Command {
 		ver         string
 		runtime_    string
 		projectName string
-		tlsExtraCA  string
-		arch        string
-		dryRun      bool
-		localBuild  bool
-		signingKey  string
+		tlsExtraCA     string
+		arch           string
+		dryRun         bool
+		localBuild     bool
+		signingKey     string
+		melangeRunner  string
 	)
 
 	cmd := &cobra.Command{
@@ -144,6 +145,7 @@ Examples:
 				PackageManager:  detectedPM,
 				LanguageVersion: detectedLangVersion,
 				TLSExtraCA:      tlsExtraCA,
+				MelangeRunner:   melangeRunner,
 				Arch:            arch,
 				LocalBuild:      localBuild,
 				SigningKey:      signingKey,
@@ -232,6 +234,9 @@ Examples:
 		"Path to an extra CA certificate (PEM) to trust — use in corporate proxy environments")
 	cmd.Flags().StringVar(&arch, "arch", "",
 		"Target build architecture: x86_64 or aarch64 (default: host arch)")
+	cmd.Flags().StringVar(&melangeRunner, "melange-runner", "",
+		`melange sandbox backend: bubblewrap (default), docker, qemu.
+Use "docker" when bubblewrap user namespaces are unavailable and a Docker socket is accessible.`)
 	cmd.Flags().BoolVar(&localBuild, "local", false,
 		"Build tarball only, skip registry push (apko build). Default pushes directly via apko publish.")
 	cmd.Flags().StringVar(&signingKey, "signing-key", "",

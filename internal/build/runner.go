@@ -30,13 +30,17 @@ func runMelange(configFile string, opts Options) error {
 	arch := melangeArch(opts.Arch)
 	fmt.Printf("  → melange arch: %s (GOARCH=%s)\n", arch, runtime.GOARCH)
 
+	runner := opts.MelangeRunner
+	if runner == "" {
+		runner = "bubblewrap"
+	}
 	args := []string{
 		"build", configFile,
 		"--source-dir", opts.SourceDir,
 		"--out-dir", packagesDir,
 		"--signing-key", keyFile,
 		"--arch", arch,
-		"--runner", "bubblewrap",
+		"--runner", runner,
 	}
 
 	if opts.TLSExtraCA == "" {
@@ -170,11 +174,15 @@ func runMelangeTest(configFile string, opts Options) error {
 		return runMelangeTestInDocker(configFile, opts)
 	}
 
+	runner := opts.MelangeRunner
+	if runner == "" {
+		runner = "bubblewrap"
+	}
 	arch := melangeArch(opts.Arch)
 	args := []string{
 		"test", configFile,
 		"--arch", arch,
-		"--runner", "bubblewrap",
+		"--runner", runner,
 	}
 
 	if opts.TLSExtraCA == "" {
