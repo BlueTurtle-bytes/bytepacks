@@ -9,7 +9,7 @@
 #   ARTI_PASSWORD    — Artifactory password
 #
 # Optional:
-#   Update the CORP_CA_CERT_URL placeholder in the "Fetch corporate CA cert" step
+#   Set CORP_CA_CERT_URL secret to fetch and bundle a corporate CA cert.
 #
 # To initialise the Gist, create one file per badge key listed in the
 # matrix below (e.g. java_17.json) with this starter content:
@@ -26,10 +26,12 @@ on:
     branches: [main]
 
 jobs:
-  # ── Build the apexpacks binary once; all matrix jobs reuse it ──────────────
+  # ── Prepare: build binary, download tools, fetch cert — runs once ──────────
   prepare:
-    name: Build apexpacks binary
+    name: Prepare build tools
     runs-on: ubuntu-latest
+    outputs:
+      has-ca-cert: ${{ steps.fetch-cert.outputs.has-ca-cert }}
     steps:
       - name: Checkout apexpack
         uses: actions/checkout@v4
@@ -43,11 +45,58 @@ jobs:
       - name: Build apexpacks
         run: make build
 
-      - name: Upload binary
+      - name: Download melange and apko
+        run: |
+          MELANGE_VER=$(curl -sf https://api.github.com/repos/chainguard-dev/melange/releases/latest | jq -r .tag_name)
+          curl -sL "https://github.com/chainguard-dev/melange/releases/download/${MELANGE_VER}/melange_linux_amd64.tar.gz" \
+            | tar -xz -C /tmp melange
+
+          APKO_VER=$(curl -sf https://api.github.com/repos/chainguard-dev/apko/releases/latest | jq -r .tag_name)
+          curl -sL "https://github.com/chainguard-dev/apko/releases/download/${APKO_VER}/apko_linux_amd64.tar.gz" \
+            | tar -xz -C /tmp apko
+
+      - name: Upload apexpacks binary
         uses: actions/upload-artifact@v4
         with:
           name: apexpacks-binary
           path: bin/apexpacks
+          retention-days: 1
+
+      - name: Upload melange and apko
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-tools
+          path: |
+            /tmp/melange
+            /tmp/apko
+          retention-days: 1
+
+      - name: Fetch corporate CA cert
+        id: fetch-cert
+        env:
+          CORP_CA_CERT_URL: ${{ secrets.CORP_CA_CERT_URL }}
+        run: |
+          if [ -z "$CORP_CA_CERT_URL" ]; then
+            echo "CORP_CA_CERT_URL not set — skipping"
+            echo "has-ca-cert=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          BASENAME=$(basename "$CORP_CA_CERT_URL")
+          DEST="/tmp/corp-cert/${BASENAME%.tar}"
+          mkdir -p "$DEST"
+          curl -Lk "$CORP_CA_CERT_URL" | tar -xf - -C "$DEST"
+          BUNDLE="/tmp/corp-ca-bundle.pem"
+          find "$DEST" -maxdepth 2 \( -name "*.pem" -o -name "*.crt" \) | sort | xargs cat > "$BUNDLE"
+          COUNT=$(grep -c "BEGIN CERTIFICATE" "$BUNDLE" || true)
+          echo "→ CA bundle: $COUNT cert(s) written to $BUNDLE"
+          echo "has-ca-cert=true" >> $GITHUB_OUTPUT
+
+      - name: Upload CA cert bundle
+        if: steps.fetch-cert.outputs.has-ca-cert == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: corp-ca-cert
+          path: /tmp/corp-ca-bundle.pem
           retention-days: 1
 
   # ── Per-language/version matrix — runs in parallel after prepare ───────────
@@ -129,38 +178,27 @@ jobs:
           name: apexpacks-binary
           path: bin/
 
-      - name: Make binary executable
-        run: chmod +x bin/apexpacks
+      - name: Download melange and apko
+        uses: actions/download-artifact@v4
+        with:
+          name: build-tools
+          path: /tmp/tools/
 
-      - name: Install melange and apko
+      - name: Make binaries executable
         run: |
-          MELANGE_VER=$(curl -sf https://api.github.com/repos/chainguard-dev/melange/releases/latest | jq -r .tag_name)
-          curl -sL "https://github.com/chainguard-dev/melange/releases/download/${MELANGE_VER}/melange_linux_amd64.tar.gz" \
-            | tar -xz -C /tmp melange
-          sudo mv /tmp/melange /usr/local/bin/melange
+          chmod +x bin/apexpacks /tmp/tools/melange /tmp/tools/apko
+          echo "/tmp/tools" >> $GITHUB_PATH
 
-          APKO_VER=$(curl -sf https://api.github.com/repos/chainguard-dev/apko/releases/latest | jq -r .tag_name)
-          curl -sL "https://github.com/chainguard-dev/apko/releases/download/${APKO_VER}/apko_linux_amd64.tar.gz" \
-            | tar -xz -C /tmp apko
-          sudo mv /tmp/apko /usr/local/bin/apko
+      - name: Restore CA cert bundle
+        if: needs.prepare.outputs.has-ca-cert == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: corp-ca-cert
+          path: /tmp/
 
-      - name: Fetch corporate CA cert
-        env:
-          CORP_CA_CERT_URL: ${{ secrets.CORP_CA_CERT_URL }}
-        run: |
-          if [ -z "$CORP_CA_CERT_URL" ]; then
-            echo "CORP_CA_CERT_URL not set — skipping"
-            exit 0
-          fi
-          BASENAME=$(basename "$CORP_CA_CERT_URL")
-          DEST="/tmp/corp-cert/${BASENAME%.tar}"
-          mkdir -p "$DEST"
-          curl -Lk "$CORP_CA_CERT_URL" | tar -xf - -C "$DEST"
-          BUNDLE="/tmp/corp-ca-bundle.pem"
-          find "$DEST" -maxdepth 2 \( -name "*.pem" -o -name "*.crt" \) | sort | xargs cat > "$BUNDLE"
-          COUNT=$(grep -c "BEGIN CERTIFICATE" "$BUNDLE" || true)
-          echo "APEXPACK_EXTRA_CA=$BUNDLE" >> $GITHUB_ENV
-          echo "→ CA bundle: $COUNT cert(s) written to $BUNDLE"
+      - name: Set CA cert env
+        if: needs.prepare.outputs.has-ca-cert == 'true'
+        run: echo "APEXPACK_EXTRA_CA=/tmp/corp-ca-bundle.pem" >> $GITHUB_ENV
 
       - name: Clone test repo
         run: git clone --depth 1 ${{ matrix.repo }} /home/runner/_work/testrepo
