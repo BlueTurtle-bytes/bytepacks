@@ -136,12 +136,19 @@ jobs:
           echo "→ CA bundle: $COUNT cert(s) written to $BUNDLE"
 
       - name: Clone test repo
-        run: git clone --depth 1 ${{ matrix.repo }} /tmp/testrepo
+        run: git clone --depth 1 ${{ matrix.repo }} /home/runner/_work/testrepo
 
       - name: Build image (local, no push)
         id: apexbuild
+        env:
+          # melange --runner docker bind-mounts its workspace into DinD.
+          # DinD shares /home/runner/_work with the runner container via the
+          # "work" volume, so workspace paths under that directory are visible
+          # to the Docker daemon. /tmp is runner-only and causes a bind-mount
+          # "source path does not exist" error.
+          TMPDIR: /home/runner/_work
         run: |
-          ./bin/apexpacks build /tmp/testrepo \
+          ./bin/apexpacks build /home/runner/_work/testrepo \
             --runtime ${{ matrix.runtime }} \
             --tag apexpack-ci/${{ matrix.runtime }}-${{ matrix.version }}:test \
             --local \
