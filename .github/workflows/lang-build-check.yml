@@ -147,6 +147,11 @@ jobs:
           # to the Docker daemon. /tmp is runner-only and causes a bind-mount
           # "source path does not exist" error.
           TMPDIR: ${{ github.workspace }}
+          # Artifactory credentials — injected into melange.yaml environment block
+          # by the language hooks (hook_java.go, hook_dotnet.go) via os.Getenv.
+          # Never stored in profile YAML; sourced from the regcred-equivalent secret.
+          ARTI_USER: ${{ secrets.ARTI_USER }}
+          ARTI_PASSWORD: ${{ secrets.ARTI_PASSWORD }}
         run: |
           ./bin/apexpacks build /home/runner/_work/testrepo \
             --runtime ${{ matrix.runtime }} \
