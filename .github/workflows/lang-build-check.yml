@@ -146,7 +146,7 @@ jobs:
           # "work" volume, so workspace paths under that directory are visible
           # to the Docker daemon. /tmp is runner-only and causes a bind-mount
           # "source path does not exist" error.
-          TMPDIR: /home/runner/_work
+          TMPDIR: ${{ github.workspace }}
         run: |
           ./bin/apexpacks build /home/runner/_work/testrepo \
             --runtime ${{ matrix.runtime }} \

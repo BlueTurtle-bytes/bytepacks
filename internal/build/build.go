@@ -285,6 +285,20 @@ fi`
 		}
 	}
 
+	// Strip world-write from all staged files before melange's worldwrite linter
+	// runs. Build tools (Maven, Gradle, dotnet publish) produce 0666 files when
+	// running inside Docker where the default umask is 0000.
+	plan.Melange.Pipeline = append(plan.Melange.Pipeline, types.MelangePipeline{
+		Runs: `find "${{targets.destdir}}" -type f -perm /0002 -exec chmod o-w {} \;`,
+	})
+	melangeYAML, err = marshalYAML(&plan.Melange)
+	if err != nil {
+		return fmt.Errorf("marshalling melange config (perm fix): %w", err)
+	}
+	if err := os.WriteFile(melangeFile, []byte(melangeYAML), 0o644); err != nil {
+		return fmt.Errorf("writing melange.yaml (perm fix): %w", err)
+	}
+
 	// Run melange.
 	fmt.Println("\n  → Running melange...")
 	if err := runMelange(melangeFile, opts); err != nil {
