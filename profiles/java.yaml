@@ -217,6 +217,8 @@ test:
   pipeline:
     - runs: |
         test -s /app/app.jar || { echo "ERROR: /app/app.jar not found or empty"; exit 1; }
-        export PATH="/usr/lib/jvm/java-{JAVA_VERSION}-openjdk/bin:$PATH"
-        java -version 2>&1 | head -2
+        JAVA_BIN=$(find /usr/lib/jvm -name java -type f 2>/dev/null | head -1)
+        if [ -z "$JAVA_BIN" ]; then JAVA_BIN=$(command -v java 2>/dev/null); fi
+        if [ -z "$JAVA_BIN" ]; then echo "ERROR: java binary not found"; exit 1; fi
+        "$JAVA_BIN" -version 2>&1 | head -2
         echo "✓ /app/app.jar present, Java runtime available"
