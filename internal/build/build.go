@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/apexpack/apexpack/internal/types"
@@ -92,7 +93,7 @@ func Plan(p *types.Profile, opts Options) (*types.BuildPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	apkoCfg, err := buildApkoConfig(p, opts)
+	apkoCfg, apkoHC, err := buildApkoConfig(p, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -105,6 +106,7 @@ func Plan(p *types.Profile, opts Options) (*types.BuildPlan, error) {
 		ProcfileCmd:    readProcfileCmd(opts.SourceDir),
 		Melange:        melangeCfg,
 		Apko:           apkoCfg,
+		HealthCheck:    apkoHC,
 	}, nil
 }
 
@@ -317,6 +319,21 @@ fi`
 	fmt.Println("\n  → Running apko...")
 	if err := runApko(apkoFile, opts); err != nil {
 		return fmt.Errorf("apko: %w", err)
+	}
+
+	// Inject OCI HEALTHCHECK into the tarball.
+	// apko doesn't support the healthcheck field in its YAML schema, so we
+	// post-process the output tarball with Docker to add it.
+	if plan.HealthCheck != nil && runtime.GOOS == "darwin" {
+		outputTar := filepath.Join(opts.OutputDir, opts.ProjectName+".tar")
+		imageTag := opts.Tag
+		if imageTag == "" {
+			imageTag = opts.ProjectName + ":latest"
+		}
+		fmt.Println("\n  → Injecting OCI HEALTHCHECK...")
+		if err := injectHealthCheckIntoTar(outputTar, imageTag, plan.HealthCheck); err != nil {
+			fmt.Printf("  → WARN: healthcheck injection failed: %v\n", err)
+		}
 	}
 
 	return nil

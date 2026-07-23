@@ -720,8 +720,8 @@ func TestPlanHTTPHealthCheckAddsWget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan() error: %v", err)
 	}
-	if plan.Apko.HealthCheck == nil {
-		t.Fatal("expected HealthCheck to be set in apko config")
+	if plan.HealthCheck == nil {
+		t.Fatal("expected HealthCheck to be set in build plan")
 	}
 	pkgs := strings.Join(plan.Apko.Contents.Packages, " ")
 	if !strings.Contains(pkgs, "wget") {
@@ -738,7 +738,7 @@ func TestPlanHTTPHealthCheckURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan() error: %v", err)
 	}
-	hc := plan.Apko.HealthCheck
+	hc := plan.HealthCheck
 	if hc == nil {
 		t.Fatal("HealthCheck is nil")
 	}
@@ -768,8 +768,8 @@ func TestPlanDisabledHealthCheckSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan() error: %v", err)
 	}
-	if plan.Apko.HealthCheck != nil {
-		t.Error("disabled health check should not be set in apko config")
+	if plan.HealthCheck != nil {
+		t.Error("disabled health check should not be set in build plan")
 	}
 }
 
@@ -781,7 +781,7 @@ func TestPlanNoHealthCheckByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan() error: %v", err)
 	}
-	if plan.Apko.HealthCheck != nil {
+	if plan.HealthCheck != nil {
 		t.Error("golang profile has no health check by default, expected nil")
 	}
 }

@@ -543,7 +543,6 @@ type ApkoConfig struct {
 	Accounts    ApkoAccounts      `yaml:"accounts"`
 	Environment map[string]string `yaml:"environment,omitempty"`
 	Paths       []ApkoPath        `yaml:"paths,omitempty"`
-	HealthCheck *ApkoHealthCheck  `yaml:"healthcheck,omitempty"`
 }
 
 // ApkoHealthCheck is the healthcheck: block written into apko.yaml.
@@ -627,4 +626,9 @@ type BuildPlan struct {
 
 	// Apko is the structured apko.yaml config — marshalled to YAML on write.
 	Apko ApkoConfig
+
+	// HealthCheck holds the OCI HEALTHCHECK to inject after apko builds the image.
+	// Not written to apko.yaml (apko doesn't support the field); instead injected
+	// via a Docker post-processing step on the output tarball.
+	HealthCheck *ApkoHealthCheck
 }

@@ -169,7 +169,7 @@ func resolveOverride(p *types.Profile, framework, pm string) (types.FrameworkBui
 
 // buildApkoConfig constructs an ApkoConfig from a profile and options.
 // The struct is later marshalled to YAML by yaml.Marshal.
-func buildApkoConfig(p *types.Profile, opts Options) (types.ApkoConfig, error) {
+func buildApkoConfig(p *types.Profile, opts Options) (types.ApkoConfig, *types.ApkoHealthCheck, error) {
 	token := langVersionToken(p.Runtime)
 	version := resolveVersion(p.Runtime, opts.LanguageVersion)
 
@@ -230,14 +230,17 @@ func buildApkoConfig(p *types.Profile, opts Options) (types.ApkoConfig, error) {
 	// Dispatch to the language hook for runtime-specific apko patches.
 	if hook, ok := hooks[p.Runtime]; ok {
 		if err := hook.PatchApko(&cfg, p, opts); err != nil {
-			return types.ApkoConfig{}, err
+			return types.ApkoConfig{}, nil, err
 		}
 	}
 
-	// Add health check when configured and not explicitly disabled.
+	// Build the OCI health check when configured and not explicitly disabled.
+	// The healthcheck is NOT written to apko.yaml (apko doesn't support the field);
+	// it is returned separately and injected via Docker post-processing in Run().
+	var healthCheck *types.ApkoHealthCheck
 	if hc := p.Image.HealthCheck; hc != nil && !hc.Disabled {
 		if apkoHC := buildHealthCheck(hc); apkoHC != nil {
-			cfg.HealthCheck = apkoHC
+			healthCheck = apkoHC
 			// HTTP checks use /usr/bin/wget; ensure the wget package is present.
 			if hc.HTTP != nil {
 				cfg.Contents.Packages = ensurePackage(cfg.Contents.Packages, "wget")
@@ -249,7 +252,7 @@ func buildApkoConfig(p *types.Profile, opts Options) (types.ApkoConfig, error) {
 		}
 	}
 
-	return cfg, nil
+	return cfg, healthCheck, nil
 }
 
 // buildHealthCheck converts a HealthCheckConfig into the ApkoHealthCheck struct

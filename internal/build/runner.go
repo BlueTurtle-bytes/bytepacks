@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/apexpack/apexpack/internal/types"
 )
 
 func runMelange(configFile string, opts Options) error {
@@ -357,4 +359,60 @@ func copySigningKey(src, dst string) error {
 	}
 	fmt.Println("  → Using cluster signing key")
 	return nil
+}
+
+// injectHealthCheckIntoTar loads the apko-built OCI tarball into Docker,
+// builds a new image layer with a HEALTHCHECK instruction, and saves it back.
+// apko's YAML schema has no healthcheck field, so this is the injection path.
+func injectHealthCheckIntoTar(tarPath, imageTag string, hc *types.ApkoHealthCheck) error {
+	if err := runTool("docker", []string{"load", "-i", tarPath}); err != nil {
+		return fmt.Errorf("docker load: %w", err)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "apexpack-hc-*")
+	if err != nil {
+		return fmt.Errorf("creating temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dfPath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dfPath, []byte(buildDockerfileWithHealthCheck(imageTag, hc)), 0o644); err != nil {
+		return fmt.Errorf("writing Dockerfile: %w", err)
+	}
+
+	if err := runTool("docker", []string{"build", "--no-cache", "-t", imageTag, "-f", dfPath, tmpDir}); err != nil {
+		return fmt.Errorf("docker build: %w", err)
+	}
+
+	if err := runTool("docker", []string{"save", "-o", tarPath, imageTag}); err != nil {
+		return fmt.Errorf("docker save: %w", err)
+	}
+
+	return nil
+}
+
+// buildDockerfileWithHealthCheck generates a single-layer Dockerfile that adds
+// an OCI HEALTHCHECK on top of the already-built image.
+func buildDockerfileWithHealthCheck(imageTag string, hc *types.ApkoHealthCheck) string {
+	var sb strings.Builder
+	sb.WriteString("FROM " + imageTag + "\n")
+	sb.WriteString("HEALTHCHECK")
+	if hc.Interval != "" {
+		sb.WriteString(" --interval=" + hc.Interval)
+	}
+	if hc.Timeout != "" {
+		sb.WriteString(" --timeout=" + hc.Timeout)
+	}
+	if hc.StartPeriod != "" {
+		sb.WriteString(" --start-period=" + hc.StartPeriod)
+	}
+	if hc.Retries > 0 {
+		sb.WriteString(fmt.Sprintf(" --retries=%d", hc.Retries))
+	}
+	// hc.Command[0] is "CMD" or "CMD-SHELL"; remaining elements are the command.
+	if len(hc.Command) > 1 {
+		sb.WriteString(" " + hc.Command[0] + " " + strings.Join(hc.Command[1:], " "))
+	}
+	sb.WriteString("\n")
+	return sb.String()
 }
