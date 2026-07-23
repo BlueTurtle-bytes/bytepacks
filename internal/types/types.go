@@ -289,6 +289,55 @@ type ImageConfig struct {
 
 	// Ports are informational — they are added as OCI annotations.
 	Ports []string `yaml:"ports,omitempty"`
+
+	// HealthCheck configures the OCI HEALTHCHECK embedded in the image.
+	// When set, apexpack emits a healthcheck: block in apko.yaml and
+	// automatically adds wget to the runtime packages for HTTP checks.
+	HealthCheck *HealthCheckConfig `yaml:"health-check,omitempty"`
+}
+
+// HealthCheckConfig controls the container health check written to apko.yaml.
+// Mirrors the Paketo health-checker buildpack model: one check type (http or tcp),
+// plus timing parameters that can be overridden per-project in apexpacks.yaml.
+type HealthCheckConfig struct {
+	// HTTP performs a GET request; exits 0 if the server returns any HTTP response.
+	// Adds wget to the runtime image packages automatically.
+	HTTP *HTTPHealthCheck `yaml:"http,omitempty"`
+
+	// TCP performs a TCP connection attempt; exits 0 if the port accepts connections.
+	// Adds busybox to the runtime image packages (for nc).
+	TCP *TCPHealthCheck `yaml:"tcp,omitempty"`
+
+	// Interval between health check runs. Default: 30s
+	Interval string `yaml:"interval,omitempty"`
+
+	// Timeout before the check is declared failed. Default: 5s
+	Timeout string `yaml:"timeout,omitempty"`
+
+	// StartPeriod grace period after container start before checks begin. Default: 10s
+	StartPeriod string `yaml:"start-period,omitempty"`
+
+	// Retries is consecutive failures before the container is declared unhealthy. Default: 3
+	Retries int `yaml:"retries,omitempty"`
+
+	// Disabled overrides a profile's default health check — set true in apexpacks.yaml
+	// when the app is not an HTTP/TCP server (CLI tools, batch jobs, etc.).
+	Disabled bool `yaml:"disabled,omitempty"`
+}
+
+// HTTPHealthCheck issues a GET to http://localhost:{Port}{Path} via wget.
+type HTTPHealthCheck struct {
+	// Path is the URL path to check. Default: "/"
+	Path string `yaml:"path,omitempty"`
+
+	// Port is the TCP port. Default: 8080
+	Port int `yaml:"port,omitempty"`
+}
+
+// TCPHealthCheck dials localhost:{Port} and checks that the connection succeeds.
+type TCPHealthCheck struct {
+	// Port is required.
+	Port int `yaml:"port"`
 }
 
 // ============================================================================
@@ -344,6 +393,10 @@ type ProjectImageOverride struct {
 	// Cmd overrides the profile's default cmd arguments.
 	// Example: ["-m", "uvicorn", "myapp:app", "--host=0.0.0.0", "--port=8000"]
 	Cmd []string `yaml:"cmd,omitempty"`
+
+	// HealthCheck replaces the profile's health-check configuration entirely.
+	// Set disabled: true to suppress a profile-level default for non-HTTP apps.
+	HealthCheck *HealthCheckConfig `yaml:"health-check,omitempty"`
 }
 
 // ProjectBuildOverride lets a project add extra build deps or env vars.
@@ -490,6 +543,17 @@ type ApkoConfig struct {
 	Accounts    ApkoAccounts      `yaml:"accounts"`
 	Environment map[string]string `yaml:"environment,omitempty"`
 	Paths       []ApkoPath        `yaml:"paths,omitempty"`
+	HealthCheck *ApkoHealthCheck  `yaml:"healthcheck,omitempty"`
+}
+
+// ApkoHealthCheck is the healthcheck: block written into apko.yaml.
+// Command follows OCI/Docker convention: first element is "CMD" or "CMD-SHELL".
+type ApkoHealthCheck struct {
+	Command     []string `yaml:"command"`
+	Interval    string   `yaml:"interval,omitempty"`
+	Timeout     string   `yaml:"timeout,omitempty"`
+	StartPeriod string   `yaml:"start-period,omitempty"`
+	Retries     int      `yaml:"retries,omitempty"`
 }
 
 // ApkoPath sets ownership and permissions on a path after all packages are installed.

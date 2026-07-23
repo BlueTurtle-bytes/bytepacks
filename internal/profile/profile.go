@@ -155,6 +155,9 @@ func MergeProjectConfig(p *types.Profile, proj *types.ProjectConfig) *types.Prof
 		for k, v := range proj.Image.Env {
 			merged.Image.Env[k] = v
 		}
+		if proj.Image.HealthCheck != nil {
+			merged.Image.HealthCheck = proj.Image.HealthCheck
+		}
 	}
 
 	return &merged

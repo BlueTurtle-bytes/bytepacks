@@ -588,3 +588,200 @@ func TestPlanDefaultRunAs(t *testing.T) {
 		t.Errorf("RunAs: got %q, want 65532", plan.Apko.Accounts.RunAs)
 	}
 }
+
+// ── buildHealthCheck ──────────────────────────────────────────────────────────
+
+func TestBuildHealthCheckHTTPDefaults(t *testing.T) {
+	hc := &types.HealthCheckConfig{
+		HTTP: &types.HTTPHealthCheck{},
+	}
+	got := buildHealthCheck(hc)
+	if got == nil {
+		t.Fatal("expected non-nil ApkoHealthCheck")
+	}
+	if len(got.Command) < 2 || got.Command[0] != "CMD" {
+		t.Errorf("Command[0] should be CMD, got %v", got.Command)
+	}
+	wantURL := "http://localhost:8080/"
+	if got.Command[len(got.Command)-1] != wantURL {
+		t.Errorf("Command URL: got %q, want %q", got.Command[len(got.Command)-1], wantURL)
+	}
+	if got.Interval != "30s" {
+		t.Errorf("Interval: got %q, want 30s", got.Interval)
+	}
+	if got.Timeout != "5s" {
+		t.Errorf("Timeout: got %q, want 5s", got.Timeout)
+	}
+	if got.StartPeriod != "10s" {
+		t.Errorf("StartPeriod: got %q, want 10s", got.StartPeriod)
+	}
+	if got.Retries != 3 {
+		t.Errorf("Retries: got %d, want 3", got.Retries)
+	}
+}
+
+func TestBuildHealthCheckHTTPCustom(t *testing.T) {
+	hc := &types.HealthCheckConfig{
+		HTTP:        &types.HTTPHealthCheck{Path: "/health", Port: 9090},
+		Interval:    "60s",
+		Timeout:     "10s",
+		StartPeriod: "30s",
+		Retries:     5,
+	}
+	got := buildHealthCheck(hc)
+	if got == nil {
+		t.Fatal("expected non-nil ApkoHealthCheck")
+	}
+	wantURL := "http://localhost:9090/health"
+	if got.Command[len(got.Command)-1] != wantURL {
+		t.Errorf("URL: got %q, want %q", got.Command[len(got.Command)-1], wantURL)
+	}
+	if got.Interval != "60s" {
+		t.Errorf("Interval: got %q, want 60s", got.Interval)
+	}
+	if got.Retries != 5 {
+		t.Errorf("Retries: got %d, want 5", got.Retries)
+	}
+}
+
+func TestBuildHealthCheckTCP(t *testing.T) {
+	hc := &types.HealthCheckConfig{
+		TCP: &types.TCPHealthCheck{Port: 5432},
+	}
+	got := buildHealthCheck(hc)
+	if got == nil {
+		t.Fatal("expected non-nil ApkoHealthCheck")
+	}
+	if got.Command[0] != "CMD-SHELL" {
+		t.Errorf("Command[0]: got %q, want CMD-SHELL", got.Command[0])
+	}
+	if !strings.Contains(got.Command[1], "5432") {
+		t.Errorf("TCP command should mention port 5432: %q", got.Command[1])
+	}
+}
+
+func TestBuildHealthCheckNilWhenNoCheck(t *testing.T) {
+	hc := &types.HealthCheckConfig{}
+	if got := buildHealthCheck(hc); got != nil {
+		t.Errorf("expected nil for empty config, got %v", got)
+	}
+}
+
+// ── ensurePackage ─────────────────────────────────────────────────────────────
+
+func TestEnsurePackageAddsNew(t *testing.T) {
+	pkgs := []string{"ca-certificates", "wolfi-baselayout"}
+	got := ensurePackage(pkgs, "wget")
+	if len(got) != 3 || got[2] != "wget" {
+		t.Errorf("expected wget appended, got %v", got)
+	}
+}
+
+func TestEnsurePackageNoDuplicate(t *testing.T) {
+	pkgs := []string{"ca-certificates", "wget"}
+	got := ensurePackage(pkgs, "wget")
+	if len(got) != 2 {
+		t.Errorf("expected no duplicate, got %v", got)
+	}
+}
+
+func TestEnsurePackageSkipsPinned(t *testing.T) {
+	pkgs := []string{"wget=1.21.4-r0"}
+	got := ensurePackage(pkgs, "wget")
+	if len(got) != 1 {
+		t.Errorf("pinned wget should not be duplicated, got %v", got)
+	}
+}
+
+// ── Plan with health check ────────────────────────────────────────────────────
+
+func profileWithHTTPHealthCheck(port int, path string) *types.Profile {
+	return &types.Profile{
+		Runtime: "node",
+		Build: types.BuildConfig{
+			Dependencies: []string{"nodejs"},
+			Command:      "npm install",
+		},
+		Image: types.ImageConfig{
+			Packages:   []string{"nodejs-20", "ca-certificates"},
+			Entrypoint: "node",
+			HealthCheck: &types.HealthCheckConfig{
+				HTTP: &types.HTTPHealthCheck{Port: port, Path: path},
+			},
+		},
+	}
+}
+
+func TestPlanHTTPHealthCheckAddsWget(t *testing.T) {
+	plan, err := Plan(profileWithHTTPHealthCheck(3000, "/"), Options{
+		SourceDir:   t.TempDir(),
+		ProjectName: "webapi",
+	})
+	if err != nil {
+		t.Fatalf("Plan() error: %v", err)
+	}
+	if plan.Apko.HealthCheck == nil {
+		t.Fatal("expected HealthCheck to be set in apko config")
+	}
+	pkgs := strings.Join(plan.Apko.Contents.Packages, " ")
+	if !strings.Contains(pkgs, "wget") {
+		t.Errorf("wget should be auto-added for HTTP health check, packages: %v",
+			plan.Apko.Contents.Packages)
+	}
+}
+
+func TestPlanHTTPHealthCheckURL(t *testing.T) {
+	plan, err := Plan(profileWithHTTPHealthCheck(8080, "/healthz"), Options{
+		SourceDir:   t.TempDir(),
+		ProjectName: "svc",
+	})
+	if err != nil {
+		t.Fatalf("Plan() error: %v", err)
+	}
+	hc := plan.Apko.HealthCheck
+	if hc == nil {
+		t.Fatal("HealthCheck is nil")
+	}
+	wantURL := "http://localhost:8080/healthz"
+	if hc.Command[len(hc.Command)-1] != wantURL {
+		t.Errorf("URL: got %q, want %q", hc.Command[len(hc.Command)-1], wantURL)
+	}
+}
+
+func TestPlanDisabledHealthCheckSkipped(t *testing.T) {
+	p := &types.Profile{
+		Runtime: "golang",
+		Build: types.BuildConfig{
+			Dependencies: []string{"go"},
+			Command:      "go build .",
+		},
+		Image: types.ImageConfig{
+			Packages:   []string{"ca-certificates"},
+			Entrypoint: "/usr/bin/myapp",
+			HealthCheck: &types.HealthCheckConfig{
+				HTTP:     &types.HTTPHealthCheck{Port: 8080},
+				Disabled: true,
+			},
+		},
+	}
+	plan, err := Plan(p, Options{SourceDir: t.TempDir(), ProjectName: "myapp"})
+	if err != nil {
+		t.Fatalf("Plan() error: %v", err)
+	}
+	if plan.Apko.HealthCheck != nil {
+		t.Error("disabled health check should not be set in apko config")
+	}
+}
+
+func TestPlanNoHealthCheckByDefault(t *testing.T) {
+	plan, err := Plan(golangProfile(), Options{
+		SourceDir:   t.TempDir(),
+		ProjectName: "mytool",
+	})
+	if err != nil {
+		t.Fatalf("Plan() error: %v", err)
+	}
+	if plan.Apko.HealthCheck != nil {
+		t.Error("golang profile has no health check by default, expected nil")
+	}
+}

@@ -234,5 +234,83 @@ func buildApkoConfig(p *types.Profile, opts Options) (types.ApkoConfig, error) {
 		}
 	}
 
+	// Add health check when configured and not explicitly disabled.
+	if hc := p.Image.HealthCheck; hc != nil && !hc.Disabled {
+		if apkoHC := buildHealthCheck(hc); apkoHC != nil {
+			cfg.HealthCheck = apkoHC
+			// HTTP checks use /usr/bin/wget; ensure the wget package is present.
+			if hc.HTTP != nil {
+				cfg.Contents.Packages = ensurePackage(cfg.Contents.Packages, "wget")
+			}
+			// TCP checks use nc from busybox; ensure busybox is present.
+			if hc.TCP != nil {
+				cfg.Contents.Packages = ensurePackage(cfg.Contents.Packages, "busybox")
+			}
+		}
+	}
+
 	return cfg, nil
+}
+
+// buildHealthCheck converts a HealthCheckConfig into the ApkoHealthCheck struct
+// written to apko.yaml. Returns nil when neither http nor tcp is configured.
+func buildHealthCheck(hc *types.HealthCheckConfig) *types.ApkoHealthCheck {
+	interval := "30s"
+	if hc.Interval != "" {
+		interval = hc.Interval
+	}
+	timeout := "5s"
+	if hc.Timeout != "" {
+		timeout = hc.Timeout
+	}
+	startPeriod := "10s"
+	if hc.StartPeriod != "" {
+		startPeriod = hc.StartPeriod
+	}
+	retries := 3
+	if hc.Retries > 0 {
+		retries = hc.Retries
+	}
+
+	var cmd []string
+	switch {
+	case hc.HTTP != nil:
+		port := 8080
+		if hc.HTTP.Port > 0 {
+			port = hc.HTTP.Port
+		}
+		path := "/"
+		if hc.HTTP.Path != "" {
+			path = hc.HTTP.Path
+		}
+		// --spider does a HEAD request and exits 0 for any HTTP response (even 4xx),
+		// which is the right semantics: the app is up if it responds at all.
+		cmd = []string{"CMD", "/usr/bin/wget", "--spider", "-q",
+			fmt.Sprintf("http://localhost:%d%s", port, path)}
+	case hc.TCP != nil:
+		// nc (netcat) from busybox: -z connect-only, -w1 one-second timeout.
+		cmd = []string{"CMD-SHELL",
+			fmt.Sprintf("nc -z -w1 localhost %d", hc.TCP.Port)}
+	default:
+		return nil
+	}
+
+	return &types.ApkoHealthCheck{
+		Command:     cmd,
+		Interval:    interval,
+		Timeout:     timeout,
+		StartPeriod: startPeriod,
+		Retries:     retries,
+	}
+}
+
+// ensurePackage appends pkg to pkgs if it is not already present (ignoring pinned versions).
+func ensurePackage(pkgs []string, pkg string) []string {
+	for _, p := range pkgs {
+		// Match both "wget" and "wget=1.21.4-r0" style entries.
+		if p == pkg || strings.HasPrefix(p, pkg+"=") {
+			return pkgs
+		}
+	}
+	return append(pkgs, pkg)
 }

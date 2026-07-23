@@ -205,6 +205,14 @@ image:
   env:
     JAVA_HOME: "/usr/lib/jvm/java-{JAVA_VERSION}-openjdk"
     JAVA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+  health-check:
+    http:
+      path: /
+      port: 8080
+    interval: 30s
+    timeout: 10s
+    start-period: 60s
+    retries: 3
 
 scan:
   auto-patch: true

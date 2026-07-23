@@ -28,6 +28,8 @@
     "scan",
     "scan",
     "patch",
+    "scan",
+    "build",
     "scan"
   ],
   "runtime": "golang",
@@ -39,8 +41,8 @@
   "apk_path": "/Users/ronphilip/dev/apexpack/.apexpack-output/packages/aarch64/*.apk",
   "scan_result": "pass",
   "scan_critical": "13",
-  "scan_high": "43",
-  "scan_medium": "62",
+  "scan_high": "48",
+  "scan_medium": "38",
   "scan_low": "0",
   "patches_applied": "8",
   "patched_packages": [
