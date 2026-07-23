@@ -3,9 +3,11 @@ package build
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/apexpack/apexpack/internal/types"
 )
@@ -364,9 +366,23 @@ func copySigningKey(src, dst string) error {
 // injectHealthCheckIntoTar loads the apko-built OCI tarball into Docker,
 // builds a new image layer with a HEALTHCHECK instruction, and saves it back.
 // apko's YAML schema has no healthcheck field, so this is the injection path.
-func injectHealthCheckIntoTar(tarPath, imageTag string, hc *types.ApkoHealthCheck) error {
+//
+// arch is the melange arch string (e.g. "aarch64", "x86_64"). apko appends the
+// Docker arch suffix to the tag inside the tarball (e.g. "myapp:latest-arm64"),
+// so we re-tag to the plain imageTag before running the Dockerfile FROM.
+func injectHealthCheckIntoTar(tarPath, imageTag, arch string, hc *types.ApkoHealthCheck) error {
 	if err := runTool("docker", []string{"load", "-i", tarPath}); err != nil {
 		return fmt.Errorf("docker load: %w", err)
+	}
+
+	// apko appends the Docker arch suffix to the tag inside the tarball
+	// (aarch64 → arm64, x86_64 → amd64). Re-tag to the plain imageTag so
+	// the Dockerfile FROM resolves locally without a registry pull.
+	archTag := imageTag + "-" + melangeArchToDockerSuffix(arch)
+	if err := runTool("docker", []string{"tag", archTag, imageTag}); err != nil {
+		// Best-effort: older apko builds or single-arch tarballs may already
+		// use the plain tag. Log and continue.
+		fmt.Printf("  → (re-tag %s → %s skipped: %v)\n", archTag, imageTag, err)
 	}
 
 	tmpDir, err := os.MkdirTemp("", "apexpack-hc-*")
@@ -389,6 +405,49 @@ func injectHealthCheckIntoTar(tarPath, imageTag string, hc *types.ApkoHealthChec
 	}
 
 	return nil
+}
+
+// testContainerStartup starts the image in detached mode, waits briefly, then
+// verifies the container is still running (didn't crash on startup). The image
+// must already be loaded in Docker (injectHealthCheckIntoTar loads it).
+// This is the pre-push gate on Tekton: fail fast before the image hits the registry.
+func testContainerStartup(imageTag string) error {
+	name := fmt.Sprintf("apexpack-pretest-%d", time.Now().UnixNano())
+
+	if err := runTool("docker", []string{"run", "-d", "--name", name, imageTag}); err != nil {
+		return fmt.Errorf("starting test container: %w", err)
+	}
+	defer runTool("docker", []string{"rm", "-f", name}) // nolint: always clean up
+
+	// Give the process 5 seconds to either crash or settle.
+	time.Sleep(5 * time.Second)
+
+	out, err := exec.Command("docker", "inspect", "--format={{.State.Status}}", name).Output()
+	if err != nil {
+		return fmt.Errorf("inspecting test container: %w", err)
+	}
+	status := strings.TrimSpace(string(out))
+
+	switch status {
+	case "running":
+		fmt.Println("  → Container started successfully ✓")
+		return nil
+	case "exited":
+		// Print tail of logs so the failure is actionable.
+		exec.Command("docker", "logs", "--tail", "20", name).Run() // nolint
+		return fmt.Errorf("container exited immediately — check app startup errors above")
+	default:
+		return fmt.Errorf("unexpected container status %q", status)
+	}
+}
+
+// melangeArchToDockerSuffix maps melange arch names to the suffix apko appends
+// to image tags inside OCI tarballs (aarch64 → arm64, x86_64 → amd64).
+func melangeArchToDockerSuffix(arch string) string {
+	if arch == "aarch64" {
+		return "arm64"
+	}
+	return "amd64"
 }
 
 // buildDockerfileWithHealthCheck generates a single-layer Dockerfile that adds

@@ -315,24 +315,53 @@ fi`
 		}
 	}
 
-	// Run apko.
-	fmt.Println("\n  → Running apko...")
-	if err := runApko(apkoFile, opts); err != nil {
-		return fmt.Errorf("apko: %w", err)
+	imageTag := opts.Tag
+	if imageTag == "" {
+		imageTag = opts.ProjectName + ":latest"
 	}
 
-	// Inject OCI HEALTHCHECK into the tarball.
-	// apko doesn't support the healthcheck field in its YAML schema, so we
-	// post-process the output tarball with Docker to add it.
-	if plan.HealthCheck != nil && runtime.GOOS == "darwin" {
-		outputTar := filepath.Join(opts.OutputDir, opts.ProjectName+".tar")
-		imageTag := opts.Tag
-		if imageTag == "" {
-			imageTag = opts.ProjectName + ":latest"
+	// When healthcheck is configured on Linux publish (e.g. Tekton), redirect to a
+	// build-test-push pipeline instead of apko publish. This lets us inject the
+	// healthcheck, test the container locally, and only push once it's verified —
+	// rather than pushing first and then pulling back to check.
+	linuxPublishWithHC := plan.HealthCheck != nil && runtime.GOOS != "darwin" && !opts.LocalBuild
+
+	if linuxPublishWithHC {
+		localOpts := opts
+		localOpts.LocalBuild = true
+		fmt.Println("\n  → Running apko build (deferred push for healthcheck test)...")
+		if err := runApko(apkoFile, localOpts); err != nil {
+			return fmt.Errorf("apko build: %w", err)
 		}
+	} else {
+		fmt.Println("\n  → Running apko...")
+		if err := runApko(apkoFile, opts); err != nil {
+			return fmt.Errorf("apko: %w", err)
+		}
+	}
+
+	// Inject OCI HEALTHCHECK into the image after apko finishes.
+	// apko's YAML schema has no healthcheck field, so we post-process with Docker.
+	if plan.HealthCheck != nil {
+		arch := melangeArch(opts.Arch)
+		outputTar := filepath.Join(opts.OutputDir, opts.ProjectName+".tar")
+
 		fmt.Println("\n  → Injecting OCI HEALTHCHECK...")
-		if err := injectHealthCheckIntoTar(outputTar, imageTag, plan.HealthCheck); err != nil {
+		if err := injectHealthCheckIntoTar(outputTar, imageTag, arch, plan.HealthCheck); err != nil {
 			fmt.Printf("  → WARN: healthcheck injection failed: %v\n", err)
+		}
+
+		// On the Linux publish path the image is now in Docker (injectHealthCheckIntoTar
+		// calls docker load + build). Test it locally before pushing to the registry.
+		if linuxPublishWithHC {
+			fmt.Println("\n  → Testing container before push...")
+			if err := testContainerStartup(imageTag); err != nil {
+				return fmt.Errorf("pre-push container test: %w", err)
+			}
+			fmt.Println("\n  → Pushing image to registry...")
+			if err := runTool("docker", []string{"push", imageTag}); err != nil {
+				return fmt.Errorf("docker push: %w", err)
+			}
 		}
 	}
 
