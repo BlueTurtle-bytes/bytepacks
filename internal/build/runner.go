@@ -524,8 +524,13 @@ func runHealthCheckTest(imageTag string, hc *types.HealthCheckConfig) {
 
 	out, _ := exec.Command("docker", "inspect", "--format={{.State.Status}}", ctrName).Output()
 	if strings.TrimSpace(string(out)) == "exited" {
-		exec.Command("docker", "logs", "--tail", "10", ctrName).Run() //nolint:errcheck
-		fmt.Println("     status: FAILED ✗  (container exited — see logs above)")
+		fmt.Println("     --- container logs (last 20 lines) ---")
+		logsCmd := exec.Command("docker", "logs", "--tail", "20", ctrName)
+		logsCmd.Stdout = os.Stdout
+		logsCmd.Stderr = os.Stderr
+		_ = logsCmd.Run()
+		fmt.Println("     --- end logs ---")
+		fmt.Println("     status: FAILED ✗  (container exited)")
 	} else {
 		fmt.Printf("     status: FAILED ✗  (no response after 30s: %v)\n", lastErr)
 	}
