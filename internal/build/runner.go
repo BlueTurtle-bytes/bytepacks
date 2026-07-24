@@ -2,6 +2,8 @@ package build
 
 import (
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -448,6 +450,85 @@ func melangeArchToDockerSuffix(arch string) string {
 		return "arm64"
 	}
 	return "amd64"
+}
+
+// runHealthCheckTest starts the image in Docker, polls the configured health
+// endpoint, and prints a pass/fail summary. The image must already be present
+// in the local Docker daemon (injectHealthCheckIntoTar loads it).
+func runHealthCheckTest(imageTag string, hc *types.HealthCheckConfig) {
+	if hc == nil || hc.Disabled {
+		return
+	}
+
+	var testDesc string
+	var port int
+	var path string
+	var isTCP bool
+
+	switch {
+	case hc.HTTP != nil:
+		port = hc.HTTP.Port
+		if port == 0 {
+			port = 8080
+		}
+		path = hc.HTTP.Path
+		if path == "" {
+			path = "/"
+		}
+		testDesc = fmt.Sprintf("HTTP GET http://localhost:%d%s", port, path)
+	case hc.TCP != nil:
+		port = hc.TCP.Port
+		isTCP = true
+		testDesc = fmt.Sprintf("TCP connect localhost:%d", port)
+	default:
+		return
+	}
+
+	fmt.Println("\n  → Health Check Test")
+	fmt.Printf("     image:  %s\n", imageTag)
+	fmt.Printf("     test:   %s\n", testDesc)
+
+	ctrName := fmt.Sprintf("apexpack-hctest-%d", time.Now().UnixNano())
+	portMapping := fmt.Sprintf("%d:%d", port, port)
+	if err := runTool("docker", []string{"run", "-d", "--name", ctrName, "-p", portMapping, imageTag}); err != nil {
+		fmt.Printf("     status: FAILED ✗  (could not start container: %v)\n", err)
+		return
+	}
+	defer runTool("docker", []string{"rm", "-f", ctrName}) //nolint:errcheck
+
+	start := time.Now()
+	const deadline = 30 * time.Second
+	const tick = 500 * time.Millisecond
+	var lastErr error
+
+	for time.Since(start) < deadline {
+		if isTCP {
+			conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", port), time.Second)
+			if err == nil {
+				conn.Close()
+				fmt.Printf("     status: PASSED ✓  (port live in %.1fs)\n", time.Since(start).Seconds())
+				return
+			}
+			lastErr = err
+		} else {
+			resp, err := http.Get(fmt.Sprintf("http://localhost:%d%s", port, path)) //nolint:noctx
+			if err == nil {
+				resp.Body.Close()
+				fmt.Printf("     status: PASSED ✓  (HTTP %d in %.1fs)\n", resp.StatusCode, time.Since(start).Seconds())
+				return
+			}
+			lastErr = err
+		}
+		time.Sleep(tick)
+	}
+
+	out, _ := exec.Command("docker", "inspect", "--format={{.State.Status}}", ctrName).Output()
+	if strings.TrimSpace(string(out)) == "exited" {
+		exec.Command("docker", "logs", "--tail", "10", ctrName).Run() //nolint:errcheck
+		fmt.Println("     status: FAILED ✗  (container exited — see logs above)")
+	} else {
+		fmt.Printf("     status: FAILED ✗  (no response after 30s: %v)\n", lastErr)
+	}
 }
 
 // buildDockerfileWithHealthCheck generates a single-layer Dockerfile that adds

@@ -332,6 +332,8 @@ fi`
 		fmt.Println("\n  → Injecting OCI HEALTHCHECK...")
 		if err := injectHealthCheckIntoTar(outputTar, imageTag, arch, plan.HealthCheck); err != nil {
 			fmt.Printf("  → WARN: healthcheck injection failed: %v\n", err)
+		} else {
+			runHealthCheckTest(imageTag, plan.Profile.Image.HealthCheck)
 		}
 	}
 
