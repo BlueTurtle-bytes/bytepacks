@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/apexpack/apexpack/internal/types"
@@ -320,50 +319,24 @@ fi`
 		imageTag = opts.ProjectName + ":latest"
 	}
 
-	// When healthcheck is configured on Linux publish (e.g. Tekton), redirect to a
-	// build-test-push pipeline instead of apko publish. This lets us inject the
-	// healthcheck, test the container locally, and only push once it's verified —
-	// rather than pushing first and then pulling back to check.
-	linuxPublishWithHC := plan.HealthCheck != nil && runtime.GOOS != "darwin" && !opts.LocalBuild
-
-	if linuxPublishWithHC {
-		localOpts := opts
-		localOpts.LocalBuild = true
-		fmt.Println("\n  → Running apko build (deferred push for healthcheck test)...")
-		if err := runApko(apkoFile, localOpts); err != nil {
-			return fmt.Errorf("apko build: %w", err)
-		}
-	} else {
-		fmt.Println("\n  → Running apko...")
-		if err := runApko(apkoFile, opts); err != nil {
-			return fmt.Errorf("apko: %w", err)
-		}
+	fmt.Println("\n  → Running apko...")
+	if err := runApko(apkoFile, opts); err != nil {
+		return fmt.Errorf("apko: %w", err)
 	}
 
-	// Inject OCI HEALTHCHECK into the image after apko finishes.
-	// apko's YAML schema has no healthcheck field, so we post-process with Docker.
-	if plan.HealthCheck != nil {
+	// OCI HEALTHCHECK injection is only for local builds (Docker/Compose testing).
+	// On publish builds (Tekton / CI), apko publish pushes directly — no tarball.
+	if plan.HealthCheck != nil && opts.LocalBuild {
 		arch := melangeArch(opts.Arch)
 		outputTar := filepath.Join(opts.OutputDir, opts.ProjectName+".tar")
-
 		fmt.Println("\n  → Injecting OCI HEALTHCHECK...")
 		if err := injectHealthCheckIntoTar(outputTar, imageTag, arch, plan.HealthCheck); err != nil {
 			fmt.Printf("  → WARN: healthcheck injection failed: %v\n", err)
 		}
-
-		// On the Linux publish path the image is now in Docker (injectHealthCheckIntoTar
-		// calls docker load + build). Test it locally before pushing to the registry.
-		if linuxPublishWithHC {
-			fmt.Println("\n  → Testing container before push...")
-			if err := testContainerStartup(imageTag); err != nil {
-				return fmt.Errorf("pre-push container test: %w", err)
-			}
-			fmt.Println("\n  → Pushing image to registry...")
-			if err := runTool("docker", []string{"push", imageTag}); err != nil {
-				return fmt.Errorf("docker push: %w", err)
-			}
-		}
 	}
+
+	// Always emit probes.yaml alongside the image for K8s deployment manifests.
+	emitProbesYAML(opts, plan.Profile.Image.HealthCheck)
 
 	return nil
 }
