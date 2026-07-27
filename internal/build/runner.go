@@ -510,6 +510,10 @@ func frameworkProbeDefaults(framework string) (path string, port int) {
 //
 // The image must already be present in the local Docker daemon (injectHealthCheckIntoTar loads it).
 func runHealthCheckTest(imageTag string, hc *types.HealthCheckConfig, framework string) {
+	if hc != nil && hc.Disabled {
+		return
+	}
+
 	fmt.Println("\n  → Health Check Test")
 	fmt.Printf("     image: %s\n", imageTag)
 
