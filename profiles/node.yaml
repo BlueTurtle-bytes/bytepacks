@@ -178,7 +178,6 @@ image:
     PORT: "3000"
   health-check:
     http:
-      path: /
       port: 3000
     interval: 30s
     timeout: 5s

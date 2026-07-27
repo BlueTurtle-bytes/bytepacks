@@ -454,24 +454,49 @@ func melangeArchToDockerSuffix(arch string) string {
 
 // frameworkProbeDefaults returns a default HTTP health probe path and port for
 // known frameworks. Used when no explicit health_check is set in apexpacks.yaml.
+// Returns ("", 0) for frameworks with no standard health endpoint (boot-check only).
 func frameworkProbeDefaults(framework string) (path string, port int) {
 	switch framework {
-	case "spring-boot":
+	// Java — Spring Boot (Maven + Gradle)
+	case "spring-boot", "spring-boot-gradle":
 		return "/actuator/health", 8080
-	case "quarkus":
+	// Java — Quarkus (Maven + Gradle)
+	case "quarkus", "quarkus-gradle":
 		return "/q/health", 8080
-	case "micronaut":
+	// Java — Micronaut (Maven + Gradle)
+	case "micronaut", "micronaut-gradle":
 		return "/health", 8080
-	case "dotnet", "aspnet":
-		return "/healthz", 8080
-	case "fastapi":
+
+	// .NET — ASP.NET Core web apps
+	case "aspnetcore":
+		return "/health", 8080
+	// .NET — MassTransit / Orleans are worker processes with no HTTP health endpoint
+	case "masstransit", "orleans":
+		return "", 0
+
+	// Go web frameworks
+	case "gin", "echo", "fiber", "connect":
+		return "/health", 8080
+	// gRPC and bare main() have no standard HTTP health path
+	case "grpc", "root-main":
+		return "", 0
+
+	// Node.js frameworks
+	case "express", "fastify", "nestjs", "hono":
+		return "/health", 3000
+	// Next.js / Remix serve pages, no standard health endpoint
+	case "nextjs", "remix":
+		return "", 0
+
+	// Python frameworks
+	case "fastapi", "aiohttp":
 		return "/health", 8000
 	case "flask":
 		return "/health", 5000
+	// Django has no built-in health endpoint
 	case "django":
-		return "/health", 8000
-	case "express", "fastify", "nodejs":
-		return "/health", 3000
+		return "", 0
+
 	default:
 		return "", 0
 	}

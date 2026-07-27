@@ -71,7 +71,6 @@ image:
     - "8080"
   health-check:
     http:
-      path: /
       port: 8080
     interval: 30s
     timeout: 5s
