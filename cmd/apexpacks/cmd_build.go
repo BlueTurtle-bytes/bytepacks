@@ -74,17 +74,20 @@ Examples:
 
 			// If --runtime not given, check context.json set by a prior detect run.
 			runtimeSource := "--runtime flag"
-			if runtime_ == "" {
-				if ctxData, cerr := apexctx.Load(absSrcDir); cerr == nil && ctxData.Runtime != "" {
-					runtime_ = ctxData.Runtime
-					runtimeSource = "context.json"
-				}
-			}
-
 			var matchedProfile *types.Profile
 			var detectedFramework string
 			var detectedPM string
 			var detectedLangVersion string
+
+			if runtime_ == "" {
+				if ctxData, cerr := apexctx.Load(absSrcDir); cerr == nil && ctxData.Runtime != "" {
+					runtime_ = ctxData.Runtime
+					runtimeSource = "context.json"
+					// Carry forward framework saved by a prior detect run.
+					detectedFramework = ctxData.Framework
+				}
+			}
+
 			if runtime_ != "" {
 				matchedProfile = profile.GetByRuntime(profiles, runtime_)
 				if matchedProfile == nil {
