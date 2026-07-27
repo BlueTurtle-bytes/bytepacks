@@ -511,17 +511,16 @@ func runHealthCheckTest(imageTag string, hc *types.HealthCheckConfig, framework 
 				}
 			}
 			path = hc.HTTP.Path
-			if path == "" {
-				// No explicit path: prefer framework default over bare "/"
-				// so Spring Boot gets /actuator/health, not a 404.
-				if fwPath != "" {
-					path = fwPath
-					probeSource = "config + " + framework + " default path"
-				} else {
-					path = "/"
-					probeSource = "config"
-				}
+			// Treat empty or bare "/" as "not set" — prefer the framework-specific
+			// default (e.g. /actuator/health for Spring Boot) over a generic root
+			// that most apps don't serve on.
+			if (path == "" || path == "/") && fwPath != "" && fwPath != "/" {
+				path = fwPath
+				probeSource = "config + " + framework + " default path"
 			} else {
+				if path == "" {
+					path = "/"
+				}
 				probeSource = "config"
 			}
 			probeDesc = fmt.Sprintf("HTTP GET http://localhost:%d%s", port, path)

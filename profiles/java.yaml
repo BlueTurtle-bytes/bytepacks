@@ -207,7 +207,6 @@ image:
     JAVA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
   health-check:
     http:
-      path: /
       port: 8080
     interval: 30s
     timeout: 10s
