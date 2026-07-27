@@ -452,49 +452,118 @@ func melangeArchToDockerSuffix(arch string) string {
 	return "amd64"
 }
 
-// runHealthCheckTest starts the image in Docker, polls the configured health
-// endpoint, and prints a pass/fail summary. The image must already be present
-// in the local Docker daemon (injectHealthCheckIntoTar loads it).
-func runHealthCheckTest(imageTag string, hc *types.HealthCheckConfig) {
-	if hc == nil || hc.Disabled {
-		return
+// frameworkProbeDefaults returns a default HTTP health probe path and port for
+// known frameworks. Used when no explicit health_check is set in apexpacks.yaml.
+func frameworkProbeDefaults(framework string) (path string, port int) {
+	switch framework {
+	case "spring-boot":
+		return "/actuator/health", 8080
+	case "quarkus":
+		return "/q/health", 8080
+	case "micronaut":
+		return "/health", 8080
+	case "dotnet", "aspnet":
+		return "/healthz", 8080
+	case "fastapi":
+		return "/health", 8000
+	case "flask":
+		return "/health", 5000
+	case "django":
+		return "/health", 8000
+	case "express", "fastify", "nodejs":
+		return "/health", 3000
+	default:
+		return "", 0
 	}
+}
 
-	var testDesc string
+// runHealthCheckTest starts the image in Docker and runs a two-stage check:
+//  1. Boot check — always runs: waits 5s and confirms the container is still running.
+//     Docker output is printed so you can see what the app logged on startup.
+//  2. Endpoint probe — runs when HTTP/TCP is configured in hc, or when the
+//     detected framework has a known default health endpoint.
+//
+// The image must already be present in the local Docker daemon (injectHealthCheckIntoTar loads it).
+func runHealthCheckTest(imageTag string, hc *types.HealthCheckConfig, framework string) {
+	fmt.Println("\n  → Health Check Test")
+	fmt.Printf("     image: %s\n", imageTag)
+
+	// Determine port mapping and probe type.
+	// Explicit config in apexpacks.yaml takes priority; fall back to framework defaults.
 	var port int
 	var path string
 	var isTCP bool
+	var probeDesc string
+	var probeSource string
 
-	switch {
-	case hc.HTTP != nil:
-		port = hc.HTTP.Port
-		if port == 0 {
-			port = 8080
+	if hc != nil && !hc.Disabled {
+		switch {
+		case hc.HTTP != nil:
+			port = hc.HTTP.Port
+			if port == 0 {
+				port = 8080
+			}
+			path = hc.HTTP.Path
+			if path == "" {
+				path = "/"
+			}
+			probeDesc = fmt.Sprintf("HTTP GET http://localhost:%d%s", port, path)
+			probeSource = "config"
+		case hc.TCP != nil:
+			port = hc.TCP.Port
+			isTCP = true
+			probeDesc = fmt.Sprintf("TCP connect localhost:%d", port)
+			probeSource = "config"
 		}
-		path = hc.HTTP.Path
-		if path == "" {
-			path = "/"
-		}
-		testDesc = fmt.Sprintf("HTTP GET http://localhost:%d%s", port, path)
-	case hc.TCP != nil:
-		port = hc.TCP.Port
-		isTCP = true
-		testDesc = fmt.Sprintf("TCP connect localhost:%d", port)
-	default:
-		return
 	}
 
-	fmt.Println("\n  → Health Check Test")
-	fmt.Printf("     image:  %s\n", imageTag)
-	fmt.Printf("     test:   %s\n", testDesc)
+	// Fall back to framework defaults when no explicit probe is set.
+	if probeDesc == "" && framework != "" {
+		if defaultPath, defaultPort := frameworkProbeDefaults(framework); defaultPort > 0 {
+			path = defaultPath
+			port = defaultPort
+			probeDesc = fmt.Sprintf("HTTP GET http://localhost:%d%s", port, path)
+			probeSource = framework + " default"
+		}
+	}
 
 	ctrName := fmt.Sprintf("apexpack-hctest-%d", time.Now().UnixNano())
-	portMapping := fmt.Sprintf("%d:%d", port, port)
-	if err := runTool("docker", []string{"run", "-d", "--name", ctrName, "-p", portMapping, imageTag}); err != nil {
-		fmt.Printf("     status: FAILED ✗  (could not start container: %v)\n", err)
+	runArgs := []string{"run", "-d", "--name", ctrName}
+	if port > 0 {
+		runArgs = append(runArgs, "-p", fmt.Sprintf("%d:%d", port, port))
+	}
+	runArgs = append(runArgs, imageTag)
+
+	if err := runTool("docker", runArgs); err != nil {
+		fmt.Printf("     boot:   FAILED ✗  (could not start container: %v)\n", err)
 		return
 	}
 	defer runTool("docker", []string{"rm", "-f", ctrName}) //nolint:errcheck
+
+	// Stage 1: boot check — give the process 5s to either crash or settle.
+	time.Sleep(5 * time.Second)
+
+	statusOut, _ := exec.Command("docker", "inspect", "--format={{.State.Status}}", ctrName).Output()
+	containerStatus := strings.TrimSpace(string(statusOut))
+
+	fmt.Println("     --- docker output ---")
+	logsCmd := exec.Command("docker", "logs", "--tail", "20", ctrName)
+	logsCmd.Stdout = os.Stdout
+	logsCmd.Stderr = os.Stderr
+	_ = logsCmd.Run()
+	fmt.Println("     --- end output ---")
+
+	if containerStatus == "exited" {
+		fmt.Println("     boot:   FAILED ✗  (container exited on startup)")
+		return
+	}
+	fmt.Println("     boot:   PASSED ✓  (container is running)")
+
+	// Stage 2: endpoint probe — only if HTTP/TCP configured or framework has a known default.
+	if probeDesc == "" {
+		return
+	}
+	fmt.Printf("     probe:  %s  [%s]\n", probeDesc, probeSource)
 
 	start := time.Now()
 	const deadline = 30 * time.Second
@@ -506,7 +575,7 @@ func runHealthCheckTest(imageTag string, hc *types.HealthCheckConfig) {
 			conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", port), time.Second)
 			if err == nil {
 				conn.Close()
-				fmt.Printf("     status: PASSED ✓  (port live in %.1fs)\n", time.Since(start).Seconds())
+				fmt.Printf("     probe:  PASSED ✓  (port live in %.1fs)\n", time.Since(start).Seconds())
 				return
 			}
 			lastErr = err
@@ -515,7 +584,7 @@ func runHealthCheckTest(imageTag string, hc *types.HealthCheckConfig) {
 			if err == nil {
 				resp.Body.Close()
 				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-					fmt.Printf("     status: PASSED ✓  (HTTP %d in %.1fs)\n", resp.StatusCode, time.Since(start).Seconds())
+					fmt.Printf("     probe:  PASSED ✓  (HTTP %d in %.1fs)\n", resp.StatusCode, time.Since(start).Seconds())
 					return
 				}
 				lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
@@ -526,18 +595,7 @@ func runHealthCheckTest(imageTag string, hc *types.HealthCheckConfig) {
 		time.Sleep(tick)
 	}
 
-	out, _ := exec.Command("docker", "inspect", "--format={{.State.Status}}", ctrName).Output()
-	if strings.TrimSpace(string(out)) == "exited" {
-		fmt.Println("     --- container logs (last 20 lines) ---")
-		logsCmd := exec.Command("docker", "logs", "--tail", "20", ctrName)
-		logsCmd.Stdout = os.Stdout
-		logsCmd.Stderr = os.Stderr
-		_ = logsCmd.Run()
-		fmt.Println("     --- end logs ---")
-		fmt.Println("     status: FAILED ✗  (container exited)")
-	} else {
-		fmt.Printf("     status: FAILED ✗  (no response after 30s: %v)\n", lastErr)
-	}
+	fmt.Printf("     probe:  FAILED ✗  (no response after 30s: %v)\n", lastErr)
 }
 
 // buildDockerfileWithHealthCheck generates a single-layer Dockerfile that adds

@@ -324,17 +324,18 @@ fi`
 		return fmt.Errorf("apko: %w", err)
 	}
 
-	// OCI HEALTHCHECK injection is only for local builds (Docker/Compose testing).
+	// OCI HEALTHCHECK injection and smoke test are local-only.
 	// On publish builds (Tekton / CI), apko publish pushes directly — no tarball.
-	if plan.HealthCheck != nil && opts.LocalBuild {
-		arch := melangeArch(opts.Arch)
-		outputTar := filepath.Join(opts.OutputDir, opts.ProjectName+".tar")
-		fmt.Println("\n  → Injecting OCI HEALTHCHECK...")
-		if err := injectHealthCheckIntoTar(outputTar, imageTag, arch, plan.HealthCheck); err != nil {
-			fmt.Printf("  → WARN: healthcheck injection failed: %v\n", err)
-		} else {
-			runHealthCheckTest(imageTag, plan.Profile.Image.HealthCheck)
+	if opts.LocalBuild {
+		if plan.HealthCheck != nil {
+			arch := melangeArch(opts.Arch)
+			outputTar := filepath.Join(opts.OutputDir, opts.ProjectName+".tar")
+			fmt.Println("\n  → Injecting OCI HEALTHCHECK...")
+			if err := injectHealthCheckIntoTar(outputTar, imageTag, arch, plan.HealthCheck); err != nil {
+				fmt.Printf("  → WARN: healthcheck injection failed: %v\n", err)
+			}
 		}
+		runHealthCheckTest(imageTag, plan.Profile.Image.HealthCheck, opts.Framework)
 	}
 
 	// Always emit probes.yaml alongside the image for K8s deployment manifests.
