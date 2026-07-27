@@ -496,19 +496,35 @@ func runHealthCheckTest(imageTag string, hc *types.HealthCheckConfig, framework 
 	var probeDesc string
 	var probeSource string
 
+	// Resolve framework defaults upfront so config can selectively override.
+	fwPath, fwPort := frameworkProbeDefaults(framework)
+
 	if hc != nil && !hc.Disabled {
 		switch {
 		case hc.HTTP != nil:
 			port = hc.HTTP.Port
 			if port == 0 {
-				port = 8080
+				if fwPort > 0 {
+					port = fwPort
+				} else {
+					port = 8080
+				}
 			}
 			path = hc.HTTP.Path
 			if path == "" {
-				path = "/"
+				// No explicit path: prefer framework default over bare "/"
+				// so Spring Boot gets /actuator/health, not a 404.
+				if fwPath != "" {
+					path = fwPath
+					probeSource = "config + " + framework + " default path"
+				} else {
+					path = "/"
+					probeSource = "config"
+				}
+			} else {
+				probeSource = "config"
 			}
 			probeDesc = fmt.Sprintf("HTTP GET http://localhost:%d%s", port, path)
-			probeSource = "config"
 		case hc.TCP != nil:
 			port = hc.TCP.Port
 			isTCP = true
@@ -517,14 +533,12 @@ func runHealthCheckTest(imageTag string, hc *types.HealthCheckConfig, framework 
 		}
 	}
 
-	// Fall back to framework defaults when no explicit probe is set.
-	if probeDesc == "" && framework != "" {
-		if defaultPath, defaultPort := frameworkProbeDefaults(framework); defaultPort > 0 {
-			path = defaultPath
-			port = defaultPort
-			probeDesc = fmt.Sprintf("HTTP GET http://localhost:%d%s", port, path)
-			probeSource = framework + " default"
-		}
+	// Fall back entirely to framework defaults when no explicit probe is set.
+	if probeDesc == "" && fwPort > 0 {
+		path = fwPath
+		port = fwPort
+		probeDesc = fmt.Sprintf("HTTP GET http://localhost:%d%s", port, path)
+		probeSource = framework + " default"
 	}
 
 	ctrName := fmt.Sprintf("apexpack-hctest-%d", time.Now().UnixNano())
