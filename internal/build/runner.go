@@ -514,10 +514,14 @@ func runHealthCheckTest(imageTag string, hc *types.HealthCheckConfig) {
 			resp, err := http.Get(fmt.Sprintf("http://localhost:%d%s", port, path)) //nolint:noctx
 			if err == nil {
 				resp.Body.Close()
-				fmt.Printf("     status: PASSED ✓  (HTTP %d in %.1fs)\n", resp.StatusCode, time.Since(start).Seconds())
-				return
+				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+					fmt.Printf("     status: PASSED ✓  (HTTP %d in %.1fs)\n", resp.StatusCode, time.Since(start).Seconds())
+					return
+				}
+				lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+			} else {
+				lastErr = err
 			}
-			lastErr = err
 		}
 		time.Sleep(tick)
 	}
