@@ -4,12 +4,14 @@ package profile
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
+	bundled "github.com/apexpack/apexpack/profiles"
 	"github.com/apexpack/apexpack/internal/types"
 )
 
@@ -40,25 +42,23 @@ func Load(path string) (*types.Profile, error) {
 }
 
 // LoadAll reads every .yaml file from dir and returns all valid profiles.
-// Invalid profiles are skipped with a warning printed to stderr.
+// If dir doesn't exist on disk, falls back to the profiles embedded in the binary.
 //
 // Usage:
 //
 //	profiles, err := profile.LoadAll("profiles")
 func LoadAll(dir string) ([]*types.Profile, error) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return loadFromEmbed()
+	}
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		// If the profiles directory doesn't exist, return a helpful error.
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("profiles directory %q not found — create it and add language profiles", dir)
-		}
 		return nil, fmt.Errorf("reading profiles directory %s: %w", dir, err)
 	}
 
 	var profiles []*types.Profile
-
 	for _, entry := range entries {
-		// Skip subdirectories and non-YAML files.
 		if entry.IsDir() {
 			continue
 		}
@@ -66,23 +66,88 @@ func LoadAll(dir string) ([]*types.Profile, error) {
 		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
 			continue
 		}
-
 		fullPath := filepath.Join(dir, name)
 		p, err := Load(fullPath)
 		if err != nil {
-			// Print warning but continue — one bad profile shouldn't break all others.
 			fmt.Fprintf(os.Stderr, "warning: skipping %s: %v\n", fullPath, err)
 			continue
 		}
-
 		profiles = append(profiles, p)
 	}
 
 	if len(profiles) == 0 {
 		return nil, fmt.Errorf("no valid profiles found in %s", dir)
 	}
-
 	return profiles, nil
+}
+
+// loadFromEmbed reads profiles from the FS baked into the binary at build time.
+func loadFromEmbed() ([]*types.Profile, error) {
+	entries, err := fs.ReadDir(bundled.FS, ".")
+	if err != nil {
+		return nil, fmt.Errorf("reading embedded profiles: %w", err)
+	}
+
+	var profiles []*types.Profile
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+			continue
+		}
+		data, err := bundled.FS.ReadFile(name)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: skipping embedded %s: %v\n", name, err)
+			continue
+		}
+		var p types.Profile
+		if err := yaml.Unmarshal(data, &p); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: skipping embedded %s: %v\n", name, err)
+			continue
+		}
+		if err := validate(&p, name); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: skipping embedded %s: %v\n", name, err)
+			continue
+		}
+		profiles = append(profiles, &p)
+	}
+
+	if len(profiles) == 0 {
+		return nil, fmt.Errorf("no valid profiles found in embedded binary")
+	}
+	return profiles, nil
+}
+
+// ExportEmbedded writes all embedded profiles to dir, creating it if needed.
+// Existing files in dir are overwritten. Used by `apexpacks profiles export`.
+func ExportEmbedded(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("creating directory %s: %w", dir, err)
+	}
+	entries, err := fs.ReadDir(bundled.FS, ".")
+	if err != nil {
+		return fmt.Errorf("reading embedded profiles: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+			continue
+		}
+		data, err := bundled.FS.ReadFile(name)
+		if err != nil {
+			return fmt.Errorf("reading embedded %s: %w", name, err)
+		}
+		dest := filepath.Join(dir, name)
+		if err := os.WriteFile(dest, data, 0o644); err != nil {
+			return fmt.Errorf("writing %s: %w", dest, err)
+		}
+	}
+	return nil
 }
 
 // GetByRuntime returns the first profile whose Runtime matches the given name.

@@ -10,17 +10,17 @@ import (
 	"github.com/apexpack/apexpack/internal/profile"
 )
 
-// resolveProfilesDir returns dir unchanged when it exists on disk.
-// When dir is the default relative "profiles" and it doesn't exist, it falls
-// back to the path where the apexpack image installs bundled profiles.
+// resolveProfilesDir returns the best available profiles directory.
+// Priority: explicit dir on disk → /etc/apexpack/profiles (container image path) → dir as-is
+// (LoadAll handles the final fallback to embedded profiles when dir doesn't exist).
 func resolveProfilesDir(dir string) string {
 	if _, err := os.Stat(dir); err == nil {
 		return dir
 	}
+	const imagePath = "/etc/apexpack/profiles"
 	if dir == profile.DefaultProfilesDir {
-		const bundled = "/etc/apexpack/profiles"
-		if _, err := os.Stat(bundled); err == nil {
-			return bundled
+		if _, err := os.Stat(imagePath); err == nil {
+			return imagePath
 		}
 	}
 	return dir
