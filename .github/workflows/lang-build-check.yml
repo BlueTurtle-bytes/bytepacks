@@ -39,11 +39,22 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.25"
           cache: true
 
-      - name: Build apexpacks
-        run: make build
+      - name: Build apexpacks with GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --snapshot --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract linux binary
+        run: |
+          tar xzf dist/apexpacks_linux_amd64.tar.gz apexpacks
+          mkdir -p bin
+          mv apexpacks bin/apexpacks
 
       - name: Download melange and apko
         run: |
