@@ -37,39 +37,101 @@ Language support is driven by **YAML profiles** in the `profiles/` directory. Ad
 ## Quick Start
 
 ```bash
-# Build the CLI
-make build   # or: go build -o bin/apexpacks ./cmd/apexpacks
+# Install the binary (see Installation section below)
+# Then, in any project directory:
 
-# Detect your project language and package manager
-./bin/apexpacks detect .
-
-# Preview what will be built (no tools run)
-./bin/apexpacks build . --dry-run
-
-# Build a real OCI image
-./bin/apexpacks build . --tag ghcr.io/myorg/myapp:v1.0
+apexpacks detect .            # detect language and framework
+apexpacks build . --dry-run  # preview what will be built
+apexpacks build .             # build an OCI image
+apexpacks scan                # scan for CVEs
 ```
 
 ---
 
 ## Installation
 
-**Prerequisites:** Go 1.24+, Docker (for macOS builds), melange and apko (for Linux builds)
+### Download a pre-built binary (recommended)
+
+Pre-built binaries for macOS and Linux are published with every GitHub release. No Go toolchain required.
+
+#### macOS (Apple Silicon or Intel)
 
 ```bash
-# Clone and build
+# Apple Silicon (M1/M2/M3)
+curl -L https://github.com/apexpack/apexpack/releases/latest/download/apexpacks_darwin_arm64.tar.gz | tar xz
+sudo mv apexpacks /usr/local/bin/
+
+# Intel Mac
+curl -L https://github.com/apexpack/apexpack/releases/latest/download/apexpacks_darwin_amd64.tar.gz | tar xz
+sudo mv apexpacks /usr/local/bin/
+```
+
+Verify the install:
+
+```bash
+apexpacks version
+```
+
+> If macOS blocks the binary with "cannot be opened because the developer cannot be verified", run:
+> `xattr -d com.apple.quarantine /usr/local/bin/apexpacks`
+
+#### Ubuntu / Debian (x86-64 or ARM64)
+
+```bash
+# x86-64
+curl -L https://github.com/apexpack/apexpack/releases/latest/download/apexpacks_linux_amd64.tar.gz | tar xz
+sudo mv apexpacks /usr/local/bin/
+
+# ARM64
+curl -L https://github.com/apexpack/apexpack/releases/latest/download/apexpacks_linux_arm64.tar.gz | tar xz
+sudo mv apexpacks /usr/local/bin/
+```
+
+Verify:
+
+```bash
+apexpacks version
+```
+
+#### Install a specific version
+
+Replace `latest/download` with `download/v0.x.y` to pin to a specific release:
+
+```bash
+curl -L https://github.com/apexpack/apexpack/releases/download/v0.2.0/apexpacks_darwin_arm64.tar.gz | tar xz
+```
+
+#### Verify the checksum
+
+Each release includes a `checksums.txt` file:
+
+```bash
+# Download the binary and the checksum file
+curl -LO https://github.com/apexpack/apexpack/releases/latest/download/apexpacks_darwin_arm64.tar.gz
+curl -LO https://github.com/apexpack/apexpack/releases/latest/download/checksums.txt
+
+# Verify
+shasum -a 256 --check checksums.txt --ignore-missing
+```
+
+---
+
+### Build from source
+
+**Prerequisites:** Go 1.25+, Docker (for macOS builds), melange and apko (for Linux builds)
+
+```bash
 git clone https://github.com/apexpack/apexpack
 cd apexpack
-make build   # or: go build -o bin/apexpacks ./cmd/apexpacks
+go build -o bin/apexpacks ./cmd/apexpacks
 
 # Or install directly into your Go bin
-make install   # or: go install ./cmd/apexpacks
-
-# melange and apko are invoked automatically during builds.
-# On macOS they run inside Docker (cgr.dev/chainguard/melange and apko images).
-# On Linux they run natively — install via: https://github.com/chainguard-dev/melange
-#                                           https://github.com/chainguard-dev/apko
+go install ./cmd/apexpacks
 ```
+
+On macOS, melange and apko run inside Docker (no native install needed). On Linux, install them natively:
+- melange: https://github.com/chainguard-dev/melange
+- apko: https://github.com/chainguard-dev/apko
 
 **Corporate / proxy environments:** if your network uses TLS inspection (Zscaler, etc.), see the [Corporate Proxy Environments](#corporate-proxy-environments) section before running `go build`.
 
@@ -79,7 +141,7 @@ make install   # or: go install ./cmd/apexpacks
 
 ### `apexpacks detect [source-dir]`
 
-Scans a source directory against all profiles and reports matches sorted by confidence. Identifies the runtime, the specific framework, and the package manager in use.
+Scans a source directory against all profiles and reports matches sorted by confidence. Identifies the runtime, framework, package manager, and language version. Writes results to `.apexpack/context.json` for use by subsequent `build` and `scan` commands.
 
 ```bash
 apexpacks detect .
@@ -92,22 +154,28 @@ Example output:
 ```
 Detected 1 match(es) in .:
 
-→ node           90%  framework: nextjs   (matched: [package.json])
+→ node           90%  framework: nextjs          version: 20       (matched: [package.json, pnpm-lock.yaml])
 
 To build: apexpacks build .
+
+Context: /path/to/project/.apexpack/context.json
 ```
 
-For a pnpm project the same command also picks up the package manager:
-
-```
-→ node           90%  framework: nextjs   (matched: [package.json, pnpm-lock.yaml])
-```
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--profiles-dir` | built-in | Directory containing language profile YAML files |
+| `--project-name` | dir name | Override the project name |
+| `--git-url` | auto-detected | Repository URL written to context.json |
+| `--git-branch` | auto-detected | Branch written to context.json |
+| `--git-commit` | auto-detected | Commit SHA written to context.json |
+| `--auto-patch` | from profile | Force auto-patch on (`true`) for this run |
+| `--patch-persist` | from profile | Force patch-persist on (`true`) for this run |
 
 ---
 
 ### `apexpacks build [source-dir]`
 
-Detects the language, loads the matching profile, resolves any framework or package-manager build overrides, generates `melange.yaml` and `apko.yaml`, then runs melange and apko to produce an OCI image tarball. Build caches are mounted as named Docker volumes on macOS so package managers reuse their download caches across builds.
+Detects the language, loads the matching profile, resolves any framework or package-manager build overrides, generates `melange.yaml` and `apko.yaml`, then runs melange and apko to produce an OCI image tarball. Build caches are mounted as named Docker volumes on macOS so package managers reuse their download caches across builds. Writes build artifact paths to `.apexpack/context.json`.
 
 ```bash
 # Auto-detect language and build
@@ -122,11 +190,26 @@ apexpacks build . --runtime java
 # Preview generated configs without running tools
 apexpacks build . --dry-run
 
+# Override language version (e.g. Java 21 instead of auto-detected)
+apexpacks build . --runtime java --lang-version 21
+
 # Custom output directory
 apexpacks build . --output /tmp/my-build
 
 # Corporate proxy — trust an extra CA certificate
 apexpacks build . --tls-extra-ca ~/corp-ca.pem
+
+# Use docker as the melange sandbox backend (when bubblewrap is unavailable)
+apexpacks build . --melange-runner docker
+
+# Build tarball only, skip registry push
+apexpacks build . --local
+
+# Use an existing melange signing key
+apexpacks build . --signing-key ~/.apexpack/melange.rsa
+
+# Build for a specific architecture
+apexpacks build . --arch aarch64
 ```
 
 | Flag | Default | Description |
@@ -134,51 +217,80 @@ apexpacks build . --tls-extra-ca ~/corp-ca.pem
 | `--tag` / `-t` | `<project>:latest` | OCI image reference |
 | `--runtime` | auto-detect | Skip detection, use this profile directly |
 | `--version` | `0.0.1` | Version embedded in the APK package |
+| `--lang-version` | auto-detected | Override the detected language version (e.g. `21` for Java 21) |
+| `--project-name` | dir name | Override the project name |
 | `--output` / `-o` | `.apexpack-output/` | Where configs and image tarball are written |
 | `--dry-run` | `false` | Print generated configs, do not run tools |
-| `--profiles-dir` | `profiles/` | Directory containing language profiles |
-| `--tls-extra-ca` | _(none)_ | Path to an extra CA cert (PEM) to trust — for corporate proxy environments (env: `APEXPACK_EXTRA_CA`) |
+| `--profiles-dir` | built-in | Directory containing language profiles |
+| `--tls-extra-ca` | _(none)_ | Path to an extra CA cert (PEM) for corporate proxy environments (env: `APEXPACK_EXTRA_CA`) |
+| `--arch` | host arch | Target architecture: `x86_64` or `aarch64` |
+| `--melange-runner` | `bubblewrap` | Melange sandbox backend: `bubblewrap`, `docker`, or `qemu` |
+| `--local` | `false` | Build tarball only, skip `apko publish` registry push |
+| `--signing-key` | auto-generated | Path to an existing melange RSA private key (`.pub` must be alongside) |
 
 ---
 
 ### `apexpacks scan [output-dir]`
 
-Scans the SBOM produced by `apexpacks build` for known CVEs using [grype](https://github.com/anchore/grype).
+Scans the SBOM produced by `apexpacks build` for known CVEs using [grype](https://github.com/anchore/grype). Normalises SBOM version strings automatically before scanning. Updates the grype CVE database before each scan. Writes severity counts and scan result to `.apexpack/context.json`.
 
 ```bash
-# Scan the last build (default output dir)
+# Scan the last build (auto-reads SBOM path from context.json)
 apexpacks scan
+
+# Scan a specific output directory
+apexpacks scan /path/to/.apexpack-output
+
+# Scan a specific SBOM file
+apexpacks scan --sbom /path/to/sbom-x86_64.spdx.json
 
 # Fail if any HIGH or above CVE is found (for CI)
 apexpacks scan --fail-on high
 
 # Output SARIF for GitHub Code Scanning
 apexpacks scan --format sarif --output results/
+
+# Exit 0 even on failure (used in auto-patch flows)
+apexpacks scan --soft-fail
+
+# Write results to rescan_* fields after a patch cycle
+apexpacks scan --rescan
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--sbom` | `<output-dir>/sbom-x86_64.spdx.json` | Path to a specific SBOM file |
+| `--sbom` | from context.json | Path to a specific SBOM file |
 | `--fail-on` | _(none)_ | Exit 1 at this severity: `critical`, `high`, `medium`, `low` |
 | `--format` | `table` | Output format: `table`, `json`, `sarif`, `cyclonedx` |
-| `--output` / `-o` | _(none)_ | Write report to this directory |
+| `--output` / `-o` | _(none)_ | Write report file to this directory |
+| `--source` | `.` | Source directory containing `.apexpack/context.json` |
+| `--soft-fail` | `false` | Exit 0 even when CVEs found (for auto-patch pipeline flows) |
+| `--rescan` | `false` | Write results to `rescan_*` fields in context.json (post-patch scan) |
 
 ---
 
 ### `apexpacks patch [output-dir]`
 
-Compares installed package versions (from the last build SBOM) against the latest Wolfi index and cross-references with grype to identify which outdated packages have CVEs. With `--apply`, updates profile YAML files to pin the patched versions.
+Compares installed package versions (from the last build SBOM) against the latest Wolfi index and cross-references with grype to identify which outdated packages have CVEs. With `--apply`, pins the patched versions in `apexpacks.yaml` in the project root.
 
 ```bash
-# Show available updates
+# Show available updates and CVEs
 apexpacks patch
 
-# Apply patches — updates profile YAML files
-apexpacks patch --apply --profiles-dir ./profiles
+# Apply patches — pins updated versions in apexpacks.yaml
+apexpacks patch --apply
 
-# Then rebuild to apply
+# Then rebuild to pick up the patches
 apexpacks build .
 ```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--sbom` | from context.json | Path to SBOM file |
+| `--apply` | `false` | Update `apexpacks.yaml` with pinned patched versions |
+| `--arch` | from context.json | Architecture to check against the Wolfi index |
+| `--runtime` | _(all)_ | Only patch the profile for this runtime (e.g. `java`) |
+| `--source` | `.` | Source directory containing `.apexpack/context.json` |
 
 ---
 
@@ -187,8 +299,153 @@ apexpacks build .
 Lists all loaded language profiles with their detection rules and build dependencies.
 
 ```bash
+# List all built-in profiles
 apexpacks profiles
-apexpacks profiles --profiles-dir /custom/profiles
+
+# List profiles from a custom directory
+apexpacks profiles --profiles-dir ./my-profiles
+```
+
+#### `apexpacks profiles export <dir>`
+
+Exports all built-in profiles to a directory so you can edit them.
+
+```bash
+apexpacks profiles export ./my-profiles
+# Edit any .yaml file in my-profiles/
+apexpacks build . --profiles-dir ./my-profiles
+```
+
+#### `apexpacks profiles new <name>`
+
+Scaffolds a complete starter profile for a new language or framework.
+
+```bash
+apexpacks profiles new rust
+apexpacks profiles new rust --output-dir ./my-profiles
+```
+
+The generated file includes placeholders for detect rules, build command, image packages, health check, and melange test pipeline. Edit it, then pass `--profiles-dir` to use it.
+
+---
+
+### `apexpacks normalize-sbom <sbom-path>`
+
+Rewrites an SPDX SBOM to a temporary file with normalized `versionInfo` fields, stripping non-APK prefixes so grype can match packages accurately. The `scan` command runs this automatically — this command is for scripting and debugging.
+
+```bash
+NORMALIZED=$(apexpacks normalize-sbom sbom-x86_64.spdx.json)
+grype sbom:$NORMALIZED
+rm -f "$NORMALIZED"
+```
+
+---
+
+### `apexpacks version`
+
+```bash
+apexpacks version
+# apexpacks v0.2.0
+```
+
+---
+
+## Health Checks
+
+### Configuring a health check in a profile
+
+Health checks are defined in the `image.health-check` section of a profile or `apexpacks.yaml`:
+
+```yaml
+image:
+  health-check:
+    http:
+      port: 8080
+      path: /health      # defaults to /
+    interval: 30s        # how often to check (default: 30s)
+    timeout: 5s          # per-check timeout (default: 5s)
+    start-period: 10s    # grace period before checks start (default: 10s)
+    retries: 3           # failures before unhealthy (default: 3)
+```
+
+For TCP services (databases, gRPC without HTTP, etc.):
+
+```yaml
+image:
+  health-check:
+    tcp:
+      port: 5432
+```
+
+To disable the health check entirely:
+
+```yaml
+image:
+  health-check:
+    disabled: true
+```
+
+### What happens at build time
+
+When a health check is configured, `apexpacks build` does four things:
+
+1. **Package injection** — `wget` is automatically added to the image for HTTP checks; `busybox` for TCP checks. You do not need to declare them manually.
+2. **`HEALTHCHECK` instruction** — the health check is embedded directly into the OCI image tar as a `HEALTHCHECK` layer, so it works natively with `docker run` and Kubernetes `livenessProbe`/`readinessProbe`.
+3. **Boot check** — after build, the image is started in Docker for 5 seconds to confirm the container does not exit on startup. Container logs are printed.
+4. **Endpoint probe** — HTTP GET or TCP connect is retried every 500ms for up to 30 seconds. The probe URL/port is taken from the health check config, with a per-framework default as fallback (e.g. FastAPI defaults to `GET /health` on port 8000).
+
+Example build output:
+
+```
+  → Health Check Test
+     image: myapp:latest
+     --- docker output ---
+     INFO:     Application startup complete.
+     --- end output ---
+     boot:   PASSED ✓  (container is running)
+     probe:  HTTP GET http://localhost:8080/health  [config]
+     probe:  PASSED ✓  (HTTP 200 in 2.3s)
+```
+
+### Framework-default probes
+
+If no `health-check` is declared but the detected framework has a known default endpoint, the boot check still runs a probe automatically:
+
+| Framework | Default probe |
+|-----------|--------------|
+| `fastapi` | `GET /health` on port `8000` |
+| `django` | `GET /` on port `8000` |
+| `flask` | `GET /` on port `5000` |
+| `express` | `GET /` on port `3000` |
+| `fastify` | `GET /health` on port `3000` |
+| `nestjs` | `GET /` on port `3000` |
+| `spring-boot` | `GET /actuator/health` on port `8080` |
+| `gin` | `GET /` on port `8080` |
+
+These are used only for the local boot-check probe — they do not inject a `HEALTHCHECK` into the image unless you also declare `image.health-check` in the profile.
+
+### Kubernetes probes file
+
+After a successful build, `apexpacks build` writes a `probes.yaml` file to the output directory. This file contains ready-to-paste Kubernetes `readinessProbe` and `livenessProbe` blocks derived from the health check configuration:
+
+```yaml
+# .apexpack-output/probes.yaml
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
 ```
 
 ---
@@ -220,6 +477,12 @@ apko                Assembles .apk packages → OCI image
     │               Generates SBOM, minimal Wolfi base, non-root by default
     ▼
 OCI Image (.tar)    Ready to push to any registry
+    │
+    ▼
+Health check        Boot check + endpoint probe (when health-check declared)
+    │
+    ▼
+probes.yaml         Kubernetes readiness/liveness probe YAML
 ```
 
 ### Why melange + apko instead of Dockerfile?
@@ -270,7 +533,6 @@ detect:
     - "*.csproj"
 
   # Package manager rules — checked by file existence, first match wins.
-  # Sets DetectResult.PackageManager independently of the framework.
   package-managers:
     - file: bun.lockb
       manager: bun
@@ -282,7 +544,6 @@ detect:
       manager: yarn
 
   # Content rules — read a file and check if it contains a string.
-  # The first rule with a non-empty framework that matches sets DetectResult.Framework.
   content:
     - file: package.json
       contains: "\"next\""
@@ -293,7 +554,7 @@ detect:
       boost-confidence: 0.03
       framework: express
 
-  confidence: 0.85   # base confidence score (0.0–1.0) when files/patterns match
+  confidence: 0.85   # base confidence score (0.0–1.0)
 
 # ── Build (feeds into melange.yaml) ────────────────────────────────────────
 build:
@@ -301,13 +562,13 @@ build:
     - nodejs
     - npm
     - git
-  command: |           # default — used when no framework/package-manager override matches
+  command: |
     npm ci --prefer-offline
     npm run build --if-present
-    mkdir -p /home/build/output/app
-    cp -r . /home/build/output/app/
-    rm -rf /home/build/output/app/node_modules
-    cd /home/build/output/app && npm ci --omit=dev --prefer-offline
+    mkdir -p ${{targets.destdir}}/app
+    cp -r . ${{targets.destdir}}/app/
+    rm -rf ${{targets.destdir}}/app/node_modules
+    cd ${{targets.destdir}}/app && npm ci --omit=dev --prefer-offline
   env:
     NODE_ENV: "production"
     NPM_CONFIG_CACHE: "/home/build/.npm"
@@ -315,10 +576,9 @@ build:
     - /home/build/.npm
 
   # Framework/package-manager overrides.
-  # Only define fields that differ from the defaults above.
   # Lookup order: {framework}-{packageManager} → {packageManager} → {framework} → default
   frameworks:
-    pnpm:              # any project using pnpm, regardless of framework
+    pnpm:
       dependencies:
         - nodejs
         - npm
@@ -327,26 +587,14 @@ build:
         npm install -g pnpm
         pnpm install --frozen-lockfile
         pnpm run build --if-present
-        mkdir -p /home/build/output/app
-        cp -r . /home/build/output/app/
-        cd /home/build/output/app && pnpm install --frozen-lockfile --prod
+        mkdir -p ${{targets.destdir}}/app
+        cp -r . ${{targets.destdir}}/app/
+        cd ${{targets.destdir}}/app && pnpm install --frozen-lockfile --prod
       env:
         NODE_ENV: "production"
         PNPM_HOME: "/home/build/.local/share/pnpm"
       caches:
         - /home/build/.local/share/pnpm/store
-    bun:
-      dependencies:
-        - bun
-        - git
-      command: |
-        bun install --frozen-lockfile
-        bun run build --if-present
-        mkdir -p /home/build/output/app
-        cp -r . /home/build/output/app/
-        cd /home/build/output/app && bun install --frozen-lockfile --production
-      caches:
-        - /home/build/.bun/install/cache
 
 # ── Image (feeds into apko.yaml) ────────────────────────────────────────────
 image:
@@ -361,35 +609,43 @@ image:
     - "3000"
   env:
     NODE_ENV: "production"
+  health-check:
+    http:
+      port: 3000
+      path: /health
+    interval: 30s
+    timeout: 5s
+    start-period: 10s
+    retries: 3
+
+# ── Melange test pipeline ───────────────────────────────────────────────────
+test:
+  packages:
+    - busybox
+  pipeline:
+    - runs: |
+        test -f /app/server.js || { echo "ERROR: /app/server.js not found"; exit 1; }
 
 # ── CVE Auto-patch ──────────────────────────────────────────────────────────
 scan:
-  auto-patch: false      # when true, CVE failures in the pipeline trigger auto-patch + rebuild
-  patch-persist: false   # when true, patched profiles are committed back to git
+  auto-patch: false
+  patch-persist: false
 ```
 
 ---
 
 ### The `scan` section
 
-Each profile carries a `scan` block that controls CVE auto-patching behaviour in the Tekton pipeline:
-
 | Field | Default | Description |
 |-------|---------|-------------|
 | `auto-patch` | `false` | When `true`, a CVE scan failure is treated as soft — the pipeline continues to apply patches and rebuild instead of failing hard |
 | `patch-persist` | `false` | When `true`, the updated profile YAML (with pinned package versions) is committed back to git after patching so future builds start already fixed |
 
-These are read from the matched profile by the `apexpack-detect` Tekton task and emitted as pipeline results (`AUTO_PATCH`, `PATCH_PERSIST`). Pipeline params `AUTO_PATCH` and `PATCH_PERSIST` can override the profile values for a single run.
-
 ---
 
 ### Detection: framework vs package manager
 
-These are two independent dimensions detected separately and combined during build override resolution.
-
-**Framework** is set by the first matching `content` rule with a non-empty `framework` field. It identifies _what_ the app is built with (Spring Boot, Next.js, Quarkus, etc.).
-
-**Package manager** is set by the first matching `package-managers` rule. It identifies _how_ dependencies are installed (pnpm, bun, poetry, uv, etc.), detected purely by file existence — no content reading required.
+**Framework** is set by the first matching `content` rule. **Package manager** is set by the first matching `package-managers` rule. They combine during build override resolution:
 
 ```
 Detected framework:        nextjs
@@ -402,25 +658,23 @@ Override lookup order:
   4. default         → (skipped)
 ```
 
-A `nextjs-pnpm` entry would only be needed if Next.js + pnpm requires something different from pnpm alone. In practice, the package manager entry handles all frameworks uniformly.
-
-For Java, build tool (Maven vs Gradle) is encoded directly in the framework name (`spring-boot` vs `spring-boot-gradle`) because Gradle and Maven are detected by file presence (`pom.xml` vs `build.gradle`) and affect the framework command fundamentally:
+For Java, build tool (Maven vs Gradle) is encoded in the framework name because it changes the command entirely:
 
 ```yaml
 content:
   - file: pom.xml
     contains: "spring-boot"
-    framework: spring-boot          # Maven — uses default mvn command
+    framework: spring-boot          # Maven
   - file: build.gradle
     contains: "spring-boot"
-    framework: spring-boot-gradle   # Gradle — triggers gradle override
+    framework: spring-boot-gradle   # Gradle
 ```
 
 ---
 
 ### Build caching
 
-Each profile and framework entry can declare `caches` — a list of absolute paths inside the build container to persist between runs. On macOS, each path is mounted as a named Docker volume (`apexpack-cache-*`). This means npm, pnpm, Maven, Gradle, pip, uv, and Go module caches survive between builds without re-downloading packages.
+Each profile and framework entry can declare `caches` — paths inside the build container persisted as named Docker volumes on macOS:
 
 ```yaml
 build:
@@ -433,131 +687,66 @@ build:
         - /home/build/.gradle      # replaces build.caches for this framework
 ```
 
-Framework-level `caches` replace (not append to) the top-level `build.caches`. If a framework uses a different cache location, declare it in the framework entry.
+Framework-level `caches` replace (not append to) the top-level `build.caches`.
 
 ---
 
 ### Procfile support
 
-If a project has a `Procfile` with a `web:` process and the detected profile has no explicit `image.entrypoint`, apexpacks parses the Procfile and uses the `web:` command as the container entrypoint:
+If a project has a `Procfile` with a `web:` process and the profile has no explicit `image.entrypoint`, apexpacks parses the Procfile and uses the `web:` command as the container entrypoint:
 
 ```
 # Procfile
 web: node dist/server.js
-worker: node dist/worker.js
 ```
 
-Results in:
-```yaml
-entrypoint:
-  command: node
-cmd: dist/server.js
-```
-
-The profile's `image.entrypoint` always takes precedence. Procfile is only used as a fallback when the profile leaves entrypoint empty.
+The profile's `image.entrypoint` always takes precedence. Procfile is only used as a fallback.
 
 ---
 
 ### Per-project `apexpacks.yaml` overrides
 
-Place an `apexpacks.yaml` in the project root to override or extend the detected profile. Only set what you need to change — everything else is inherited from the profile.
+Place an `apexpacks.yaml` in the project root to override or extend the detected profile. Only set what you need to change — everything else is inherited.
 
 ```yaml
 # apexpacks.yaml
 runtime: golang          # optional — overrides auto-detection
 
 build:
-  command: |             # replaces build.command from the profile
-    mkdir -p ${{targets.destdir}}/usr/bin
-    go build -o ${{targets.destdir}}/usr/bin/{APP_NAME} ./cmd/myapp
-  env:                   # merged on top of profile build.env
-    CGO_ENABLED: "1"
-  dependencies:          # appended to profile build.dependencies
-    - sqlite-libs
-
-image:
-  packages:              # appended to profile image.packages
-    - sqlite-libs
-  env:                   # merged on top of profile image.env
-    DATABASE_PATH: "/data/app.db"
-```
-
-`{APP_NAME}` is substituted with the project name at build time (derived from the source directory name or `--project-name`). Use it in `build.command` and `image.entrypoint` to avoid hardcoding binary names — every project automatically gets a binary and entrypoint named after itself.
-
-#### Go projects with `cmd/` layout
-
-Go projects where `main.go` lives in `cmd/<name>/` (not at the root) need this override, since the default `find`-based command would locate the right `main.go` but may resolve the wrong package path in monorepos:
-
-```yaml
-# apexpacks.yaml
-runtime: golang
-build:
   command: |
     mkdir -p ${{targets.destdir}}/usr/bin
     go build -o ${{targets.destdir}}/usr/bin/{APP_NAME} ./cmd/myapp
+  env:
+    CGO_ENABLED: "1"
+  dependencies:
+    - sqlite-libs
+
+image:
+  packages:
+    - sqlite-libs
+  env:
+    DATABASE_PATH: "/data/app.db"
+  health-check:
+    http:
+      port: 8080
+      path: /healthz
 ```
+
+`{APP_NAME}` is substituted with the sanitized project name at build time.
 
 ---
 
 ### Adding a New Language Profile
 
-1. Create `profiles/<runtime>.yaml`
-2. Define `runtime`, `detect`, `build`, `image` (all required)
-3. Add `package-managers` rules if the language supports multiple build tools
-4. Add `frameworks` entries only for cases that need different `command`, `dependencies`, `env`, or `caches`
-5. Add a `scan` block to configure CVE auto-patch behaviour (optional, defaults to disabled)
-6. Run `apexpacks profiles` to verify it loads
-7. Run `apexpacks detect /path/to/sample-project` to test detection
-8. Run `apexpacks build /path/to/sample-project --dry-run` to verify generated configs
-
-Example — Rust:
-
-```yaml
-runtime: rust
-version: "1"
-description: "Rust application (axum, actix-web)"
-
-detect:
-  files:
-    - Cargo.toml
-  content:
-    - file: Cargo.toml
-      contains: "axum"
-      boost-confidence: 0.04
-      framework: axum
-    - file: Cargo.toml
-      contains: "actix-web"
-      boost-confidence: 0.04
-      framework: actix-web
-  confidence: 0.85
-
-build:
-  dependencies:
-    - rust
-    - build-base
-    - git
-  command: |
-    cargo build --release
-    mkdir -p /home/build/output/app
-    cp target/release/$(basename $PWD) /home/build/output/app/app
-  env:
-    CARGO_NET_OFFLINE: "false"
-  caches:
-    - /home/build/.cargo/registry
-    - /home/build/.cargo/git
-
-image:
-  packages:
-    - ca-certificates-bundle
-  entrypoint: /usr/bin/app
-  run-as: 65532
-  ports:
-    - "8080"
-
-scan:
-  auto-patch: false
-  patch-persist: false
-```
+1. `apexpacks profiles new rust --output-dir ./my-profiles` to scaffold a starter file
+2. Define `detect`, `build`, `image` sections
+3. Add `package-managers` rules for languages with multiple build tools
+4. Add `frameworks` entries only for cases that need a different command, deps, env, or caches
+5. Add `test.pipeline` to verify build artifacts (run by `melange test`)
+6. Add a `scan` block (safe default: `auto-patch: false`)
+7. `apexpacks profiles --profiles-dir ./my-profiles` to verify it loads
+8. `apexpacks detect /path/to/sample --profiles-dir ./my-profiles` to test detection
+9. `apexpacks build /path/to/sample --profiles-dir ./my-profiles --dry-run` to verify generated configs
 
 ---
 
@@ -571,7 +760,7 @@ Base confidence (from detect.confidence)         e.g. 0.85
 Final confidence                                 e.g. 0.92  (capped at 1.0)
 ```
 
-Package manager rules do not affect confidence — they only set `DetectResult.PackageManager`. When multiple profiles match, results are sorted highest-confidence first. The `build` command uses the top result automatically. Use `--runtime` to override.
+Package manager rules do not affect confidence — they only set `PackageManager`. When multiple profiles match, results are sorted highest-confidence first. Use `--runtime` to override.
 
 ---
 
@@ -581,50 +770,76 @@ Package manager rules do not affect confidence — they only set `DetectResult.P
 apexpack/
 │
 ├── cmd/apexpacks/
-│   ├── main.go              rootCmd + main() only (~45 lines)
-│   ├── cmd_build.go         buildCmd()
-│   ├── cmd_detect.go        detectCmd()
-│   ├── cmd_scan.go          scanCmd()
-│   ├── cmd_patch.go         patchCmd()
-│   ├── cmd_profiles.go      profilesCmd(), normalizeSBOMCmd(), versionCmd()
+│   ├── main.go              rootCmd + version variable
+│   ├── cmd_build.go         buildCmd — all build flags and orchestration
+│   ├── cmd_detect.go        detectCmd — language detection + context.json
+│   ├── cmd_scan.go          scanCmd — grype CVE scanning
+│   ├── cmd_patch.go         patchCmd — Wolfi package update checking + pinning
+│   ├── cmd_profiles.go      profilesCmd, profilesExportCmd, profilesNewCmd,
+│   │                        normalizeSBOMCmd, versionCmd
 │   └── util.go              resolveProfilesDir, findTool, buildArch, git helpers
 │
 ├── internal/
 │   ├── types/
-│   │   └── types.go         ALL data structures — Profile, DetectResult, BuildPlan, etc.
-│   │                        Read this first to understand the shape of everything.
+│   │   └── types.go         ALL data structures — Profile, DetectResult, BuildPlan,
+│   │                        BuildOptions, MelangeConfig, ApkoConfig, HealthCheckConfig, etc.
 │   │
 │   ├── profile/
-│   │   └── profile.go       Loads profiles/*.yaml, validates, merges project overrides.
-│   │                        LoadAll() → []*Profile
-│   │                        LoadProjectConfig() → *ProjectConfig
+│   │   └── profile.go       LoadAll(), LoadProjectConfig(), MergeProjectConfig(),
+│   │                        GetByRuntime(), ExportEmbedded()
 │   │
 │   ├── detect/
-│   │   └── detect.go        Matches profiles against a source directory.
-│   │                        Run() → []DetectResult sorted by confidence
-│   │                        Best() → *DetectResult (highest confidence only)
+│   │   └── detect.go        Run() → []DetectResult sorted by confidence
+│   │                        Best() → *DetectResult
+│   │                        LanguageVersion() → auto-detected version string
 │   │
 │   ├── build/
 │   │   ├── build.go         Public API — Plan(), Run(), MarshalMelange(), MarshalApko()
-│   │   ├── config.go        Config builders — buildMelangeConfig(), buildApkoConfig()
-│   │   ├── hook.go          LanguageHook interface + hooks registry map
-│   │   ├── hook_java.go     Java hook — Maven/Gradle injection, JAVA_HOME fix
-│   │   ├── hook_node.go     Node hook — auto-detect entrypoint from package.json
-│   │   ├── hook_dotnet.go   .NET hook — NuGet.Config injection
-│   │   ├── hook_python.go   Python hook (no-op, detection only)
-│   │   ├── hook_go.go       Go hook (no-op, detection only)
-│   │   ├── hook_webserver.go Webserver hook — nginx dir permissions
-│   │   ├── runner.go        Tool runners — runMelange, runApko, ensureSigningKey
-│   │   ├── version.go       Version maps, resolveVersion(), validateRuntimeVersion()
-│   │   ├── template.go      Template loaders — Maven settings, NuGet.Config, Gradle init
-│   │   ├── util.go          SanitizeImageName, readProcfileCmd, cacheVolumeName
-│   │   ├── ca.go            readCACerts(), mergeCABundles()
-│   │   └── exec.go          melangeArch(), runTool helpers
+│   │   │
+│   │   ├── helpers/         Pure utilities (no I/O, no process calls)
+│   │   │   ├── version.go   LangVersionToken, ResolveVersion, ValidateRuntimeVersion,
+│   │   │   │                Vsub, VsubSlice, VsubMap
+│   │   │   ├── util.go      SanitizeImageName, ApplyProjectTemplates, ReadProcfileCmd,
+│   │   │   │                CacheVolumeName, ReadNodeEntrypoint
+│   │   │   ├── override.go  ResolveOverride — framework+pm fallback lookup
+│   │   │   └── probedefaults.go  FrameworkProbeDefaults — per-framework probe path/port
+│   │   │
+│   │   ├── templates/       Embedded build config templates (baked into binary)
+│   │   │   ├── template.go  LoadMavenTemplate, LoadNuGetTemplate, LoadGradleTemplate
+│   │   │   ├── maven/       maven_settings.xml
+│   │   │   ├── nuget/       nuget_config.xml
+│   │   │   └── gradle/      gradle_init.gradle
+│   │   │
+│   │   ├── hooks/           Language-specific config patches
+│   │   │   ├── hook.go      LanguageHook interface + registry + Get()
+│   │   │   ├── hook_java.go     JDK version, JAVA_HOME, Maven/Gradle injection
+│   │   │   ├── hook_dotnet.go   .NET version substitution, NuGet.Config
+│   │   │   ├── hook_node.go     Node version, package.json entrypoint detection
+│   │   │   ├── hook_python.go   Python version substitution
+│   │   │   ├── hook_go.go       Go version, GOPATH/cache env
+│   │   │   └── hook_webserver.go  nginx config placement, runtime dirs
+│   │   │
+│   │   ├── config/          Config struct generation (no processes, no hooks)
+│   │   │   └── config.go    BuildMelangeConfig, BuildApkoConfig, BuildHealthCheck,
+│   │   │                    EnsurePackage, MarshalYAML
+│   │   │
+│   │   ├── runner/          External tool execution (all I/O side-effects)
+│   │   │   ├── runner.go    RunMelange, RunMelangeTest, RunApko
+│   │   │   ├── exec.go      runTool helpers, melangeArch, archToDockerPlatform
+│   │   │   ├── ca.go        readCACerts, mergeCABundles
+│   │   │   └── healthcheck.go  InjectHealthCheckIntoTar, RunHealthCheckTest
+│   │   │
+│   │   └── probes/          Kubernetes probe YAML generation
+│   │       └── probes.go    EmitProbesYAML
+│   │
+│   ├── apexctx/             context.json read/write (pipeline state handoff)
 │   │
 │   └── patch/
-│       └── patch.go         Checks Wolfi index for updates, applies version pins to profiles.
+│       └── patch.go         Check() — Wolfi index comparison
+│                            ApplyToProfile() — version pin updates
+│                            NormalizeSBOMFile() — grype SBOM pre-processing
 │
-├── profiles/                Language profile YAML files (baked into apexpack:latest at build time)
+├── profiles/                Language profile YAML files (embedded into binary at build time)
 │   ├── golang.yaml
 │   ├── java.yaml
 │   ├── dotnet.yaml
@@ -632,13 +847,14 @@ apexpack/
 │   ├── python.yaml
 │   └── webserver.yaml
 │
-├── apexpacks.yaml            Per-project overrides for building apexpack itself
-│                            (binary name, extra packages: busybox, git, melange, apko, grype)
+├── .goreleaser.yaml         Cross-platform binary release config (linux/darwin × amd64/arm64)
+│
+├── apexpacks.yaml           Per-project overrides for building apexpack itself
 │
 ├── rebuild-image.sh         Rebuilds apexpack:latest and loads it into the kind cluster
 │
 └── tekton/
-    ├── install/             Tekton install manifests (pipeline + dashboard)
+    ├── install/             Tekton install manifests
     ├── tasks/               apexpack-detect, apexpack-build, apexpack-scan,
     │                        apexpack-patch, git-clone, crane-copy
     ├── pipelines/           build-and-push Pipeline
@@ -646,66 +862,105 @@ apexpack/
     └── config/              Supporting cluster config
 ```
 
-### Data Flow
+---
+
+## Development Guide
+
+### Prerequisites
+
+| Tool | macOS | Ubuntu |
+|------|-------|--------|
+| Go 1.25+ | `brew install go` | `sudo apt install golang-go` (or use [go.dev](https://go.dev/dl/)) |
+| Docker Desktop | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) | `sudo apt install docker.io` |
+| grype (for scan) | `brew install grype` | `curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin` |
+| melange (Linux only) | _(runs in Docker on macOS)_ | see [chainguard-dev/melange](https://github.com/chainguard-dev/melange) |
+| apko (Linux only) | _(runs in Docker on macOS)_ | see [chainguard-dev/apko](https://github.com/chainguard-dev/apko) |
+
+On **macOS**, melange and apko run automatically inside Docker containers (`cgr.dev/chainguard/melange` and `cgr.dev/chainguard/apko`). You do not need to install them natively.
+
+### Clone and build
+
+```bash
+git clone https://github.com/apexpack/apexpack
+cd apexpack
+go build -o bin/apexpacks ./cmd/apexpacks
+./bin/apexpacks version
+```
+
+### Run tests
+
+```bash
+go test ./...
+```
+
+### Run GoReleaser locally (dry run)
+
+```bash
+# Install goreleaser
+brew install goreleaser      # macOS
+# or: go install github.com/goreleaser/goreleaser/v2@latest
+
+# Snapshot build (no git tag required)
+goreleaser release --snapshot --clean
+
+# Binaries are in dist/
+ls dist/
+# apexpacks_darwin_arm64.tar.gz
+# apexpacks_darwin_amd64.tar.gz
+# apexpacks_linux_amd64.tar.gz
+# apexpacks_linux_arm64.tar.gz
+# checksums.txt
+```
+
+### Releasing a new version
+
+1. Create and push a git tag: `git tag v0.2.0 && git push origin v0.2.0`
+2. The `release.yaml` GitHub Actions workflow triggers GoReleaser automatically
+3. Binaries appear on the GitHub Releases page within a few minutes
+
+### Adding a language hook
+
+Language hooks (`internal/build/hooks/hook_<lang>.go`) handle runtime-specific logic — JAVA_HOME path fixes, NuGet.Config injection, nginx directory permissions. Each hook implements the `LanguageHook` interface:
+
+```go
+type LanguageHook interface {
+    PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error
+    PatchApko(cfg *types.ApkoConfig, p *types.Profile, opts types.BuildOptions) error
+}
+```
+
+Steps to add a new hook:
+1. Create `internal/build/hooks/hook_<lang>.go` implementing `LanguageHook`
+2. Register it in `hook.go`: `registry["rust"] = &rustHook{}`
+3. Add a profile YAML with the matching `runtime:` value
+4. Add tests in `hook_<lang>_test.go` using `package hooks` to access unexported helpers
+
+### Package dependency rules
+
+The subpackages have a strict no-cycle dependency order:
 
 ```
-profiles/*.yaml
-      │
-      │  profile.LoadAll()
-      ▼
-[]*types.Profile
-      │
-      │  detect.Run(profiles, srcDir)
-      ▼
-[]types.DetectResult   { Profile, Confidence, Framework, PackageManager, MatchedFiles }
-      │
-      │  build.Plan(profile, opts)
-      │    resolves: {framework}-{pm} → {pm} → {framework} → default
-      │    reads Procfile for fallback entrypoint
-      ▼
-*types.BuildPlan       { MelangeConfig, ApkoConfig, Framework, PackageManager, ProcfileCmd }
-      │
-      │  build.Run(plan, opts)
-      │    mounts named Docker volumes for declared caches (macOS)
-      ▼
-melange → .apk package
-apko    → OCI image tarball + SBOM
+build.go
+  ├── config/      ← imports types/, helpers/
+  ├── hooks/       ← imports types/, helpers/, templates/
+  ├── runner/      ← imports types/
+  └── probes/      ← imports types/, helpers/
+
+helpers/    — leaf, imports types/ only
+templates/  — leaf, no internal imports
 ```
 
-### Key Design Decisions
-
-**1. `types.go` is the centre of everything**
-Every package imports `internal/types`. Nothing else imports from `cmd/`. This keeps dependency direction clean and prevents circular imports.
-
-**2. Framework and package manager are detected independently**
-`framework` comes from content rules (what the app uses). `PackageManager` comes from file-existence rules (how deps are installed). They combine during build override resolution using a three-level fallback, so a single `pnpm` entry covers all frameworks using pnpm without requiring `nextjs-pnpm`, `nestjs-pnpm`, etc.
-
-**3. Framework overrides are sparse**
-A `frameworks` entry only needs to define what differs from the profile defaults. Unset fields (`dependencies`, `command`, `env`, `caches`) are inherited. Only add a framework entry when the command, deps, or caches genuinely change.
-
-**4. Build tool encoded in framework name for Java**
-For Java, Maven vs Gradle is a fundamental build tool difference that changes the command entirely. Encoding it in the framework name (`spring-boot` vs `spring-boot-gradle`) keeps commands unconditional — no `if [ -f pom.xml ]` in YAML.
-
-**5. Caches are named Docker volumes**
-On macOS, each declared cache path becomes a persistent named Docker volume. The volume name is derived from the path, so the same cache is reused across all builds of that project type.
-
-**6. Plan and Run are separated**
-`build.Plan()` generates config content. `build.Run()` writes files and runs tools. The `--dry-run` flag uses Plan without Run, so you can inspect exactly what will be built — including which package manager override fired — before committing.
-
-**7. Profiles are baked into the `apexpack:latest` image**
-Profiles are embedded at `/etc/apexpack/profiles/` when the image is built (`cp profiles/*.yaml` runs as part of the Go build step in `apexpacks.yaml`). The Tekton detect task seeds the profiles PVC from the image on every run — no manual `kubectl cp` or separate profiles repository is needed. Updating profiles requires only a rebuild of `apexpack:latest`.
+Nothing imports from `cmd/`. All shared data structures live in `internal/types/types.go`.
 
 ---
 
 ## Corporate Proxy Environments
 
-In networks where a TLS-intercepting proxy (Zscaler, Blue Coat, etc.) replaces certificates, the melange build container will fail to reach `packages.wolfi.dev` with an x509 certificate error:
+In networks where a TLS-intercepting proxy (Zscaler, Blue Coat, etc.) replaces certificates, the melange build container will fail to reach `packages.wolfi.dev`:
 
 ```
 failed to verify the x509 cert: signed by unknown authority
 ```
-
-The fix is to provide the corporate CA certificate so the melange container trusts it alongside the standard system CAs.
 
 **Step 1 — get the corporate CA certificate (PEM format)**
 
@@ -713,11 +968,9 @@ The fix is to provide the corporate CA certificate so the melange container trus
 # macOS — export from system Keychain
 security find-certificate -a -p /Library/Keychains/System.keychain > ~/corp-ca.pem
 
-# Linux — usually already on disk
+# Linux
 cp /usr/local/share/ca-certificates/corporate.crt ~/corp-ca.pem
 ```
-
-Or ask your IT / security team for the root CA certificate in PEM format.
 
 **Step 2 — pass it to apexpack**
 
@@ -730,7 +983,7 @@ export APEXPACK_EXTRA_CA=~/corp-ca.pem
 apexpacks build .
 ```
 
-The flag takes precedence over the environment variable. Both the system CAs and the corporate CA are trusted — the corporate cert is added alongside, not instead of, the container's existing trust store.
+The flag takes precedence over the environment variable. The corporate cert is added alongside the container's existing trust store, not instead of it.
 
 ---
 
@@ -745,13 +998,11 @@ kubectl apply -f tekton/install/tekton-pipeline.yaml
 kubectl apply -f tekton/install/tekton-dashboard.yaml
 ```
 
-> The bundled `tekton-pipeline.yaml` sets `coschedule: disabled` in `feature-flags`. This is required because the build task binds two PVCs (`source` and `output`) simultaneously, which is incompatible with the default `coschedule: workspaces` mode. On a single-node cluster (kind, k3d) this has no scheduling impact.
+> The bundled `tekton-pipeline.yaml` sets `coschedule: disabled` in `feature-flags`. This is required because the build task binds two PVCs (`source` and `output`) simultaneously, which is incompatible with the default `coschedule: workspaces` mode.
 
-> **Privileged build pods:** the `apexpack-build` task runs with `privileged: true` and `runAsUser: 0`. Both are required: melange uses bubblewrap for build sandboxing, and bubblewrap needs to set up user namespace mappings which requires effective capabilities — capabilities that are only retained when the process runs as uid 0, even inside a privileged pod (Wolfi images default to a non-root user).
+> **Privileged build pods:** the `apexpack-build` task runs with `privileged: true` and `runAsUser: 0`. Both are required: melange uses bubblewrap for build sandboxing, and bubblewrap needs user namespace mappings which requires effective capabilities retained only at uid 0.
 
 ### Creating the PVCs
-
-The pipeline uses three PVCs. Create them once:
 
 ```bash
 kubectl apply -f - <<'EOF'
@@ -800,7 +1051,7 @@ kubectl apply -f tekton/pipelines/
 kubectl create -f tekton/pipelinerun/pipelinerun.yaml
 ```
 
-`tekton/pipelinerun/pipelinerun.yaml` is a ready-to-use example that builds `spring-petclinic`. Edit `GIT_URL`, `IMAGE`, and `GIT_REVISION` before running:
+Edit `GIT_URL`, `IMAGE`, and `GIT_REVISION` in the PipelineRun:
 
 ```yaml
 apiVersion: tekton.dev/v1
@@ -831,33 +1082,27 @@ spec:
         claimName: apexpack-output
 ```
 
-For quick testing without a registry account, use `ttl.sh` (anonymous, ephemeral):
-```yaml
-    - name: IMAGE
-      value: ttl.sh/myapp:1h
-```
+For quick testing without a registry: `ttl.sh/myapp:1h`
 
 ### Pipeline Steps
 
 | Step | Task | Description |
 |------|------|-------------|
 | 1 | `git-clone` | Clone the source repo into the `source` workspace |
-| 2 | `apexpack-detect` | Detect language and framework; seed profiles from the baked-in image; emit `RUNTIME`, `AUTO_PATCH`, `PATCH_PERSIST` results |
+| 2 | `apexpack-detect` | Detect language and framework; seed profiles from baked-in image; emit `RUNTIME`, `AUTO_PATCH`, `PATCH_PERSIST` results |
 | 3 | `apexpack-build` | Build OCI image with melange + apko; emit `IMAGE_TARBALL`, `SBOM_PATH` results |
-| 4 | `apexpack-scan` | Scan SBOM for CVEs with grype; when `AUTO_PATCH=true` exits 0 on failure (soft-fail) so the pipeline continues |
-| 5 | `apexpack-patch` | _(when scan failed AND AUTO_PATCH=true)_ Run `apexpack patch --apply` to pin patched versions in the profile YAML; optionally commit back to git when `PATCH_PERSIST=true` |
-| 6 | `apexpack-build` | _(when scan failed AND AUTO_PATCH=true)_ Rebuild the image using the patched profile |
-| 7 | `crane-copy` | Push the image tarball to the registry (runs whether or not steps 5–6 were skipped) |
+| 4 | `apexpack-scan` | Scan SBOM for CVEs; when `AUTO_PATCH=true`, exits 0 on failure (soft-fail) so pipeline continues |
+| 5 | `apexpack-patch` | _(when scan failed AND AUTO_PATCH=true)_ Run `apexpack patch --apply`; optionally commit back to git |
+| 6 | `apexpack-build` | _(when scan failed AND AUTO_PATCH=true)_ Rebuild with patched profile |
+| 7 | `crane-copy` | Push image tarball to registry |
 
 ### CVE Auto-patch Loop
-
-The pipeline implements a detect-patch-rebuild loop controlled entirely by the language profile:
 
 ```
 scan (CVEs found, soft-fail)
     │
     ▼
-patch (apexpacks patch --apply → pins updated Wolfi packages in profile YAML)
+patch (apexpacks patch --apply → pins updated Wolfi packages in apexpacks.yaml)
     │  optionally: git commit + push if patch-persist: true
     ▼
 rebuild (apexpacks build with patched profile → clean image)
@@ -866,19 +1111,18 @@ rebuild (apexpacks build with patched profile → clean image)
 push (crane push → registry)
 ```
 
-**Enabling auto-patch for a language:** set `scan.auto-patch: true` in the profile file:
+Enable per-profile:
 
 ```yaml
 # profiles/java.yaml
 scan:
-  auto-patch: true      # CVE failures trigger patch + rebuild
-  patch-persist: false  # set true to commit pinned versions back to git
+  auto-patch: true
+  patch-persist: false
 ```
 
-**Overriding per-run** (without changing the profile):
+Override per-run without changing the profile:
 
 ```yaml
-# pipelinerun.yaml
 params:
   - name: AUTO_PATCH
     value: "true"
@@ -886,33 +1130,9 @@ params:
     value: "true"
 ```
 
-**How soft-fail works:** when `AUTO_PATCH=true`, the scan task writes `SCAN_RESULT=fail` to its result but exits with code 0 instead of 1. The patch and rebuild tasks have `when:` conditions that check both `SCAN_RESULT=fail` and `AUTO_PATCH=true` — so they only run when there are actual CVEs to fix. The push task uses `runAfter: [rebuild]` and runs regardless of whether rebuild was skipped.
-
 ### The `apexpack:latest` Tool Image
 
-All pipeline tasks run inside `apexpack:latest` — a self-built image that bundles the CLI together with melange, apko, grype, busybox, and git. On Linux (inside pods) these tools are called natively, not via Docker.
-
-The image builds itself using `apexpacks.yaml` at the repo root:
-
-```yaml
-runtime: golang
-build:
-  command: |
-    mkdir -p ${{targets.destdir}}/usr/bin
-    mkdir -p ${{targets.destdir}}/etc/apexpack/profiles
-    go build -o ${{targets.destdir}}/usr/bin/{APP_NAME} ./cmd/apexpack
-    cp profiles/*.yaml ${{targets.destdir}}/etc/apexpack/profiles/
-image:
-  packages:
-    - busybox      # /bin/sh for Tekton script steps
-    - git          # required by the patch persist step
-    - melange
-    - apko
-    - bubblewrap   # melange's sandbox runner
-    - grype
-```
-
-The `detect` task seeds the profiles PVC from `/etc/apexpack/profiles/` on every run, so updating profiles only requires rebuilding the image — no manual file copying to the cluster.
+All pipeline tasks run inside `apexpack:latest` — a self-built image bundling the CLI together with melange, apko, grype, busybox, and git. The image builds itself using `apexpacks.yaml` at the repo root.
 
 To rebuild and reload into a kind cluster:
 
@@ -922,40 +1142,12 @@ To rebuild and reload into a kind cluster:
 
 ---
 
-## Contributing
-
-### Adding a language profile
-
-1. Create `profiles/<runtime>.yaml`
-2. Define `runtime`, `detect`, `build`, `image` (all required)
-3. Add `package-managers` rules if the language has multiple build tools (pnpm, uv, etc.)
-4. Add `frameworks` entries for any cases that need a different `command`, `dependencies`, `env`, or `caches`
-5. Add a `scan` block (`auto-patch: false`, `patch-persist: false` is a safe default)
-6. Run `apexpacks profiles` to verify it loads
-7. Run `apexpacks detect /path/to/sample-project` to test detection
-8. Run `apexpacks build /path/to/sample-project --dry-run` to verify generated configs
-9. Rebuild `apexpack:latest` so the new profile is baked in: `./rebuild-image.sh`
-
-### Modifying the Go code
-
-All data structures are in `internal/types/types.go`. Change the struct there first, then update the code that reads or writes those fields. Go changes are only needed when:
-
-- Adding a new detection method (currently: exact files, glob patterns, content string match, package manager file existence)
-- Adding a new build output format (currently: melange + apko)
-- Adding a new CLI command
-- Adding language-specific build or image patching that cannot be expressed in a YAML profile
-
-**Language hooks** (`internal/build/hook_<lang>.go`) handle runtime-specific logic like JAVA_HOME path fixes, NuGet.Config injection, and nginx directory permissions. Each hook implements `PatchMelange` and `PatchApko`. To add a new hook: implement the `LanguageHook` interface, register it in `hook.go`, and add test cases to `build_test.go`.
-
-The four internal packages have a strict one-way dependency: `types` ← `profile`, `detect`, `build`, `patch`. Nothing imports from `cmd/`.
-
----
-
 ## Acknowledgements
 
 - **[melange](https://github.com/chainguard-dev/melange)** — APK package builder from source, by Chainguard
 - **[apko](https://github.com/chainguard-dev/apko)** — OCI image assembler from APK packages, by Chainguard
 - **[Wolfi](https://github.com/wolfi-dev/os)** — supply chain-hardened Linux undistro, by Chainguard
 - **[cobra](https://github.com/spf13/cobra)** — CLI framework for Go
+- **[goreleaser](https://github.com/goreleaser/goreleaser)** — cross-platform binary release automation
 - **[grype](https://github.com/anchore/grype)** — vulnerability scanner for container images, by Anchore
 - **[crane](https://github.com/google/go-containerregistry)** — OCI registry client for pushing images, by Google
