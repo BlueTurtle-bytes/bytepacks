@@ -1,4 +1,4 @@
-package build
+package runner
 
 import (
 	"fmt"
@@ -7,9 +7,6 @@ import (
 	"strings"
 )
 
-// readCACerts reads PEM certificate data from path, which may be either a
-// single PEM/CRT file or a directory. For directories every *.pem and *.crt
-// file found directly inside is concatenated in sorted order.
 func readCACerts(path string) ([]byte, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -53,14 +50,12 @@ func readCACerts(path string) ([]byte, error) {
 	return buf, nil
 }
 
-// mergeCABundles concatenates the system CA bundle with an extra CA certificate
-// (file or directory) into a temp PEM file so a single SSL_CERT_FILE covers both.
 func mergeCABundles(extraCAPath string) (string, error) {
 	systemBundles := []string{
-		"/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu
-		"/etc/pki/tls/certs/ca-bundle.crt",   // RHEL/CentOS
-		"/etc/ssl/ca-bundle.pem",              // SUSE
-		"/etc/ssl/cert.pem",                   // Alpine/Wolfi
+		"/etc/ssl/certs/ca-certificates.crt",
+		"/etc/pki/tls/certs/ca-bundle.crt",
+		"/etc/ssl/ca-bundle.pem",
+		"/etc/ssl/cert.pem",
 	}
 
 	var systemBundle string

@@ -412,6 +412,30 @@ type ProjectBuildOverride struct {
 }
 
 // ============================================================================
+// BuildOptions — options passed to build.Plan and build.Run
+// ============================================================================
+
+// BuildOptions controls how a project is compiled and packaged.
+// Callers construct this from CLI flags and pass it to build.Plan / build.Run.
+type BuildOptions struct {
+	SourceDir       string
+	ProfilesDir     string
+	OutputDir       string
+	ProjectName     string
+	Version         string
+	Tag             string
+	Framework       string
+	PackageManager  string
+	Profile         *Profile
+	TLSExtraCA      string
+	Arch            string
+	SigningKey       string
+	LocalBuild      bool
+	MelangeRunner   string
+	LanguageVersion string
+}
+
+// ============================================================================
 // DetectResult — output of the detection step
 // ============================================================================
 

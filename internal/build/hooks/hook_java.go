@@ -1,22 +1,23 @@
-package build
+package hooks
 
 import (
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/apexpack/apexpack/internal/build/helpers"
+	"github.com/apexpack/apexpack/internal/build/templates"
 	"github.com/apexpack/apexpack/internal/types"
 )
 
 type javaHook struct{}
 
-func (javaHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts Options) error {
-	version := resolveVersion("java", opts.LanguageVersion)
+func (javaHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error {
+	version := helpers.ResolveVersion("java", opts.LanguageVersion)
 	cfg.Environment.Env = fixJavaHome(cfg.Environment.Env, version)
 
 	isGradleFramework := strings.HasSuffix(opts.Framework, "-gradle")
 
-	// Maven: skipped for Gradle frameworks — Gradle does not read ~/.m2/settings.xml.
 	if !isGradleFramework {
 		tmplName := p.Build.MavenSettingsTemplate
 		if p.Build.MavenMirrorURL != "" {
@@ -30,7 +31,7 @@ func (javaHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts Op
 					}
 				}
 			}
-			tmpl, err := loadMavenTemplate(tmplName, opts.ProfilesDir)
+			tmpl, err := templates.LoadMavenTemplate(tmplName, opts.ProfilesDir)
 			if err != nil {
 				return fmt.Errorf("maven settings template: %w", err)
 			}
@@ -50,7 +51,6 @@ func (javaHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts Op
 		}
 	}
 
-	// Gradle: inject init script for corporate Artifactory mirrors.
 	if isGradleFramework {
 		gradleTmplName := p.Build.GradleSettingsTemplate
 		if p.Build.GradleMirrorURL != "" {
@@ -64,7 +64,7 @@ func (javaHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts Op
 					}
 				}
 			}
-			gradleTmpl, err := loadGradleTemplate(gradleTmplName, opts.ProfilesDir)
+			gradleTmpl, err := templates.LoadGradleTemplate(gradleTmplName, opts.ProfilesDir)
 			if err != nil {
 				return fmt.Errorf("gradle init script template: %w", err)
 			}
@@ -80,10 +80,6 @@ func (javaHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts Op
 			)
 		}
 
-		// Rewrite gradle-wrapper.properties distributionUrl when a separate
-		// distribution repo is configured. The wrapper downloads its own zip from
-		// services.gradle.org before any init scripts or GRADLE_OPTS apply, so it
-		// bypasses cert fixes and may be blocked entirely in air-gapped clusters.
 		if p.Build.GradleDistributionURL != "" {
 			distBase := strings.TrimRight(p.Build.GradleDistributionURL, "/")
 			wrapperStep := "if [ -f \"gradle/wrapper/gradle-wrapper.properties\" ]; then\n" +
@@ -103,14 +99,10 @@ func (javaHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts Op
 	return nil
 }
 
-func (javaHook) PatchApko(cfg *types.ApkoConfig, p *types.Profile, opts Options) error {
-	version := resolveVersion("java", opts.LanguageVersion)
+func (javaHook) PatchApko(cfg *types.ApkoConfig, p *types.Profile, opts types.BuildOptions) error {
+	version := helpers.ResolveVersion("java", opts.LanguageVersion)
 	cfg.Environment = fixJavaHome(cfg.Environment, version)
 
-	// If JAVA_HOME is set in the image env, derive PATH and resolve the bare
-	// "java" entrypoint to a full path. This keeps JAVA_HOME as the single
-	// version-pinned value — changing openjdk-21 → openjdk-17 only requires
-	// updating JAVA_HOME; PATH and entrypoint follow automatically.
 	if javaHome, ok := cfg.Environment["JAVA_HOME"]; ok && javaHome != "" {
 		if _, hasPath := cfg.Environment["PATH"]; !hasPath {
 			cfg.Environment["PATH"] = javaHome + "/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -123,11 +115,6 @@ func (javaHook) PatchApko(cfg *types.ApkoConfig, p *types.Profile, opts Options)
 	return nil
 }
 
-// javaHomeDirVersion returns the JVM directory version for JAVA_HOME paths.
-// Java 8 uses the pre-9 "1.N" naming convention in its directory name:
-//
-//	openjdk-8-jre  →  /usr/lib/jvm/java-1.8-openjdk  (Wolfi convention)
-//	openjdk-17-jre →  /usr/lib/jvm/java-17-openjdk
 func javaHomeDirVersion(major string) string {
 	if major == "8" {
 		return "1.8"
@@ -135,16 +122,13 @@ func javaHomeDirVersion(major string) string {
 	return major
 }
 
-// fixJavaHome corrects JAVA_HOME paths after {JAVA_VERSION} token substitution.
-// For Java 8, Wolfi installs the JRE at java-1.8-openjdk, not java-8-openjdk.
-// This only touches the JAVA_HOME key; all other env vars are passed through unchanged.
 func fixJavaHome(env map[string]string, version string) map[string]string {
 	if env == nil {
 		return env
 	}
 	dirVer := javaHomeDirVersion(version)
 	if dirVer == version {
-		return env // no correction needed
+		return env
 	}
 	wrong := "/java-" + version + "-openjdk"
 	right := "/java-" + dirVer + "-openjdk"

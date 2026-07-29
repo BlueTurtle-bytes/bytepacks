@@ -1,4 +1,4 @@
-package build
+package hooks
 
 import (
 	"fmt"
@@ -6,15 +6,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/apexpack/apexpack/internal/build/templates"
 	"github.com/apexpack/apexpack/internal/types"
 )
 
 type dotnetHook struct{}
 
-func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts Options) error {
+func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error {
 	nugetTmplName := p.Build.NuGetSettingsTemplate
-	// Allow injection without ARTI_USER only when the user has dropped a custom
-	// template file in the profiles dir (nugetTmplName must be set for that to apply).
 	hasCustomTemplate := nugetTmplName != "" && func() bool {
 		customPath := filepath.Join(opts.ProfilesDir, "templates", "nuget", nugetTmplName+".xml")
 		_, err := os.Stat(customPath)
@@ -31,7 +30,7 @@ func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts 
 				}
 			}
 		}
-		nugetTmpl, err := loadNuGetTemplate(nugetTmplName, opts.ProfilesDir)
+		nugetTmpl, err := templates.LoadNuGetTemplate(nugetTmplName, opts.ProfilesDir)
 		if err != nil {
 			return fmt.Errorf("nuget config template: %w", err)
 		}
@@ -56,6 +55,6 @@ func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts 
 	return nil
 }
 
-func (dotnetHook) PatchApko(cfg *types.ApkoConfig, p *types.Profile, opts Options) error {
+func (dotnetHook) PatchApko(cfg *types.ApkoConfig, p *types.Profile, opts types.BuildOptions) error {
 	return nil
 }
