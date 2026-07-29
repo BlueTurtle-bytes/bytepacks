@@ -40,7 +40,7 @@ Language support is driven by **YAML profiles** in the `profiles/` directory. Ad
 # Install the binary (see Installation section below)
 # Then, in any project directory:
 
-apexpacks doctor              # check all required tools are installed
+apexpacks doctor --install    # check and install all required tools
 apexpacks detect .            # detect language and framework
 apexpacks build . --dry-run  # preview what will be built
 apexpacks build .             # build an OCI image
@@ -145,7 +145,11 @@ On macOS, melange and apko run inside Docker (no native install needed). On Linu
 Checks that all tools required by apexpacks are installed and reachable in `PATH`. On macOS, melange and apko are marked optional because they run inside Docker automatically — Docker itself is required. On Linux, all tools must be installed natively.
 
 ```bash
+# Check what's installed
 apexpacks doctor
+
+# Check and install anything missing automatically
+apexpacks doctor --install
 ```
 
 Example output (macOS):
@@ -171,6 +175,10 @@ apexpacks doctor
 
 Optional tools missing — 'apexpacks build' will work, but 'apexpacks scan' requires grype.
 ```
+
+| Flag | Description |
+|------|-------------|
+| `--install` | Install any missing tools automatically using the platform install command |
 
 Exit codes: `0` when all required tools are present, `1` when any required tool is missing.
 
@@ -915,7 +923,7 @@ apexpack/
 
 On **macOS**, melange and apko are installed via Homebrew. The actual build and image assembly run inside Docker automatically — Docker is required.
 
-After installing, run `apexpacks doctor` to verify everything is reachable:
+After installing Go and Docker, run `apexpacks doctor --install` to install and verify all remaining tools in one step:
 
 ### Clone and build
 
