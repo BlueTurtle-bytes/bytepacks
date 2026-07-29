@@ -40,6 +40,7 @@ Language support is driven by **YAML profiles** in the `profiles/` directory. Ad
 # Install the binary (see Installation section below)
 # Then, in any project directory:
 
+apexpacks doctor              # check all required tools are installed
 apexpacks detect .            # detect language and framework
 apexpacks build . --dry-run  # preview what will be built
 apexpacks build .             # build an OCI image
@@ -138,6 +139,42 @@ On macOS, melange and apko run inside Docker (no native install needed). On Linu
 ---
 
 ## Commands
+
+### `apexpacks doctor`
+
+Checks that all tools required by apexpacks are installed and reachable in `PATH`. On macOS, melange and apko are marked optional because they run inside Docker automatically — Docker itself is required. On Linux, all tools must be installed natively.
+
+```bash
+apexpacks doctor
+```
+
+Example output (macOS):
+
+```
+apexpacks doctor
+
+  docker      ✓ OK
+              /usr/local/bin/docker  (Docker version 29.5.3)
+              Container runtime (required on macOS; needed for health check tests)
+
+  melange     ✓ OK
+              /usr/local/bin/melange  (v0.19.0)
+              APK package builder — needed natively for key generation; build runs in Docker on macOS
+
+  apko        ✓ OK
+              /usr/local/bin/apko  (v0.9.0)
+              OCI image assembler — build runs in Docker on macOS, native on Linux
+
+  grype       – missing (optional)
+              CVE scanner — required for 'apexpacks scan'
+              Install: brew install grype
+
+Optional tools missing — 'apexpacks build' will work, but 'apexpacks scan' requires grype.
+```
+
+Exit codes: `0` when all required tools are present, `1` when any required tool is missing.
+
+---
 
 ### `apexpacks detect [source-dir]`
 
@@ -871,12 +908,14 @@ apexpack/
 | Tool | macOS | Ubuntu |
 |------|-------|--------|
 | Go 1.25+ | `brew install go` | `sudo apt install golang-go` (or use [go.dev](https://go.dev/dl/)) |
-| Docker Desktop | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) | `sudo apt install docker.io` |
-| grype (for scan) | `brew install grype` | `curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin` |
-| melange (Linux only) | _(runs in Docker on macOS)_ | see [chainguard-dev/melange](https://github.com/chainguard-dev/melange) |
-| apko (Linux only) | _(runs in Docker on macOS)_ | see [chainguard-dev/apko](https://github.com/chainguard-dev/apko) |
+| Docker | `brew install colima docker && colima start` (or Docker Desktop) | `sudo apt install docker.io` |
+| grype (for scan) | `brew install grype` | `curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \| sh -s -- -b /usr/local/bin` |
+| melange | `brew install melange` | `curl -sL https://github.com/chainguard-dev/melange/releases/latest/download/melange_linux_amd64.tar.gz \| tar xz && sudo mv melange /usr/local/bin/` |
+| apko | `brew install apko` | `curl -sL https://github.com/chainguard-dev/apko/releases/latest/download/apko_linux_amd64.tar.gz \| tar xz && sudo mv apko /usr/local/bin/` |
 
-On **macOS**, melange and apko run automatically inside Docker containers (`cgr.dev/chainguard/melange` and `cgr.dev/chainguard/apko`). You do not need to install them natively.
+On **macOS**, melange and apko are installed via Homebrew. The actual build and image assembly run inside Docker automatically — Docker is required.
+
+After installing, run `apexpacks doctor` to verify everything is reachable:
 
 ### Clone and build
 
@@ -1150,4 +1189,3 @@ To rebuild and reload into a kind cluster:
 - **[cobra](https://github.com/spf13/cobra)** — CLI framework for Go
 - **[goreleaser](https://github.com/goreleaser/goreleaser)** — cross-platform binary release automation
 - **[grype](https://github.com/anchore/grype)** — vulnerability scanner for container images, by Anchore
-- **[crane](https://github.com/google/go-containerregistry)** — OCI registry client for pushing images, by Google

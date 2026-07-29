@@ -26,6 +26,7 @@ Language profiles (profiles/*.yaml) define how each language is detected,
 built, and assembled into an image. No Dockerfiles required.
 
 Quick start:
+  apexpacks doctor                # check required tools are installed
   apexpacks detect .              # detect the language in current directory
   apexpacks build .               # build an OCI image
   apexpacks profiles              # list available language profiles`,
@@ -40,6 +41,7 @@ Quick start:
 		patchCmd(),
 		normalizeSBOMCmd(),
 		profilesCmd(),
+		doctorCmd(),
 		versionCmd(),
 	)
 
