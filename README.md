@@ -432,16 +432,23 @@ image:
 
 ### What happens at build time
 
-When a health check is configured, `apexpacks build` does four things:
+When a health check is configured, `apexpacks build` always does:
 
 1. **Package injection** — `wget` is automatically added to the image for HTTP checks; `busybox` for TCP checks. You do not need to declare them manually.
-2. **`HEALTHCHECK` instruction** — the health check is embedded directly into the OCI image tar as a `HEALTHCHECK` layer, so it works natively with `docker run` and Kubernetes `livenessProbe`/`readinessProbe`.
-3. **Boot check** — after build, the image is started in Docker for 5 seconds to confirm the container does not exit on startup. Container logs are printed.
-4. **Endpoint probe** — HTTP GET or TCP connect is retried every 500ms for up to 30 seconds. The probe URL/port is taken from the health check config, with a per-framework default as fallback (e.g. FastAPI defaults to `GET /health` on port 8000).
+2. **`probes.yaml`** — a Kubernetes readiness/liveness probe YAML file is written to the output directory on every build (see [Kubernetes probes file](#kubernetes-probes-file) below).
 
-Example build output:
+The following only run when `--local` is set (i.e. `apexpacks build . --local`):
+
+3. **`HEALTHCHECK` instruction** — the health check is patched into the OCI image tarball as a `HEALTHCHECK` layer, so it works natively with `docker run`.
+4. **Boot check** — the image is started in Docker for 5 seconds to confirm the container does not exit on startup. Container logs are printed.
+5. **Endpoint probe** — HTTP GET or TCP connect is retried every 500ms for up to 30 seconds. The probe URL/port is taken from the health check config, with a per-framework default as fallback (e.g. FastAPI defaults to `GET /health` on port 8000).
+
+> Without `--local`, apko publishes directly to the registry and there is no local tarball to test against. Use `--local` during development to get the live boot and probe check.
+
+Example output with `--local`:
 
 ```
+  → Injecting OCI HEALTHCHECK...
   → Health Check Test
      image: myapp:latest
      --- docker output ---
