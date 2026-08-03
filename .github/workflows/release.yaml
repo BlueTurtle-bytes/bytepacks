@@ -1,18 +1,18 @@
 name: Release
 
 on:
-  # push:
-  #   branches:
-  #     - main
   tags:
     - "v*.*.*"
 
 permissions:
-  contents: write          # to commit updated task YAML back to main
+  contents: write          # to commit updated Tekton task YAML back to main
   packages: write          # to push OCI image to ghcr.io
   id-token: write          # for cosign keyless signing
 
 jobs:
+  # ── 1. Publish CLI binaries via GoReleaser ──────────────────────────────────
+  # Produces linux/darwin × amd64/arm64 tarballs + checksums, attaches them
+  # to the GitHub Release, and updates the Homebrew tap if configured.
   goreleaser:
     runs-on: ubuntu-latest
     steps:
@@ -33,107 +33,93 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ── 2. Build and publish the OCI image ─────────────────────────────────────
+  # Uses melange + apko directly (no apexpacks bootstrap):
+  #   melange  →  builds the apexpacks APK for amd64 + arm64
+  #   apko     →  assembles and pushes the multi-arch OCI image to ghcr.io
   publish:
     runs-on: ubuntu-latest
-
-    outputs:
-      image: ${{ steps.meta.outputs.tags }}
-      digest: ${{ steps.build.outputs.digest }}
-
     steps:
-      # ── 1. Checkout ─────────────────────────────────────────────────────────
       - uses: actions/checkout@v4
-
-      # ── 2. Build the apexpack Go binary ─────────────────────────────────────
-      - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
-          cache: true
+          fetch-depth: 0
 
-      - name: Build apexpack binary
-        run: go build -o bin/apexpacks ./cmd/apexpacks
-
-      # ── 3. Install melange and apko ──────────────────────────────────────────
-      # On Linux (ubuntu-latest) melange runs natively via bubblewrap.
-      # No Docker wrapper needed — this is the clean Linux path.
+      # ── Install build tools ─────────────────────────────────────────────────
       - name: Install melange
         uses: chainguard-dev/actions/setup-melange@main
 
       - name: Install apko
         uses: chainguard-dev/actions/setup-apko@main
 
-      - name: Install crane
-        uses: imjasonh/setup-crane@v0.4
-
-      # ── 4. Generate a melange signing key ───────────────────────────────────
-      - name: Generate signing key
+      # ── Signing key ─────────────────────────────────────────────────────────
+      - name: Generate melange signing key
         run: melange keygen /tmp/apexpack-signing.rsa
 
-      # ── 5. Build the apexpack OCI image using apexpack itself ───────────────
-      # This uses profiles/golang.yaml to compile and package the binary,
-      # then apko assembles the final image. The image includes:
-      #   - the apexpack binary
-      #   - melange + apko (so Tekton tasks can run builds)
-      #   - grype (for scan command)
-      #   - ca-certificates-bundle
-      - name: Build OCI image
+      # ── Version ─────────────────────────────────────────────────────────────
+      # Strip the leading "v" from the tag (v1.2.3 → 1.2.3) for the APK version.
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      # ── Build APK packages ──────────────────────────────────────────────────
+      # Produces packages/amd64/*.apk and packages/arm64/*.apk under /tmp/packages.
+      - name: Build APK packages with melange
         run: |
-          SHA_TAG="ghcr.io/${{ github.repository }}:${{ github.sha }}"
-          LATEST_TAG="ghcr.io/${{ github.repository }}:latest"
+          melange build build/melange.yaml \
+            --arch amd64,arm64 \
+            --signing-key /tmp/apexpack-signing.rsa \
+            --out-dir /tmp/packages \
+            --source-dir . \
+            --override version=${{ steps.version.outputs.version }}
 
-          ./bin/apexpacks build . \
-            --tag "$SHA_TAG" \
-            --output /tmp/apexpack-output \
-            --project-name apexpack
-
-          echo "IMAGE_TAG=$SHA_TAG" >> $GITHUB_ENV
-          echo "OUTPUT_TAR=/tmp/apexpack-output/apexpack.tar" >> $GITHUB_ENV
-
-      # ── 6. Log in to ghcr.io via crane ──────────────────────────────────────
+      # ── Push image ──────────────────────────────────────────────────────────
       - name: Log in to GitHub Container Registry
         run: |
-          crane auth login ghcr.io \
-            --username "${{ github.actor }}" \
-            --password "${{ secrets.GITHUB_TOKEN }}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            apko login ghcr.io \
+              --username "${{ github.actor }}" \
+              --password-stdin
 
-      # ── 7. Push the OCI image to ghcr.io ────────────────────────────────────
-      - name: Push OCI image
+      - name: Build and push OCI image with apko
         id: build
         run: |
-          SHA_TAG="ghcr.io/${{ github.repository }}:${{ github.sha }}"
+          IMAGE="ghcr.io/${{ github.repository }}"
+          TAG="${{ github.ref_name }}"
 
-          crane push ${{ env.OUTPUT_TAR }} "$SHA_TAG"
-          crane tag "$SHA_TAG" latest
+          # apko publish prints the digest as the last line of stdout
+          DIGEST=$(apko publish build/apko.yaml \
+            "${IMAGE}:${TAG}" \
+            "${IMAGE}:latest" \
+            --keyring-append /tmp/apexpack-signing.rsa.pub \
+            --repository-append /tmp/packages \
+            --arch amd64,arm64 \
+            2>/dev/null | tail -1)
 
-          DIGEST=$(crane digest "$SHA_TAG")
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
-          echo "IMAGE_DIGEST=$DIGEST" >> $GITHUB_ENV
+          echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
+          echo "image=${IMAGE}:${TAG}" >> $GITHUB_OUTPUT
 
-      # ── 8. Sign the image with cosign (keyless OIDC) ────────────────────────
-      - name: Sign image with cosign
+      # ── Sign ────────────────────────────────────────────────────────────────
+      - name: Install cosign
         uses: sigstore/cosign-installer@v3
-      - run: |
+
+      - name: Sign image with cosign (keyless OIDC)
+        run: |
           cosign sign --yes \
             "ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
 
-      # ── 9. Update Tekton task YAML files with the new image digest ───────────
-      # Pins the exact digest so the cluster always knows exactly which image
-      # is deployed. ArgoCD/Flux will detect this change and apply it.
+      # ── Pin digest in Tekton tasks ──────────────────────────────────────────
+      # Replaces any existing apexpack image reference with the exact digest so
+      # ArgoCD/Flux knows which image version the cluster should run.
       - name: Update Tekton task image references
         run: |
           NEW_REF="ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
-
           for task_file in tekton/tasks/*.yaml; do
-            # Replace any existing image reference for the apexpack image.
             sed -i "s|image: ghcr.io/${{ github.repository }}[^ ]*|image: $NEW_REF|g" "$task_file"
           done
-
           echo "Updated task files:"
           grep -h "image: ghcr.io" tekton/tasks/*.yaml
 
-      # ── 10. Commit updated task YAML back to main ────────────────────────────
-      # ArgoCD/Flux watches this repo — the next sync picks up the change.
-      - name: Commit updated task YAML
+      - name: Commit updated Tekton task YAML
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: update apexpack image to ${{ github.sha }}"
