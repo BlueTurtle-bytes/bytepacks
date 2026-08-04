@@ -29,12 +29,6 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
-    inputs:
-      registry:
-        description: "Registry hostname (e.g. ghcr.io). Falls back to ARTIFACTORY_REGISTRY secret when not set."
-        required: false
-        type: string
-        default: ""
     outputs:
       digest:
         description: "Pushed image digest (sha256:...)"
@@ -43,9 +37,6 @@ on:
         description: "Pushed image ref (registry/repo:tag)"
         value: ${{ jobs.build-push.outputs.image }}
     secrets:
-      ARTIFACTORY_REGISTRY:
-        description: "Artifactory Docker registry hostname — not required when registry input is set"
-        required: false
       ARTIFACTORY_USER:
         required: true
       ARTIFACTORY_PASSWORD:
@@ -101,7 +92,7 @@ jobs:
         id: build
         uses: wolfi-dev/wolfi-act@main
         env:
-          REGISTRY: ${{ inputs.registry || secrets.ARTIFACTORY_REGISTRY }}
+          REGISTRY: ${{ vars.ARTIFACTORY_REGISTRY }}
           REGISTRY_USER: ${{ secrets.ARTIFACTORY_USER }}
           REGISTRY_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
           TAG: ${{ github.ref_name }}

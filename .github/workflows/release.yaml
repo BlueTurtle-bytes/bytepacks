@@ -36,8 +36,6 @@ jobs:
     permissions:
       packages: write
     uses: ./.github/workflows/build-push.yaml
-    with:
-      registry: ghcr.io
     secrets:
       ARTIFACTORY_USER: ${{ github.actor }}
       ARTIFACTORY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
