@@ -1,20 +1,16 @@
 name: Release
 
 on:
-  tags:
-    - "v*.*.*"
-
-permissions:
-  contents: write          # to commit updated Tekton task YAML back to main
-  packages: write          # to push OCI image to ghcr.io
-  id-token: write          # for cosign keyless signing
+  push:
+    tags:
+      - "v*.*.*"
 
 jobs:
   # ── 1. Publish CLI binaries via GoReleaser ──────────────────────────────────
-  # Produces linux/darwin × amd64/arm64 tarballs + checksums, attaches them
-  # to the GitHub Release, and updates the Homebrew tap if configured.
   goreleaser:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,90 +29,44 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 2. Build and publish the OCI image ─────────────────────────────────────
-  # Uses melange + apko directly (no apexpacks bootstrap):
-  #   melange  →  builds the apexpacks APK for amd64 + arm64
-  #   apko     →  assembles and pushes the multi-arch OCI image to ghcr.io
+  # ── 2. Build and push the OCI image ─────────────────────────────────────────
+  # Reuses the shared build-push workflow: melange → apko publish → ghcr.io
   publish:
+    needs: goreleaser
+    permissions:
+      packages: write
+    uses: ./.github/workflows/build-push.yaml
+    with:
+      registry: ghcr.io
+    secrets:
+      ARTIFACTORY_USER: ${{ github.actor }}
+      ARTIFACTORY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 3. Sign image and pin digest in Tekton tasks ────────────────────────────
+  sign:
+    needs: publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      # ── Install build tools ─────────────────────────────────────────────────
-      - name: Install melange
-        uses: chainguard-dev/actions/setup-melange@main
-
-      - name: Install apko
-        uses: chainguard-dev/actions/setup-apko@main
-
-      # ── Signing key ─────────────────────────────────────────────────────────
-      - name: Generate melange signing key
-        run: melange keygen /tmp/apexpack-signing.rsa
-
-      # ── Version ─────────────────────────────────────────────────────────────
-      # Strip the leading "v" from the tag (v1.2.3 → 1.2.3) for the APK version.
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
-      # ── Build APK packages ──────────────────────────────────────────────────
-      # Produces packages/amd64/*.apk and packages/arm64/*.apk under /tmp/packages.
-      - name: Build APK packages with melange
-        run: |
-          melange build build/melange.yaml \
-            --arch amd64,arm64 \
-            --signing-key /tmp/apexpack-signing.rsa \
-            --out-dir /tmp/packages \
-            --source-dir . \
-            --override version=${{ steps.version.outputs.version }}
-
-      # ── Push image ──────────────────────────────────────────────────────────
-      - name: Log in to GitHub Container Registry
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            apko login ghcr.io \
-              --username "${{ github.actor }}" \
-              --password-stdin
-
-      - name: Build and push OCI image with apko
-        id: build
-        run: |
-          IMAGE="ghcr.io/${{ github.repository }}"
-          TAG="${{ github.ref_name }}"
-
-          # apko publish prints the digest as the last line of stdout
-          DIGEST=$(apko publish build/apko.yaml \
-            "${IMAGE}:${TAG}" \
-            "${IMAGE}:latest" \
-            --keyring-append /tmp/apexpack-signing.rsa.pub \
-            --repository-append /tmp/packages \
-            --arch amd64,arm64 \
-            2>/dev/null | tail -1)
-
-          echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
-          echo "image=${IMAGE}:${TAG}" >> $GITHUB_OUTPUT
-
-      # ── Sign ────────────────────────────────────────────────────────────────
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
       - name: Sign image with cosign (keyless OIDC)
         run: |
           cosign sign --yes \
-            "ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
+            "ghcr.io/${{ github.repository }}@${{ needs.publish.outputs.digest }}"
 
-      # ── Pin digest in Tekton tasks ──────────────────────────────────────────
-      # Replaces any existing apexpack image reference with the exact digest so
-      # ArgoCD/Flux knows which image version the cluster should run.
       - name: Update Tekton task image references
         run: |
-          NEW_REF="ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
+          NEW_REF="ghcr.io/${{ github.repository }}@${{ needs.publish.outputs.digest }}"
           for task_file in tekton/tasks/*.yaml; do
             sed -i "s|image: ghcr.io/${{ github.repository }}[^ ]*|image: $NEW_REF|g" "$task_file"
           done
-          echo "Updated task files:"
           grep -h "image: ghcr.io" tekton/tasks/*.yaml
 
       - name: Commit updated Tekton task YAML
