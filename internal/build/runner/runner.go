@@ -235,6 +235,9 @@ func RunApko(configFile string, opts types.BuildOptions) error {
 	} else {
 		args = []string{"publish", configFile, imageTag, "--arch", arch, "--sbom-path", opts.OutputDir}
 	}
+	for k, v := range opts.BuildArgs {
+		args = append(args, "--image-annotation", "dev.apexpack.build."+k+"="+v)
+	}
 
 	if opts.TLSExtraCA == "" {
 		return runToolInDir(opts.OutputDir, "apko", args)
@@ -281,13 +284,17 @@ func runApkoInDocker(configFile, imageTag, outputTar string, opts types.BuildOpt
 		)
 	}
 
-	args = append(args,
-		"cgr.dev/chainguard/apko",
+	apkoArgs := []string{
 		"build", containerConfig,
 		imageTag,
 		containerTar,
 		"--arch", apkoArch,
-	)
+	}
+	for k, v := range opts.BuildArgs {
+		apkoArgs = append(apkoArgs, "--image-annotation", "dev.apexpack.build."+k+"="+v)
+	}
+	args = append(args, "cgr.dev/chainguard/apko")
+	args = append(args, apkoArgs...)
 
 	return runTool("docker", args)
 }
