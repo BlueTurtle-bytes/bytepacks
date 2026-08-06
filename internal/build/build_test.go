@@ -103,8 +103,11 @@ func TestPlanEntrypointSubstitution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan() error: %v", err)
 	}
-	if plan.Apko.Entrypoint.Command != "/usr/bin/mysvc" {
-		t.Errorf("entrypoint: got %q, want /usr/bin/mysvc", plan.Apko.Entrypoint.Command)
+	if plan.Apko.Entrypoint.Command != "/usr/bin/apexpack-entrypoint" {
+		t.Errorf("entrypoint: got %q, want /usr/bin/apexpack-entrypoint", plan.Apko.Entrypoint.Command)
+	}
+	if plan.Apko.Cmd != "/usr/bin/mysvc" {
+		t.Errorf("cmd: got %q, want /usr/bin/mysvc", plan.Apko.Cmd)
 	}
 }
 
@@ -117,7 +120,7 @@ func TestPlanMelangeBuildCommand(t *testing.T) {
 	if len(plan.Melange.Pipeline) == 0 {
 		t.Fatal("expected at least one pipeline step")
 	}
-	cmd := plan.Melange.Pipeline[len(plan.Melange.Pipeline)-1].Runs
+	cmd := plan.Melange.Pipeline[0].Runs
 	if !strings.Contains(cmd, "mybin") {
 		t.Errorf("build command should contain project name: %q", cmd)
 	}
@@ -166,8 +169,11 @@ func TestPlanProcfileFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan() error: %v", err)
 	}
-	if plan.Apko.Entrypoint.Command != "./bin/server" {
-		t.Errorf("entrypoint: got %q, want ./bin/server", plan.Apko.Entrypoint.Command)
+	if plan.Apko.Entrypoint.Command != "/usr/bin/apexpack-entrypoint" {
+		t.Errorf("entrypoint: got %q, want /usr/bin/apexpack-entrypoint", plan.Apko.Entrypoint.Command)
+	}
+	if plan.Apko.Cmd != "./bin/server" {
+		t.Errorf("cmd: got %q, want ./bin/server", plan.Apko.Cmd)
 	}
 }
 
@@ -189,9 +195,12 @@ func TestPlanJava8EntrypointUsesLegacyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan() error: %v", err)
 	}
-	if plan.Apko.Entrypoint.Command != "/usr/lib/jvm/java-1.8-openjdk/bin/java" {
-		t.Errorf("entrypoint: got %q, want /usr/lib/jvm/java-1.8-openjdk/bin/java",
-			plan.Apko.Entrypoint.Command)
+	// Entrypoint is now the wrapper; CMD carries the real java path
+	if plan.Apko.Entrypoint.Command != "/usr/bin/apexpack-entrypoint" {
+		t.Errorf("entrypoint: got %q, want /usr/bin/apexpack-entrypoint", plan.Apko.Entrypoint.Command)
+	}
+	if plan.Apko.Cmd != "/usr/lib/jvm/java-1.8-openjdk/bin/java" {
+		t.Errorf("cmd: got %q, want /usr/lib/jvm/java-1.8-openjdk/bin/java", plan.Apko.Cmd)
 	}
 	if plan.Apko.Environment["JAVA_HOME"] != "/usr/lib/jvm/java-1.8-openjdk" {
 		t.Errorf("JAVA_HOME: got %q, want /usr/lib/jvm/java-1.8-openjdk",
@@ -200,6 +209,32 @@ func TestPlanJava8EntrypointUsesLegacyPath(t *testing.T) {
 	if plan.Melange.Environment.Env["JAVA_HOME"] != "/usr/lib/jvm/java-1.8-openjdk" {
 		t.Errorf("build JAVA_HOME: got %q, want /usr/lib/jvm/java-1.8-openjdk",
 			plan.Melange.Environment.Env["JAVA_HOME"])
+	}
+}
+
+func TestPlanBuildArgsInEnvAndAnnotations(t *testing.T) {
+	plan, err := Plan(golangProfile(), Options{
+		SourceDir:   t.TempDir(),
+		ProjectName: "app",
+		BuildArgs: map[string]string{
+			"BUILD_VERSION": "1.2.3",
+			"GIT_COMMIT":    "abc123",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Plan() error: %v", err)
+	}
+	if plan.Apko.Environment["BUILD_VERSION"] != "1.2.3" {
+		t.Errorf("env BUILD_VERSION: got %q, want 1.2.3", plan.Apko.Environment["BUILD_VERSION"])
+	}
+	if plan.Apko.Environment["GIT_COMMIT"] != "abc123" {
+		t.Errorf("env GIT_COMMIT: got %q, want abc123", plan.Apko.Environment["GIT_COMMIT"])
+	}
+	if plan.Apko.Annotations["dev.apexpack.build.BUILD_VERSION"] != "1.2.3" {
+		t.Errorf("annotation BUILD_VERSION: got %q, want 1.2.3", plan.Apko.Annotations["dev.apexpack.build.BUILD_VERSION"])
+	}
+	if plan.Apko.Annotations["dev.apexpack.build.GIT_COMMIT"] != "abc123" {
+		t.Errorf("annotation GIT_COMMIT: got %q, want abc123", plan.Apko.Annotations["dev.apexpack.build.GIT_COMMIT"])
 	}
 }
 

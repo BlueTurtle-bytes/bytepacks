@@ -180,6 +180,22 @@ func BuildApkoConfig(p *types.Profile, opts types.BuildOptions) (types.ApkoConfi
 		cfg.Cmd = strings.Join(quoted, " ")
 	}
 
+	// Merge build args into the image environment and OCI annotations so CI
+	// metadata (build numbers, git SHAs) is visible both to the running process
+	// and to image inspection tooling. Build arg values win over profile env vars.
+	if len(opts.BuildArgs) > 0 {
+		if cfg.Environment == nil {
+			cfg.Environment = make(map[string]string)
+		}
+		if cfg.Annotations == nil {
+			cfg.Annotations = make(map[string]string)
+		}
+		for k, v := range opts.BuildArgs {
+			cfg.Environment[k] = v
+			cfg.Annotations["dev.apexpack.build."+k] = v
+		}
+	}
+
 	var healthCheck *types.ApkoHealthCheck
 	if hc := p.Image.HealthCheck; hc != nil && !hc.Disabled {
 		if apkoHC := BuildHealthCheck(hc); apkoHC != nil {

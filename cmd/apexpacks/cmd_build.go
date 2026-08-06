@@ -29,6 +29,7 @@ func buildCmd() *cobra.Command {
 		localBuild     bool
 		signingKey     string
 		melangeRunner  string
+		buildArgSlice  []string
 	)
 
 	cmd := &cobra.Command{
@@ -137,6 +138,15 @@ Examples:
 
 			ver = strings.TrimPrefix(ver, "v")
 
+			buildArgs := make(map[string]string, len(buildArgSlice))
+			for _, kv := range buildArgSlice {
+				k, v, ok := strings.Cut(kv, "=")
+				if !ok || k == "" {
+					return fmt.Errorf("invalid --build-arg %q: must be KEY=VALUE", kv)
+				}
+				buildArgs[k] = v
+			}
+
 			opts := build.Options{
 				SourceDir:       absSrcDir,
 				ProfilesDir:     profilesDir,
@@ -152,6 +162,7 @@ Examples:
 				Arch:            arch,
 				LocalBuild:      localBuild,
 				SigningKey:      signingKey,
+				BuildArgs:       buildArgs,
 			}
 
 			plan, err := build.Plan(matchedProfile, opts)
@@ -245,6 +256,13 @@ Use "docker" when bubblewrap user namespaces are unavailable and a Docker socket
 	cmd.Flags().StringVar(&signingKey, "signing-key", "",
 		"Path to an existing melange RSA private key (PEM). The .pub file must be at <path>.pub. "+
 			"When empty, a key pair is generated in the output directory.")
+	cmd.Flags().StringArrayVar(&buildArgSlice, "build-arg", nil,
+		"Bake a KEY=VALUE pair into the image as an env var and OCI annotation.\n"+
+			"Repeatable. Useful for CI metadata (build number, git SHA, release name).\n"+
+			"Examples:\n"+
+			"  --build-arg BUILD_VERSION=1.2.3\n"+
+			"  --build-arg GIT_COMMIT=$(git rev-parse HEAD)\n"+
+			"  --build-arg BUILD_ID=$(Build.BuildId)")
 
 	return cmd
 }

@@ -189,6 +189,17 @@ type BuildConfig struct {
 	// The CA cert is available inside the sandbox at /home/build/.apexpack-ca.crt.
 	TLSCAPreStep string `yaml:"tls_ca_pre_step,omitempty"`
 
+	// TLSRuntimeCAEnv lists env vars the entrypoint wrapper exports (pointing at the
+	// merged CA bundle) when APEXPACK_RUNTIME_CA is set at container startup.
+	// SSL_CERT_FILE is always exported; list extras here (e.g. NODE_EXTRA_CA_CERTS).
+	TLSRuntimeCAEnv []string `yaml:"tls_runtime_ca_env,omitempty"`
+
+	// TLSRuntimeCAPreExec is an optional shell snippet injected into the entrypoint
+	// wrapper before exec for runtimes that need special truststore handling at
+	// container startup (e.g. Java keytool import into a temp cacerts file).
+	// /tmp/apexpack-runtime-ca.pem contains the decoded cert when this runs.
+	TLSRuntimeCAPreExec string `yaml:"tls_runtime_ca_pre_exec,omitempty"`
+
 	// MavenMirrorURL is the URL of a corporate Artifactory (or Nexus) Maven proxy.
 	// When set, apexpack injects a ~/.m2/settings.xml into every build that mirrors
 	// all Maven repository requests through this URL instead of hitting Maven Central
@@ -433,6 +444,10 @@ type BuildOptions struct {
 	LocalBuild      bool
 	MelangeRunner   string
 	LanguageVersion string
+	// BuildArgs are key/value pairs baked into the final image as environment
+	// variables and OCI annotations. Intended for CI metadata: build numbers,
+	// git SHAs, release names, etc. Values override profile image.env on conflict.
+	BuildArgs map[string]string
 }
 
 // ============================================================================
@@ -566,6 +581,7 @@ type ApkoConfig struct {
 	Cmd         string            `yaml:"cmd,omitempty"`
 	Accounts    ApkoAccounts      `yaml:"accounts"`
 	Environment map[string]string `yaml:"environment,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
 	Paths       []ApkoPath        `yaml:"paths,omitempty"`
 }
 

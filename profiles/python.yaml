@@ -85,6 +85,9 @@ build:
     - REQUESTS_CA_BUNDLE   # requests library (used by pip, poetry, pipenv)
     - PIP_CERT             # pip certificate override
 
+  tls_runtime_ca_env:
+    - REQUESTS_CA_BUNDLE  # requests library reads this for extra trusted CAs at runtime
+
   frameworks:
     uv:
       dependencies:

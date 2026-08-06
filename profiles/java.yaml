@@ -107,6 +107,23 @@ build:
   maven_settings_template: "corporate"
 
   tls_ca_env: []  # JVM ignores SSL_CERT_FILE; tls_ca_pre_step + build command handle it
+
+  tls_runtime_ca_pre_exec: |
+    JAVA_CACERTS=/etc/ssl/certs/cacerts
+    if [ -f "$JAVA_CACERTS" ]; then
+      cp "$JAVA_CACERTS" /tmp/apexpack-cacerts
+      awk '/-----BEGIN CERTIFICATE-----/{n++;f="/tmp/apexpack-rt-cert-"n".pem"} f{print > f} /-----END CERTIFICATE-----/{f=""}' /tmp/apexpack-runtime-ca.pem
+      KEYTOOL=$(find /usr/lib/jvm -name "keytool" 2>/dev/null | head -1)
+      if [ -n "$KEYTOOL" ]; then
+        for certfile in /tmp/apexpack-rt-cert-*.pem; do
+          [ -f "$certfile" ] || continue
+          "$KEYTOOL" -importcert -noprompt -alias "apexpack-rt-$(basename "$certfile")" \
+            -keystore /tmp/apexpack-cacerts -storepass changeit -file "$certfile" 2>/dev/null || true
+          rm -f "$certfile"
+        done
+      fi
+      export JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStore=/tmp/apexpack-cacerts -Djavax.net.ssl.trustStorePassword=changeit"
+    fi
   tls_ca_pre_step: |
     [ -f /home/build/.apexpack-ca.crt ] || exit 0
     KEYTOOL=$(find /usr/lib/jvm -name "keytool" 2>/dev/null | head -1)

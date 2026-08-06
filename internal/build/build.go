@@ -48,6 +48,26 @@ func Plan(p *types.Profile, opts Options) (*types.BuildPlan, error) {
 		}
 	}
 
+	// Wrap the real entrypoint with the runtime CA script after all hooks have run,
+	// so hook-patched entrypoints (e.g. Java's java-1.8 path) are captured correctly.
+	// The wrapper is transparent when APEXPACK_RUNTIME_CA is not set (exec "$@").
+	if apkoCfg.Entrypoint.Command != "" {
+		realCmd := apkoCfg.Entrypoint.Command
+		if apkoCfg.Cmd != "" {
+			realCmd = realCmd + " " + apkoCfg.Cmd
+		}
+		apkoCfg.Entrypoint.Command = "/usr/bin/apexpack-entrypoint"
+		apkoCfg.Cmd = realCmd
+
+		wrapperScript := buildRuntimeCAWrapper(p)
+		melangeCfg.Pipeline = append(melangeCfg.Pipeline, types.MelangePipeline{
+			Runs: `mkdir -p "${{targets.destdir}}/usr/bin"
+cat > "${{targets.destdir}}/usr/bin/apexpack-entrypoint" << 'APEXPACK_ENTRYPOINT_EOF'
+` + wrapperScript + `APEXPACK_ENTRYPOINT_EOF
+chmod +x "${{targets.destdir}}/usr/bin/apexpack-entrypoint"`,
+		})
+	}
+
 	return &types.BuildPlan{
 		ProjectName:    opts.ProjectName,
 		Version:        opts.Version,
@@ -59,6 +79,35 @@ func Plan(p *types.Profile, opts Options) (*types.BuildPlan, error) {
 		Apko:           apkoCfg,
 		HealthCheck:    apkoHC,
 	}, nil
+}
+
+// buildRuntimeCAWrapper returns a sh script baked into the image as
+// /usr/bin/apexpack-entrypoint. When APEXPACK_RUNTIME_CA (base64 PEM) is set
+// at container startup it decodes the cert, merges it with the system bundle,
+// exports SSL_CERT_FILE (and any profile-specific vars), runs the optional
+// pre-exec snippet, then execs the real command passed as "$@".
+func buildRuntimeCAWrapper(p *types.Profile) string {
+	var extraEnv string
+	for _, key := range p.Build.TLSRuntimeCAEnv {
+		extraEnv += "  export " + key + "=/tmp/apexpack-runtime-ca.pem\n"
+	}
+	preExec := ""
+	if p.Build.TLSRuntimeCAPreExec != "" {
+		preExec = p.Build.TLSRuntimeCAPreExec
+	}
+	return `#!/bin/sh
+set -e
+if [ -n "$APEXPACK_RUNTIME_CA" ]; then
+  printf '%s' "$APEXPACK_RUNTIME_CA" | base64 -d > /tmp/apexpack-runtime-ca.pem
+  if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+    cat /etc/ssl/certs/ca-certificates.crt /tmp/apexpack-runtime-ca.pem > /tmp/apexpack-ca-bundle.pem
+  else
+    cp /tmp/apexpack-runtime-ca.pem /tmp/apexpack-ca-bundle.pem
+  fi
+  export SSL_CERT_FILE=/tmp/apexpack-ca-bundle.pem
+` + extraEnv + preExec + `fi
+exec "$@"
+`
 }
 
 // Run writes melange.yaml and apko.yaml to disk then runs the tools.
