@@ -66,6 +66,18 @@ func Plan(p *types.Profile, opts Options) (*types.BuildPlan, error) {
 				"printf '%s' '" + encoded + "' | base64 -d > \"${{targets.destdir}}/usr/bin/apexpack-entrypoint\"\n" +
 				"chmod +x \"${{targets.destdir}}/usr/bin/apexpack-entrypoint\"",
 		})
+
+		// The wrapper script uses #!/bin/sh — ensure a shell is present in the image.
+		hasBusybox := false
+		for _, pkg := range apkoCfg.Contents.Packages {
+			if pkg == "busybox" {
+				hasBusybox = true
+				break
+			}
+		}
+		if !hasBusybox {
+			apkoCfg.Contents.Packages = append(apkoCfg.Contents.Packages, "busybox")
+		}
 	}
 
 	return &types.BuildPlan{
