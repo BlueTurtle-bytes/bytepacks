@@ -3,6 +3,7 @@
 package build
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,12 +60,11 @@ func Plan(p *types.Profile, opts Options) (*types.BuildPlan, error) {
 		apkoCfg.Entrypoint.Command = "/usr/bin/apexpack-entrypoint"
 		apkoCfg.Cmd = realCmd
 
-		wrapperScript := buildRuntimeCAWrapper(p)
+		encoded := base64.StdEncoding.EncodeToString([]byte(buildRuntimeCAWrapper(p)))
 		melangeCfg.Pipeline = append(melangeCfg.Pipeline, types.MelangePipeline{
-			Runs: `mkdir -p "${{targets.destdir}}/usr/bin"
-cat > "${{targets.destdir}}/usr/bin/apexpack-entrypoint" << 'APEXPACK_ENTRYPOINT_EOF'
-` + wrapperScript + `APEXPACK_ENTRYPOINT_EOF
-chmod +x "${{targets.destdir}}/usr/bin/apexpack-entrypoint"`,
+			Runs: "mkdir -p \"${{targets.destdir}}/usr/bin\"\n" +
+				"printf '%s' '" + encoded + "' | base64 -d > \"${{targets.destdir}}/usr/bin/apexpack-entrypoint\"\n" +
+				"chmod +x \"${{targets.destdir}}/usr/bin/apexpack-entrypoint\"",
 		})
 	}
 
