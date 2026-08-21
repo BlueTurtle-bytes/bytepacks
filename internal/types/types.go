@@ -388,6 +388,15 @@ type ProjectConfig struct {
 
 	// Scan overrides the language profile's scan defaults for this project.
 	Scan *ScanConfig `yaml:"scan,omitempty"`
+
+	// Test overrides the profile's melange test pipeline for this project.
+	Test *ProjectTestOverride `yaml:"test,omitempty"`
+}
+
+// ProjectTestOverride lets a project replace the profile's melange test pipeline.
+type ProjectTestOverride struct {
+	// Pipeline fully replaces the profile's test pipeline steps if set.
+	Pipeline []MelangePipeline `yaml:"pipeline,omitempty"`
 }
 
 // ProjectImageOverride lets a project add extra runtime packages or env vars.

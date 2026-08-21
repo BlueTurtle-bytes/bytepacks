@@ -206,6 +206,10 @@ func MergeProjectConfig(p *types.Profile, proj *types.ProjectConfig) *types.Prof
 		}
 	}
 
+	if proj.Test != nil && len(proj.Test.Pipeline) > 0 {
+		merged.Test.Pipeline = proj.Test.Pipeline
+	}
+
 	if proj.Image != nil {
 		merged.Image.Packages = dedupe(append(merged.Image.Packages, proj.Image.Packages...))
 		if proj.Image.Entrypoint != "" {

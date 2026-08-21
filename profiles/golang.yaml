@@ -48,6 +48,7 @@ build:
     - build-base
     - git
   command: |
+    set -e
     mkdir -p ${{targets.destdir}}/usr/bin
     MAIN_GO=$(find . -maxdepth 4 -name "main.go" ! -path "*/vendor/*" ! -path "*_test*" | head -1)
     go build -o ${{targets.destdir}}/usr/bin/{APP_NAME} $(dirname "$MAIN_GO")
