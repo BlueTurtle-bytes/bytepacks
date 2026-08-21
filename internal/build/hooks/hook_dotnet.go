@@ -3,52 +3,48 @@ package hooks
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
-	"github.com/apexpack/apexpack/internal/build/templates"
 	"github.com/apexpack/apexpack/internal/types"
 )
+
+const minimalNuGetConfig = `<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+  </packageSources>
+</configuration>
+`
 
 type dotnetHook struct{}
 
 func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error {
-	nugetTmplName := p.Build.NuGetSettingsTemplate
-	hasCustomTemplate := nugetTmplName != "" && func() bool {
-		customPath := filepath.Join(opts.ProfilesDir, "templates", "nuget", nugetTmplName+".xml")
-		_, err := os.Stat(customPath)
-		return err == nil
-	}()
-	if p.Build.NuGetMirrorURL != "" && (os.Getenv("ARTI_USER") != "" || hasCustomTemplate) {
+	if p.Build.NuGetMirrorURL != "" && os.Getenv("ARTI_USER") != "" {
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)
 		}
-		for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD"} {
+		for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD", "ARTI_REPO"} {
 			if val := os.Getenv(key); val != "" {
 				if _, exists := cfg.Environment.Env[key]; !exists {
 					cfg.Environment.Env[key] = val
 				}
 			}
 		}
-		nugetTmpl, err := templates.LoadNuGetTemplate(nugetTmplName, opts.ProfilesDir)
-		if err != nil {
-			return fmt.Errorf("nuget config template: %w", err)
+		nugetConfigStep := "mkdir -p /home/build/.nuget/NuGet\n" +
+			"cat > /home/build/.nuget/NuGet/NuGet.Config << APEXPACK_NUGET_EOF\n" +
+			minimalNuGetConfig +
+			"APEXPACK_NUGET_EOF"
+		artifactoryRepo := os.Getenv("ARTIFACTORY_REPO")
+		if artifactoryRepo == "" {
+			artifactoryRepo = "substonic-nuget"
 		}
-		nugetConfigXML := strings.ReplaceAll(nugetTmpl, "{{NUGET_MIRROR_URL}}", p.Build.NuGetMirrorURL)
-		tmplLabel := nugetTmplName
-		if tmplLabel == "" {
-			tmplLabel = "built-in"
-		}
-		nugetConfigStep := fmt.Sprintf(
-			"mkdir -p /home/build/.nuget/NuGet\n"+
-				"cat > /home/build/.nuget/NuGet/NuGet.Config << APEXPACK_NUGET_EOF\n"+
-				"%s"+
-				"APEXPACK_NUGET_EOF\n"+
-				"echo \"→ NuGet config: %s template, mirror: %s\"",
-			nugetConfigXML, tmplLabel, p.Build.NuGetMirrorURL,
+		pipelineSource := fmt.Sprintf(
+			"dotnet nuget add source %s/%s -n Artifactory -u %s -p %s --store-password-in-clear-text --configfile /home/build/.nuget/NuGet/NuGet.Config",
+			p.Build.NuGetMirrorURL, artifactoryRepo, os.Getenv("ARTI_USER"), os.Getenv("ARTI_PASSWORD"),
 		)
 		cfg.Pipeline = append(
-			[]types.MelangePipeline{{Runs: nugetConfigStep}},
+			[]types.MelangePipeline{
+				{Runs: nugetConfigStep},
+				{Runs: pipelineSource},
+			},
 			cfg.Pipeline...,
 		)
 	}
