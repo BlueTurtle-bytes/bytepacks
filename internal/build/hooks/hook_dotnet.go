@@ -32,7 +32,7 @@ func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts 
 			"cat > /home/build/.nuget/NuGet/NuGet.Config << APEXPACK_NUGET_EOF\n" +
 			minimalNuGetConfig +
 			"APEXPACK_NUGET_EOF"
-		artifactoryRepo := os.Getenv("ARTIFACTORY_REPO")
+		artifactoryRepo := os.Getenv("ARTI_REPO")
 		if artifactoryRepo == "" {
 			artifactoryRepo = "substonic-nuget"
 		}
