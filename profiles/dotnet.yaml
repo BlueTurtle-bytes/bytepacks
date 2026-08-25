@@ -97,9 +97,20 @@ image:
   entrypoint: /usr/bin/dotnet
   cmd:
     - "/app/app.dll"
-  run-as: 65532
+  run-as: 1001
   ports:
     - "8080"
+  paths:
+    - path: /app
+      type: directory
+      permissions: 0755
+      uid: 1001
+      gid: 1001
+    - path: /user
+      type: directory
+      permissions: 0755
+      uid: 1001
+      gid: 1001
   env:
     ASPNETCORE_URLS: "http://+:8080"
     DOTNET_RUNNING_IN_CONTAINER: "true"

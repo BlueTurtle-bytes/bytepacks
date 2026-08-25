@@ -305,6 +305,10 @@ type ImageConfig struct {
 	// When set, apexpack emits a healthcheck: block in apko.yaml and
 	// automatically adds wget to the runtime packages for HTTP checks.
 	HealthCheck *HealthCheckConfig `yaml:"health-check,omitempty"`
+
+	// Paths creates directories (or sets permissions) inside the image after
+	// APK installation. Mirrors the apko paths: block exactly.
+	Paths []ApkoPath `yaml:"paths,omitempty"`
 }
 
 // HealthCheckConfig controls the container health check written to apko.yaml.
@@ -417,6 +421,9 @@ type ProjectImageOverride struct {
 	// HealthCheck replaces the profile's health-check configuration entirely.
 	// Set disabled: true to suppress a profile-level default for non-HTTP apps.
 	HealthCheck *HealthCheckConfig `yaml:"health-check,omitempty"`
+
+	// Paths are appended to the profile's image.paths list.
+	Paths []ApkoPath `yaml:"paths,omitempty"`
 }
 
 // ProjectBuildOverride lets a project add extra build deps or env vars.

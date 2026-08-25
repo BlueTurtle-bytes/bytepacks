@@ -170,6 +170,7 @@ func BuildApkoConfig(p *types.Profile, opts types.BuildOptions) (types.ApkoConfi
 			Groups: []types.ApkoGroup{{Groupname: "nonroot", GID: runAs}},
 		},
 		Environment: helpers.VsubMap(p.Image.Env, token, version),
+		Paths:       p.Image.Paths,
 	}
 
 	if len(cmd) > 0 {

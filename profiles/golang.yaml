@@ -67,9 +67,25 @@ image:
   packages:
     - ca-certificates-bundle=20260413-r0
   entrypoint: /usr/bin/{APP_NAME}
-  run-as: 65532
+  run-as: 1001
   ports:
     - "8080"
+  paths:
+    - path: /
+      type: directory
+      permissions: 0755
+      uid: 1001
+      gid: 1001
+    - path: /user
+      type: directory
+      permissions: 0755
+      uid: 1001
+      gid: 1001
+    - path: /app
+      type: directory
+      permissions: 0755
+      uid: 1001
+      gid: 1001
   health-check:
     http:
       port: 8080

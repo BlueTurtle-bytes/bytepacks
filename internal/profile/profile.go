@@ -227,6 +227,9 @@ func MergeProjectConfig(p *types.Profile, proj *types.ProjectConfig) *types.Prof
 		if proj.Image.HealthCheck != nil {
 			merged.Image.HealthCheck = proj.Image.HealthCheck
 		}
+		if len(proj.Image.Paths) > 0 {
+			merged.Image.Paths = append(merged.Image.Paths, proj.Image.Paths...)
+		}
 	}
 
 	return &merged
