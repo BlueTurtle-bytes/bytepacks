@@ -1,7 +1,10 @@
 package runner
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -251,10 +254,16 @@ func RunApko(configFile string, opts types.BuildOptions) error {
 	}
 	defer os.Remove(merged)
 
-	return runToolInDirEnv(opts.OutputDir, "apko", args, envWithOverrides(os.Environ(),
+	env := envWithOverrides(os.Environ(),
 		"SSL_CERT_FILE="+merged,
 		"SSL_CERT_DIR=/etc/ssl/certs",
-	))
+	)
+	fmt.Printf("  → apko SSL_CERT_FILE=%s\n", merged)
+	if data, err := os.ReadFile(merged); err == nil {
+		fmt.Printf("  → apko merged bundle size: %d bytes\n", len(data))
+	}
+	debugTLSConnection(opts.Tag, merged)
+	return runToolInDirEnv(opts.OutputDir, "apko", args, env)
 }
 
 func runApkoInDocker(configFile, imageTag, outputTar string, opts types.BuildOptions) error {
@@ -300,6 +309,42 @@ func runApkoInDocker(configFile, imageTag, outputTar string, opts types.BuildOpt
 	args = append(args, apkoArgs...)
 
 	return runTool("docker", args)
+}
+
+// debugTLSConnection probes the registry host from the image tag using the
+// merged CA bundle and prints the cert chain. Temporary debug helper.
+func debugTLSConnection(imageTag, caBundlePath string) {
+	host := strings.SplitN(imageTag, "/", 2)[0]
+	if host == "" {
+		fmt.Println("  → TLS debug: no host in image tag, skipping")
+		return
+	}
+	addr := host + ":443"
+	fmt.Printf("  → TLS debug: probing %s with merged bundle\n", addr)
+
+	pool := x509.NewCertPool()
+	if data, err := os.ReadFile(caBundlePath); err == nil {
+		pool.AppendCertsFromPEM(data)
+	}
+
+	conn, err := tls.Dial("tcp", addr, &tls.Config{RootCAs: pool})
+	if err != nil {
+		fmt.Printf("  → TLS debug: FAILED: %v\n", err)
+		// Try insecure to at least print the chain the server sends.
+		rawConn, rerr := net.Dial("tcp", addr)
+		if rerr == nil {
+			tlsConn := tls.Client(rawConn, &tls.Config{InsecureSkipVerify: true, ServerName: host}) //nolint:gosec
+			if rerr = tlsConn.Handshake(); rerr == nil {
+				for i, c := range tlsConn.ConnectionState().PeerCertificates {
+					fmt.Printf("  → TLS debug: server cert[%d] subject=%s issuer=%s\n", i, c.Subject, c.Issuer)
+				}
+			}
+			rawConn.Close()
+		}
+		return
+	}
+	conn.Close()
+	fmt.Printf("  → TLS debug: OK — %s is trusted by merged bundle\n", host)
 }
 
 // MelangeArch returns the melange arch string — exported for use by build.go.
