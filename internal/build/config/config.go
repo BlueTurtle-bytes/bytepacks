@@ -107,6 +107,10 @@ func BuildMelangeConfig(p *types.Profile, opts types.BuildOptions) (types.Melang
 		}
 	}
 
+	if opts.ProjectSubpath != "" && len(cfg.Pipeline) > 0 {
+		cfg.Pipeline[0].Runs = "cd " + opts.ProjectSubpath + "\n" + cfg.Pipeline[0].Runs
+	}
+
 	if opts.TLSExtraCA != "" && len(p.Build.TLSCAEnv) > 0 {
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)

@@ -59,7 +59,7 @@ func RunMelange(configFile string, opts types.BuildOptions) error {
 	}
 	defer os.Remove(merged)
 
-	return runToolEnv("melange", args, append(os.Environ(),
+	return runToolEnv("melange", args, envWithOverrides(os.Environ(),
 		"SSL_CERT_FILE="+merged,
 		"SSL_CERT_DIR=/etc/ssl/certs",
 	))
@@ -168,7 +168,7 @@ func RunMelangeTest(configFile string, opts types.BuildOptions) error {
 	}
 	defer os.Remove(merged)
 
-	return runToolInDirEnv(opts.OutputDir, "melange", args, append(os.Environ(),
+	return runToolInDirEnv(opts.OutputDir, "melange", args, envWithOverrides(os.Environ(),
 		"SSL_CERT_FILE="+merged,
 		"SSL_CERT_DIR=/etc/ssl/certs",
 	))
@@ -251,7 +251,10 @@ func RunApko(configFile string, opts types.BuildOptions) error {
 	}
 	defer os.Remove(merged)
 
-	return runToolInDirEnv(opts.OutputDir, "apko", args, append(os.Environ(), "SSL_CERT_FILE="+merged))
+	return runToolInDirEnv(opts.OutputDir, "apko", args, envWithOverrides(os.Environ(),
+		"SSL_CERT_FILE="+merged,
+		"SSL_CERT_DIR=/etc/ssl/certs",
+	))
 }
 
 func runApkoInDocker(configFile, imageTag, outputTar string, opts types.BuildOptions) error {

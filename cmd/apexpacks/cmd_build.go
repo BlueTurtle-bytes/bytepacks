@@ -17,12 +17,13 @@ import (
 
 func buildCmd() *cobra.Command {
 	var (
-		profilesDir string
-		outputDir   string
-		tag         string
-		ver         string
-		runtime_    string
-		projectName string
+		profilesDir    string
+		outputDir      string
+		tag            string
+		ver            string
+		runtime_       string
+		projectName    string
+		projectSubpath string
 		tlsExtraCA     string
 		arch           string
 		dryRun         bool
@@ -73,6 +74,18 @@ Examples:
 			}
 			fmt.Printf("  → %d profile(s) loaded\n", len(profiles))
 
+			projCfg, err := profile.LoadProjectConfig(absSrcDir)
+			if err != nil {
+				return fmt.Errorf("loading apexpacks.yaml: %w", err)
+			}
+
+			detectionDir := absSrcDir
+			if projectSubpath != "" {
+				projectSubpath = strings.TrimLeft(projectSubpath, "/")
+				detectionDir = filepath.Join(absSrcDir, projectSubpath)
+				fmt.Printf("  → --project-subpath: detecting in %s\n", detectionDir)
+			}
+
 			// If --runtime not given, check context.json set by a prior detect run.
 			runtimeSource := "--runtime flag"
 			var matchedProfile *types.Profile
@@ -94,17 +107,17 @@ Examples:
 				if matchedProfile == nil {
 					return fmt.Errorf("profile for runtime %q not found in %s", runtime_, profilesDir)
 				}
-				detectedLangVersion = detect.LanguageVersion(matchedProfile.Runtime, absSrcDir)
+				detectedLangVersion = detect.LanguageVersion(matchedProfile.Runtime, detectionDir)
 				versionSuffix := ""
 				if detectedLangVersion != "" {
 					versionSuffix = " — version " + detectedLangVersion
 				}
 				fmt.Printf("  → Using profile: %s (from %s)%s\n", runtime_, runtimeSource, versionSuffix)
 			} else {
-				fmt.Printf("[2/3] Detecting language in %s...\n", absSrcDir)
-				result := detect.Best(profiles, absSrcDir)
+				fmt.Printf("[2/3] Detecting language in %s...\n", detectionDir)
+				result := detect.Best(profiles, detectionDir)
 				if result == nil {
-					return fmt.Errorf("could not detect language in %s\n\nTry: apexpacks detect %s", absSrcDir, srcDir)
+					return fmt.Errorf("could not detect language in %s\n\nTry: apexpacks detect %s", detectionDir, srcDir)
 				}
 				matchedProfile = result.Profile
 				detectedFramework = result.Framework
@@ -123,10 +136,6 @@ Examples:
 			}
 			runtime_ = matchedProfile.Runtime
 
-			projCfg, err := profile.LoadProjectConfig(absSrcDir)
-			if err != nil {
-				return fmt.Errorf("loading apexpacks.yaml: %w", err)
-			}
 			if projCfg != nil {
 				matchedProfile = profile.MergeProjectConfig(matchedProfile, projCfg)
 				if projCfg.LanguageVersion != "" {
@@ -148,7 +157,8 @@ Examples:
 			}
 
 			opts := build.Options{
-				SourceDir:       absSrcDir,
+				SourceDir:      absSrcDir,
+				ProjectSubpath: projectSubpath,
 				ProfilesDir:     profilesDir,
 				OutputDir:       outputDir,
 				ProjectName:     projectName,
@@ -242,6 +252,9 @@ Examples:
 		"Skip detection and use this runtime profile directly (e.g. golang)")
 	cmd.Flags().StringVar(&projectName, "project-name", "",
 		"Override the project name (defaults to the source directory name)")
+	cmd.Flags().StringVar(&projectSubpath, "project-subpath", "",
+		"Relative path within source-dir to target for detection and build (e.g. Admin.Api). "+
+			"Use for multi-project trees where the full source tree must be mounted for cross-project references.")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"Print generated melange.yaml and apko.yaml without building")
 	cmd.Flags().StringVar(&tlsExtraCA, "tls-extra-ca", "",

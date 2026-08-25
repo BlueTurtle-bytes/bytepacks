@@ -77,6 +77,26 @@ func runToolEnv(name string, args []string, env []string) error {
 	return nil
 }
 
+// envWithOverrides returns a copy of base with the given KEY=VALUE pairs
+// set, replacing any existing entry for that key. This avoids duplicate
+// env var ambiguity where getenv() returns the first match (Linux glibc).
+func envWithOverrides(base []string, overrides ...string) []string {
+	keys := make(map[string]bool, len(overrides))
+	for _, kv := range overrides {
+		if k, _, ok := strings.Cut(kv, "="); ok {
+			keys[k] = true
+		}
+	}
+	out := make([]string, 0, len(base)+len(overrides))
+	for _, kv := range base {
+		if k, _, ok := strings.Cut(kv, "="); ok && keys[k] {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, overrides...)
+}
+
 func runToolInDirEnv(dir, name string, args []string, env []string) error {
 	path, err := exec.LookPath(name)
 	if err != nil {

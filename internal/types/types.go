@@ -438,8 +438,13 @@ type ProjectBuildOverride struct {
 // BuildOptions controls how a project is compiled and packaged.
 // Callers construct this from CLI flags and pass it to build.Plan / build.Run.
 type BuildOptions struct {
-	SourceDir       string
-	ProfilesDir     string
+	SourceDir      string
+	// ProjectSubpath is set when apexpacks.yaml specifies build.project_subpath.
+	// It is a path relative to SourceDir pointing to the actual project root.
+	// Detection and build commands target SourceDir/ProjectSubpath; melange
+	// receives the full SourceDir so sibling projects are accessible in the sandbox.
+	ProjectSubpath string
+	ProfilesDir    string
 	OutputDir       string
 	ProjectName     string
 	Version         string
