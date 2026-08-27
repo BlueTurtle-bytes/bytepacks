@@ -24,25 +24,30 @@ func (javaHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts ty
 			if cfg.Environment.Env == nil {
 				cfg.Environment.Env = make(map[string]string)
 			}
-			for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD"} {
+			for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD", "ARTI_REPO"} {
 				if val := os.Getenv(key); val != "" {
 					if _, exists := cfg.Environment.Env[key]; !exists {
 						cfg.Environment.Env[key] = val
 					}
 				}
 			}
+			mavenRepo := os.Getenv("ARTI_REPO")
+			if mavenRepo == "" {
+				mavenRepo = "substonic-maven"
+			}
+			mavenMirrorURL := strings.TrimRight(p.Build.MavenMirrorURL, "/") + "/" + mavenRepo
 			tmpl, err := templates.LoadMavenTemplate(tmplName, opts.ProfilesDir)
 			if err != nil {
 				return fmt.Errorf("maven settings template: %w", err)
 			}
-			settingsXML := strings.ReplaceAll(tmpl, "{{MAVEN_MIRROR_URL}}", p.Build.MavenMirrorURL)
+			settingsXML := strings.ReplaceAll(tmpl, "{{MAVEN_MIRROR_URL}}", mavenMirrorURL)
 			mirrorStep := fmt.Sprintf(
 				"mkdir -p /home/build/.m2\n"+
 					"cat > /home/build/.m2/settings.xml << APEXPACK_SETTINGS_EOF\n"+
 					"%s"+
 					"APEXPACK_SETTINGS_EOF\n"+
 					"echo \"→ Maven settings: %s template, mirror: %s\"",
-				settingsXML, tmplName, p.Build.MavenMirrorURL,
+				settingsXML, tmplName, mavenMirrorURL,
 			)
 			cfg.Pipeline = append(
 				[]types.MelangePipeline{{Runs: mirrorStep}},
@@ -57,23 +62,28 @@ func (javaHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts ty
 			if cfg.Environment.Env == nil {
 				cfg.Environment.Env = make(map[string]string)
 			}
-			for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD"} {
+			for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD", "ARTI_REPO"} {
 				if val := os.Getenv(key); val != "" {
 					if _, exists := cfg.Environment.Env[key]; !exists {
 						cfg.Environment.Env[key] = val
 					}
 				}
 			}
+			gradleRepo := os.Getenv("ARTI_REPO")
+			if gradleRepo == "" {
+				gradleRepo = "substonic-gradle"
+			}
+			gradleMirrorURL := strings.TrimRight(p.Build.GradleMirrorURL, "/") + "/" + gradleRepo
 			gradleTmpl, err := templates.LoadGradleTemplate(gradleTmplName, opts.ProfilesDir)
 			if err != nil {
 				return fmt.Errorf("gradle init script template: %w", err)
 			}
-			initScript := strings.ReplaceAll(gradleTmpl, "{{GRADLE_MIRROR_URL}}", p.Build.GradleMirrorURL)
+			initScript := strings.ReplaceAll(gradleTmpl, "{{GRADLE_MIRROR_URL}}", gradleMirrorURL)
 			gradleStep := "mkdir -p /home/build/.gradle/init.d\n" +
 				"cat > /home/build/.gradle/init.d/artifactory.gradle << APEXPACK_GRADLE_EOF\n" +
 				initScript +
 				"APEXPACK_GRADLE_EOF\n" +
-				fmt.Sprintf("echo \"→ Gradle init script: %s template, mirror: %s\"", gradleTmplName, p.Build.GradleMirrorURL)
+				fmt.Sprintf("echo \"→ Gradle init script: %s template, mirror: %s\"", gradleTmplName, gradleMirrorURL)
 			cfg.Pipeline = append(
 				[]types.MelangePipeline{{Runs: gradleStep}},
 				cfg.Pipeline...,

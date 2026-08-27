@@ -92,6 +92,7 @@ image:
     - aspnet-{DOTNET_VERSION}-runtime
     - ca-certificates-bundle=20260413-r0
     - icu-libs
+    - curl
   # The entrypoint is the published DLL.
   # apexpack sets this to /app/<ProjectName>.dll at build time.
   entrypoint: /usr/bin/dotnet
