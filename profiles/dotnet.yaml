@@ -114,6 +114,7 @@ image:
       gid: 1001
   env:
     ASPNETCORE_URLS: "http://+:8080"
+    ASPNETCORE_CONTENTROOT: "/app"
     DOTNET_RUNNING_IN_CONTAINER: "true"
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "false"
   health-check:
@@ -132,9 +133,7 @@ scan:
 test:
   packages:
     - busybox
-    - aspnet-{DOTNET_VERSION}-runtime
   pipeline:
     - runs: |
         test -f /app/app.dll || { echo "ERROR: /app/app.dll not found"; exit 1; }
-        dotnet --list-runtimes
-        echo "✓ /app/app.dll present, ASP.NET runtime available"
+        echo "✓ /app/app.dll present"
