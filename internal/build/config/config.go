@@ -171,6 +171,7 @@ func BuildApkoConfig(p *types.Profile, opts types.BuildOptions) (types.ApkoConfi
 		},
 		Environment: helpers.VsubMap(p.Image.Env, token, version),
 		Paths:       p.Image.Paths,
+		WorkDir:     p.Image.WorkDir,
 	}
 
 	if len(cmd) > 0 {

@@ -309,6 +309,10 @@ type ImageConfig struct {
 	// Paths creates directories (or sets permissions) inside the image after
 	// APK installation. Mirrors the apko paths: block exactly.
 	Paths []ApkoPath `yaml:"paths,omitempty"`
+
+	// WorkDir sets the OCI WorkingDir (equivalent to Dockerfile WORKDIR).
+	// The container process starts in this directory.
+	WorkDir string `yaml:"work-dir,omitempty"`
 }
 
 // HealthCheckConfig controls the container health check written to apko.yaml.
@@ -424,6 +428,9 @@ type ProjectImageOverride struct {
 
 	// Paths are appended to the profile's image.paths list.
 	Paths []ApkoPath `yaml:"paths,omitempty"`
+
+	// WorkDir overrides the profile's image.work-dir.
+	WorkDir string `yaml:"work-dir,omitempty"`
 }
 
 // ProjectBuildOverride lets a project add extra build deps or env vars.
@@ -600,6 +607,7 @@ type ApkoConfig struct {
 	Contents    ApkoContents      `yaml:"contents"`
 	Entrypoint  ApkoEntrypoint    `yaml:"entrypoint"`
 	Cmd         string            `yaml:"cmd,omitempty"`
+	WorkDir     string            `yaml:"work-dir,omitempty"`
 	Accounts    ApkoAccounts      `yaml:"accounts"`
 	Environment map[string]string `yaml:"environment,omitempty"`
 	Annotations map[string]string `yaml:"annotations,omitempty"`

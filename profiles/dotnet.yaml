@@ -99,6 +99,7 @@ image:
   cmd:
     - "/app/app.dll"
   run-as: 1001
+  work-dir: /app
   ports:
     - "8080"
   paths:
@@ -114,7 +115,6 @@ image:
       gid: 1001
   env:
     ASPNETCORE_URLS: "http://+:8080"
-    ASPNETCORE_CONTENTROOT: "/app"
     DOTNET_RUNNING_IN_CONTAINER: "true"
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "false"
   health-check:

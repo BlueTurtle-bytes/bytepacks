@@ -230,6 +230,9 @@ func MergeProjectConfig(p *types.Profile, proj *types.ProjectConfig) *types.Prof
 		if len(proj.Image.Paths) > 0 {
 			merged.Image.Paths = append(merged.Image.Paths, proj.Image.Paths...)
 		}
+		if proj.Image.WorkDir != "" {
+			merged.Image.WorkDir = proj.Image.WorkDir
+		}
 	}
 
 	return &merged
