@@ -56,7 +56,7 @@ build:
         done
       fi
     fi
-    find ${{targets.destdir}}/app -name "alpine-*.so" -exec sh -c 'echo "removing alpine/musl native lib: $1"; rm -f "$1"' _ {} \;
+    find ${{targets.destdir}}/app \( -name "alpine-*.so" -o -name "centos*-*.so" \) -exec sh -c 'echo "removing compat native lib: $1"; rm -f "$1"' _ {} \;
   env:
     DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     DOTNET_NOLOGO: "1"
@@ -94,6 +94,7 @@ image:
     - ca-certificates-bundle=20260413-r0
     - icu-libs
     - curl
+    - cyrus-sasl-heimdal-libs
   # The entrypoint is the published DLL.
   # apexpack sets this to /app/<ProjectName>.dll at build time.
   entrypoint: /usr/bin/dotnet
