@@ -56,8 +56,6 @@ build:
         done
       fi
     fi
-    mkdir -p ${{targets.destdir}}/usr/lib
-    ln -sf libsasl2.so.3 ${{targets.destdir}}/usr/lib/libsasl2.so.2
   env:
     DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     DOTNET_NOLOGO: "1"
