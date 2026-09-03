@@ -17,6 +17,12 @@ const minimalNuGetConfig = `<?xml version="1.0" encoding="utf-8"?>
 type dotnetHook struct{}
 
 func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error {
+	// Suppress auto-detected SO deps: dotnet publish bundles native libs (e.g. librdkafka)
+	// compiled against old libsasl2.so.2 which doesn't exist in Wolfi. Runtime deps are
+	// satisfied by image packages (aspnet-runtime, cyrus-sasl-heimdal-libs) rather than
+	// APK metadata.
+	cfg.Package.Options = &types.MelangePackageOptions{NoDepends: true}
+
 	if p.Build.NuGetMirrorURL != "" && os.Getenv("ARTI_USER") != "" {
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)

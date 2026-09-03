@@ -549,12 +549,18 @@ type MelangeTestEnvironment struct {
 }
 
 type MelangePackage struct {
-	Name         string                    `yaml:"name"`
-	Version      string                    `yaml:"version"`
-	Epoch        int                       `yaml:"epoch"`
-	Description  string                    `yaml:"description,omitempty"`
-	Copyright    []MelangeCopyright        `yaml:"copyright,omitempty"`
+	Name         string                     `yaml:"name"`
+	Version      string                     `yaml:"version"`
+	Epoch        int                        `yaml:"epoch"`
+	Description  string                     `yaml:"description,omitempty"`
+	Copyright    []MelangeCopyright         `yaml:"copyright,omitempty"`
 	Dependencies MelangePackageDependencies `yaml:"dependencies,omitempty"`
+	Options      *MelangePackageOptions     `yaml:"options,omitempty"`
+}
+
+type MelangePackageOptions struct {
+	NoDepends  bool `yaml:"no-depends,omitempty"`
+	NoProvides bool `yaml:"no-provides,omitempty"`
 }
 
 type MelangePackageDependencies struct {
