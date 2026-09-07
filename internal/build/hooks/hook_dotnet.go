@@ -16,12 +16,24 @@ const minimalNuGetConfig = `<?xml version="1.0" encoding="utf-8"?>
 
 type dotnetHook struct{}
 
+// global.json pins the SDK version for developer machines. In the container the SDK
+// is controlled by build.dependencies, so the pin is irrelevant and can cause failures
+// when Wolfi ships a different feature band than what the project requests.
+const globalJSONPatch = `rm -f global.json`
+
 func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error {
 	// Suppress auto-detected SO deps: dotnet publish bundles native libs (e.g. librdkafka)
 	// compiled against old libsasl2.so.2 which doesn't exist in Wolfi. Runtime deps are
 	// satisfied by image packages (aspnet-runtime, cyrus-sasl-heimdal-libs) rather than
 	// APK metadata.
 	cfg.Package.Options = &types.MelangePackageOptions{NoDepends: true}
+
+	// global.json pins SDK to a specific feature band (e.g. 10.0.400) but Wolfi ships
+	// a different band (e.g. 10.0.111). Patch rollForward before any dotnet invocation.
+	cfg.Pipeline = append(
+		[]types.MelangePipeline{{Runs: globalJSONPatch}},
+		cfg.Pipeline...,
+	)
 
 	if p.Build.NuGetMirrorURL != "" && os.Getenv("ARTI_USER") != "" {
 		if cfg.Environment.Env == nil {

@@ -44,13 +44,6 @@ build:
     NUGET_CONFIG=""
     if [ -f "/home/build/.nuget/NuGet/NuGet.Config" ]; then NUGET_CONFIG="--configfile /home/build/.nuget/NuGet/NuGet.Config"; fi
     DOTNET_RID="linux-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')"
-    if [ -f "global.json" ]; then
-      if grep -q '"rollForward"' global.json; then
-        sed -i 's|"rollForward"[[:space:]]*:[[:space:]]*"[^"]*"|"rollForward": "latestFeature"|g' global.json
-      elif grep -q '"sdk"' global.json; then
-        sed -i 's|"sdk"[[:space:]]*:[[:space:]]*{|"sdk": {"rollForward": "latestFeature", |g' global.json
-      fi
-    fi
     dotnet restore -r "$DOTNET_RID" $NUGET_CONFIG
     dotnet publish -c Release -o ${{targets.destdir}}/app -r "$DOTNET_RID" --self-contained false --no-restore
     RCONFIG=$(find ${{targets.destdir}}/app -maxdepth 1 -name "*.runtimeconfig.json" | head -1)
