@@ -19,7 +19,7 @@ type dotnetHook struct{}
 // global.json pins the SDK version for developer machines. In the container the SDK
 // is controlled by build.dependencies, so the pin is irrelevant and can cause failures
 // when Wolfi ships a different feature band than what the project requests.
-const globalJSONPatch = `rm -f global.json`
+const globalJSONPatch = `find /home/build -maxdepth 4 -name "global.json" -delete 2>/dev/null; true`
 
 func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error {
 	// Suppress auto-detected SO deps: dotnet publish bundles native libs (e.g. librdkafka)
@@ -27,13 +27,6 @@ func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts 
 	// satisfied by image packages (aspnet-runtime, cyrus-sasl-heimdal-libs) rather than
 	// APK metadata.
 	cfg.Package.Options = &types.MelangePackageOptions{NoDepends: true}
-
-	// global.json pins SDK to a specific feature band (e.g. 10.0.400) but Wolfi ships
-	// a different band (e.g. 10.0.111). Patch rollForward before any dotnet invocation.
-	cfg.Pipeline = append(
-		[]types.MelangePipeline{{Runs: globalJSONPatch}},
-		cfg.Pipeline...,
-	)
 
 	if p.Build.NuGetMirrorURL != "" && os.Getenv("ARTI_USER") != "" {
 		if cfg.Environment.Env == nil {
@@ -66,6 +59,14 @@ func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts 
 			cfg.Pipeline...,
 		)
 	}
+
+	// Prepend last so it lands at position 0, before any dotnet invocation.
+	// global.json pins SDK to a specific feature band (e.g. 10.0.400) but Wolfi ships
+	// a different band (e.g. 10.0.111). Remove it — the SDK is controlled by build.dependencies.
+	cfg.Pipeline = append(
+		[]types.MelangePipeline{{Runs: globalJSONPatch}},
+		cfg.Pipeline...,
+	)
 	return nil
 }
 
