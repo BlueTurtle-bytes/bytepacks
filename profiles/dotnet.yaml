@@ -38,13 +38,17 @@ build:
     - build-base
     - git
     - ca-certificates-bundle
+  distro:
+    alpine:
+      dependencies:
+        - busybox
+        - dotnet{DOTNET_VERSION}-sdk
+        - build-base
+        - git
+        - ca-certificates
   # dotnet publish produces a self-contained output directory.
   # ${{targets.destdir}}/app is the melange staging path — files here get packaged into the APK.
   command: |
-    find . -maxdepth 4 -name "*.csproj" | while read f; do
-      echo "=== $f ==="
-      cat "$f"
-    done
     NUGET_CONFIG=""
     if [ -f "/home/build/.nuget/NuGet/NuGet.Config" ]; then NUGET_CONFIG="--configfile /home/build/.nuget/NuGet/NuGet.Config"; fi
     DOTNET_RID="linux-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')"
@@ -98,6 +102,14 @@ image:
     - icu-libs
     - curl
     - cyrus-sasl-heimdal-libs
+  distro:
+    alpine:
+      packages:
+        - aspnetcore{DOTNET_VERSION}-runtime
+        - ca-certificates
+        - icu-libs
+        - curl
+        - cyrus-sasl
   # The entrypoint is the published DLL.
   # apexpack sets this to /app/<ProjectName>.dll at build time.
   entrypoint: /usr/bin/dotnet
@@ -142,6 +154,3 @@ test:
     - runs: |
         test -f /app/app.dll || { echo "ERROR: /app/app.dll not found"; exit 1; }
         echo "✓ /app/app.dll present"
-
-
-#curl -s "https://packages.wolfi.dev/os/x86_64/APKINDEX.tar.gz" | tar -xzO APKINDEX | grep -A2 "^P:dotnet-10-sdk" | grep "^V:"

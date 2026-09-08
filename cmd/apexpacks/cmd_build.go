@@ -17,20 +17,23 @@ import (
 
 func buildCmd() *cobra.Command {
 	var (
-		profilesDir    string
-		outputDir      string
-		tag            string
-		ver            string
-		runtime_       string
-		projectName    string
-		projectSubpath string
-		tlsExtraCA     string
-		arch           string
-		dryRun         bool
-		localBuild     bool
-		signingKey     string
-		melangeRunner  string
-		buildArgSlice  []string
+		profilesDir      string
+		outputDir        string
+		tag              string
+		ver              string
+		runtime_         string
+		projectName      string
+		projectSubpath   string
+		tlsExtraCA       string
+		arch             string
+		dryRun           bool
+		localBuild       bool
+		signingKey       string
+		melangeRunner    string
+		buildArgSlice    []string
+		distro           string
+		wolfiRepository  string
+		alpineRepository string
 	)
 
 	cmd := &cobra.Command{
@@ -157,22 +160,25 @@ Examples:
 			}
 
 			opts := build.Options{
-				SourceDir:      absSrcDir,
-				ProjectSubpath: projectSubpath,
-				ProfilesDir:     profilesDir,
-				OutputDir:       outputDir,
-				ProjectName:     projectName,
-				Version:         ver,
-				Tag:             tag,
-				Framework:       detectedFramework,
-				PackageManager:  detectedPM,
-				LanguageVersion: detectedLangVersion,
-				TLSExtraCA:      tlsExtraCA,
-				MelangeRunner:   melangeRunner,
-				Arch:            arch,
-				LocalBuild:      localBuild,
-				SigningKey:      signingKey,
-				BuildArgs:       buildArgs,
+				SourceDir:        absSrcDir,
+				ProjectSubpath:   projectSubpath,
+				ProfilesDir:      profilesDir,
+				OutputDir:        outputDir,
+				ProjectName:      projectName,
+				Version:          ver,
+				Tag:              tag,
+				Framework:        detectedFramework,
+				PackageManager:   detectedPM,
+				LanguageVersion:  detectedLangVersion,
+				TLSExtraCA:       tlsExtraCA,
+				MelangeRunner:    melangeRunner,
+				Arch:             arch,
+				LocalBuild:       localBuild,
+				SigningKey:       signingKey,
+				BuildArgs:        buildArgs,
+				Distro:           distro,
+				WolfiRepository:  wolfiRepository,
+				AlpineRepository: alpineRepository,
 			}
 
 			plan, err := build.Plan(matchedProfile, opts)
@@ -276,6 +282,16 @@ Use "docker" when bubblewrap user namespaces are unavailable and a Docker socket
 			"  --build-arg BUILD_VERSION=1.2.3\n"+
 			"  --build-arg GIT_COMMIT=$(git rev-parse HEAD)\n"+
 			"  --build-arg BUILD_ID=$(Build.BuildId)")
+	cmd.Flags().StringVar(&distro, "distro", "wolfi",
+		"Base APK distribution for build and runtime packages: wolfi (default) or alpine.\n"+
+			"Controls repository URLs, signing keyring, base layout package, and which\n"+
+			"distro: package name overrides from the profile are applied.")
+	cmd.Flags().StringVar(&wolfiRepository, "wolfi-repository", "",
+		"Custom Wolfi package repository URL (e.g. https://mirror.example.com/wolfi).\n"+
+			"Default: https://packages.wolfi.dev/os")
+	cmd.Flags().StringVar(&alpineRepository, "alpine-repository", "",
+		"Custom Alpine package repository base URL (e.g. https://mirror.example.com/alpine/edge).\n"+
+			"Appended with /main and /community. Default: https://dl-cdn.alpinelinux.org/alpine/edge")
 
 	return cmd
 }

@@ -13,6 +13,39 @@ import (
 	"github.com/apexpack/apexpack/internal/types"
 )
 
+// distroCfg holds the resolved repository, keyring, and base layout package for a distro.
+type distroCfg struct {
+	keyring    []string
+	repos      []string
+	baselayout string
+}
+
+// resolveDistro returns the keyring, repository URLs, and base layout package for
+// the distro selected in opts. Defaults to Wolfi when opts.Distro is empty or "wolfi".
+// The AlpineRepository / WolfiRepository fields allow corporate mirror overrides.
+func resolveDistro(opts types.BuildOptions) distroCfg {
+	wolfiRepo := "https://packages.wolfi.dev/os"
+	if opts.WolfiRepository != "" {
+		wolfiRepo = strings.TrimRight(opts.WolfiRepository, "/")
+	}
+	if opts.Distro == "alpine" {
+		alpineBase := "https://dl-cdn.alpinelinux.org/alpine/edge"
+		if opts.AlpineRepository != "" {
+			alpineBase = strings.TrimRight(opts.AlpineRepository, "/")
+		}
+		return distroCfg{
+			keyring:    []string{"https://alpinelinux.org/keys/alpine-dsa-pub.pem"},
+			repos:      []string{alpineBase + "/main", alpineBase + "/community"},
+			baselayout: "alpine-baselayout",
+		}
+	}
+	return distroCfg{
+		keyring:    []string{wolfiRepo + "/wolfi-signing.rsa.pub"},
+		repos:      []string{wolfiRepo},
+		baselayout: "wolfi-baselayout",
+	}
+}
+
 // MarshalYAML encodes v to a 2-space indented YAML string.
 func MarshalYAML(v any) (string, error) {
 	var buf strings.Builder
@@ -33,7 +66,14 @@ func BuildMelangeConfig(p *types.Profile, opts types.BuildOptions) (types.Melang
 		return types.MelangeConfig{}, err
 	}
 
-	packages := helpers.VsubSlice(append([]string{"wolfi-baselayout"}, p.Build.Dependencies...), token, version)
+	d := resolveDistro(opts)
+
+	buildDeps := p.Build.Dependencies
+	if opts.Distro == "alpine" && p.Build.Distro != nil &&
+		p.Build.Distro.Alpine != nil && len(p.Build.Distro.Alpine.Dependencies) > 0 {
+		buildDeps = p.Build.Distro.Alpine.Dependencies
+	}
+	packages := helpers.VsubSlice(append([]string{d.baselayout}, buildDeps...), token, version)
 
 	cfg := types.MelangeConfig{
 		Package: types.MelangePackage{
@@ -45,8 +85,8 @@ func BuildMelangeConfig(p *types.Profile, opts types.BuildOptions) (types.Melang
 		},
 		Environment: types.MelangeEnvironment{
 			Contents: types.MelangeContents{
-				Keyring:      []string{"https://packages.wolfi.dev/os/wolfi-signing.rsa.pub"},
-				Repositories: []string{"https://packages.wolfi.dev/os"},
+				Keyring:      d.keyring,
+				Repositories: d.repos,
 				Packages:     packages,
 			},
 			Env: helpers.VsubMap(p.Build.Env, token, version),
@@ -57,7 +97,7 @@ func BuildMelangeConfig(p *types.Profile, opts types.BuildOptions) (types.Melang
 	override, found := helpers.ResolveOverride(p, opts.Framework, opts.PackageManager)
 	if found {
 		if len(override.Dependencies) > 0 {
-			cfg.Environment.Contents.Packages = helpers.VsubSlice(append([]string{"wolfi-baselayout"}, override.Dependencies...), token, version)
+			cfg.Environment.Contents.Packages = helpers.VsubSlice(append([]string{d.baselayout}, override.Dependencies...), token, version)
 		}
 		if override.Command != "" {
 			cfg.Pipeline = []types.MelangePipeline{{Runs: helpers.Vsub(helpers.ApplyProjectTemplates(override.Command, opts.ProjectName), token, version)}}
@@ -81,15 +121,9 @@ func BuildMelangeConfig(p *types.Profile, opts types.BuildOptions) (types.Melang
 		cfg.Test = &types.MelangeTest{
 			Environment: types.MelangeTestEnvironment{
 				Contents: types.MelangeContents{
-					Keyring: []string{
-						"https://packages.wolfi.dev/os/wolfi-signing.rsa.pub",
-						"./melange.rsa.pub",
-					},
-					Repositories: []string{
-						"https://packages.wolfi.dev/os",
-						"./packages",
-					},
-					Packages: testPkgs,
+					Keyring:      append(d.keyring, "./melange.rsa.pub"),
+					Repositories: append(d.repos, "./packages"),
+					Packages:     testPkgs,
 				},
 			},
 			Pipeline: steps,
@@ -132,7 +166,14 @@ func BuildApkoConfig(p *types.Profile, opts types.BuildOptions) (types.ApkoConfi
 	token := helpers.LangVersionToken(p.Runtime)
 	version := helpers.ResolveVersion(p.Runtime, opts.LanguageVersion)
 
-	packages := helpers.VsubSlice(append([]string{"wolfi-baselayout", opts.ProjectName}, p.Image.Packages...), token, version)
+	d := resolveDistro(opts)
+
+	imagePkgs := p.Image.Packages
+	if opts.Distro == "alpine" && p.Image.Distro != nil &&
+		p.Image.Distro.Alpine != nil && len(p.Image.Distro.Alpine.Packages) > 0 {
+		imagePkgs = p.Image.Distro.Alpine.Packages
+	}
+	packages := helpers.VsubSlice(append([]string{d.baselayout, opts.ProjectName}, imagePkgs...), token, version)
 
 	runAs := p.Image.RunAs
 	if runAs == 0 {
@@ -153,15 +194,9 @@ func BuildApkoConfig(p *types.Profile, opts types.BuildOptions) (types.ApkoConfi
 
 	cfg := types.ApkoConfig{
 		Contents: types.ApkoContents{
-			Keyring: []string{
-				"https://packages.wolfi.dev/os/wolfi-signing.rsa.pub",
-				"./melange.rsa.pub",
-			},
-			Repositories: []string{
-				"https://packages.wolfi.dev/os",
-				"./packages",
-			},
-			Packages: packages,
+			Keyring:      append(d.keyring, "./melange.rsa.pub"),
+			Repositories: append(d.repos, "./packages"),
+			Packages:     packages,
 		},
 		Entrypoint: types.ApkoEntrypoint{Command: entrypoint},
 		Accounts: types.ApkoAccounts{

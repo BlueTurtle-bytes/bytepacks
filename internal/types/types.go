@@ -251,6 +251,10 @@ type BuildConfig struct {
 	// and will take precedence over the built-in ones.
 	// Defaults to "default" when empty.
 	NuGetSettingsTemplate string `yaml:"nuget_settings_template,omitempty"`
+
+	// Distro holds optional per-distro package name overrides for build.dependencies.
+	// When --distro alpine is set and Alpine.Dependencies is non-empty, it fully replaces Dependencies.
+	Distro *DistroOverrides `yaml:"distro,omitempty"`
 }
 
 // FrameworkBuildOverride lets a specific framework replace or extend the default build.
@@ -313,6 +317,10 @@ type ImageConfig struct {
 	// WorkDir sets the OCI WorkingDir (equivalent to Dockerfile WORKDIR).
 	// The container process starts in this directory.
 	WorkDir string `yaml:"work-dir,omitempty"`
+
+	// Distro holds optional per-distro package name overrides for image.packages.
+	// When --distro alpine is set and Alpine.Packages is non-empty, it fully replaces Packages.
+	Distro *DistroOverrides `yaml:"distro,omitempty"`
 }
 
 // HealthCheckConfig controls the container health check written to apko.yaml.
@@ -457,8 +465,8 @@ type BuildOptions struct {
 	// It is a path relative to SourceDir pointing to the actual project root.
 	// Detection and build commands target SourceDir/ProjectSubpath; melange
 	// receives the full SourceDir so sibling projects are accessible in the sandbox.
-	ProjectSubpath string
-	ProfilesDir    string
+	ProjectSubpath  string
+	ProfilesDir     string
 	OutputDir       string
 	ProjectName     string
 	Version         string
@@ -476,6 +484,34 @@ type BuildOptions struct {
 	// variables and OCI annotations. Intended for CI metadata: build numbers,
 	// git SHAs, release names, etc. Values override profile image.env on conflict.
 	BuildArgs map[string]string
+	// Distro selects the base APK distribution: "wolfi" (default) or "alpine".
+	// Controls repository URLs, keyring, base layout package, and which distro
+	// package name overrides from the profile's distro: block are applied.
+	Distro string
+	// WolfiRepository overrides the default Wolfi package repository URL.
+	// Useful for corporate mirrors. Default: https://packages.wolfi.dev/os
+	WolfiRepository string
+	// AlpineRepository overrides the default Alpine package repository base URL.
+	// The base is appended with /main and /community. Default: https://dl-cdn.alpinelinux.org/alpine/edge
+	AlpineRepository string
+}
+
+// ============================================================================
+// DistroOverrides — per-distro package name overrides in profile YAML
+// ============================================================================
+
+// DistroPkgList holds the package list for a specific distro override.
+// In a build: block, only Dependencies is used. In an image: block, only Packages is used.
+type DistroPkgList struct {
+	Dependencies []string `yaml:"dependencies,omitempty"`
+	Packages     []string `yaml:"packages,omitempty"`
+}
+
+// DistroOverrides holds optional per-distro package name overrides.
+// The default (wolfi) list is always at the top level of build: or image:.
+// Alpine names often differ: dotnet10-sdk vs dotnet-10-sdk, ca-certificates vs ca-certificates-bundle.
+type DistroOverrides struct {
+	Alpine *DistroPkgList `yaml:"alpine,omitempty"`
 }
 
 // ============================================================================
