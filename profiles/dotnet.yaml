@@ -154,3 +154,7 @@ test:
     - runs: |
         test -f /app/app.dll || { echo "ERROR: /app/app.dll not found"; exit 1; }
         echo "✓ /app/app.dll present"
+
+
+#notes. curl -s "https://dl-cdn.alpinelinux.org/alpine/edge/community/x86_64/APKINDEX.tar.gz" | tar -xzO APKINDEX | grep "^P:dotnet" 
+
