@@ -18,12 +18,12 @@ type dotnetHook struct{}
 
 // global.json pins the SDK feature band for developer machines (e.g. 10.0.400). In the
 // container the distro may ship a different band (Wolfi: 10.0.111, Alpine: 10.0.303).
-// Patch rollForward to latestFeature so the SDK selection accepts the installed band.
+// Patch rollForward to latestMajor so the SDK selection accepts the installed band.
 const globalJSONPatch = `find /home/build -maxdepth 4 -name "global.json" 2>/dev/null | while IFS= read -r f; do
   if grep -q '"rollForward"' "$f"; then
-    sed -i 's|"rollForward"[[:space:]]*:[[:space:]]*"[^"]*"|"rollForward": "latestFeature"|g' "$f"
+    sed -i 's|"rollForward"[[:space:]]*:[[:space:]]*"[^"]*"|"rollForward": "latestMajor"|g' "$f"
   elif grep -q '"sdk"' "$f"; then
-    sed -i 's|"sdk"[[:space:]]*:[[:space:]]*{|"sdk": {"rollForward": "latestFeature", |g' "$f"
+    sed -i 's|"sdk"[[:space:]]*:[[:space:]]*{|"sdk": {"rollForward": "latestMajor", |g' "$f"
   fi
 done; true`
 
