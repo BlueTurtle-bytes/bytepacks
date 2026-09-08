@@ -16,10 +16,16 @@ const minimalNuGetConfig = `<?xml version="1.0" encoding="utf-8"?>
 
 type dotnetHook struct{}
 
-// global.json pins the SDK version for developer machines. In the container the SDK
-// is controlled by build.dependencies, so the pin is irrelevant and can cause failures
-// when Wolfi ships a different feature band than what the project requests.
-const globalJSONPatch = `find /home/build -maxdepth 4 -name "global.json" -delete 2>/dev/null; true`
+// global.json pins the SDK feature band for developer machines (e.g. 10.0.400). In the
+// container the distro may ship a different band (Wolfi: 10.0.111, Alpine: 10.0.303).
+// Patch rollForward to latestFeature so the SDK selection accepts the installed band.
+const globalJSONPatch = `if [ -f "global.json" ]; then
+  if grep -q '"rollForward"' global.json; then
+    sed -i 's|"rollForward"[[:space:]]*:[[:space:]]*"[^"]*"|"rollForward": "latestFeature"|g' global.json
+  elif grep -q '"sdk"' global.json; then
+    sed -i 's|"sdk"[[:space:]]*:[[:space:]]*{|"sdk": {"rollForward": "latestFeature", |g' global.json
+  fi
+fi`
 
 func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error {
 	// Suppress auto-detected SO deps: dotnet publish bundles native libs (e.g. librdkafka)
@@ -61,8 +67,6 @@ func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts 
 	}
 
 	// Prepend last so it lands at position 0, before any dotnet invocation.
-	// global.json pins SDK to a specific feature band (e.g. 10.0.400) but Wolfi ships
-	// a different band (e.g. 10.0.111). Remove it — the SDK is controlled by build.dependencies.
 	cfg.Pipeline = append(
 		[]types.MelangePipeline{{Runs: globalJSONPatch}},
 		cfg.Pipeline...,
