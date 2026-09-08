@@ -19,13 +19,13 @@ type dotnetHook struct{}
 // global.json pins the SDK feature band for developer machines (e.g. 10.0.400). In the
 // container the distro may ship a different band (Wolfi: 10.0.111, Alpine: 10.0.303).
 // Patch rollForward to latestFeature so the SDK selection accepts the installed band.
-const globalJSONPatch = `if [ -f "global.json" ]; then
-  if grep -q '"rollForward"' global.json; then
-    sed -i 's|"rollForward"[[:space:]]*:[[:space:]]*"[^"]*"|"rollForward": "latestFeature"|g' global.json
-  elif grep -q '"sdk"' global.json; then
-    sed -i 's|"sdk"[[:space:]]*:[[:space:]]*{|"sdk": {"rollForward": "latestFeature", |g' global.json
+const globalJSONPatch = `find /home/build -maxdepth 4 -name "global.json" 2>/dev/null | while IFS= read -r f; do
+  if grep -q '"rollForward"' "$f"; then
+    sed -i 's|"rollForward"[[:space:]]*:[[:space:]]*"[^"]*"|"rollForward": "latestFeature"|g' "$f"
+  elif grep -q '"sdk"' "$f"; then
+    sed -i 's|"sdk"[[:space:]]*:[[:space:]]*{|"sdk": {"rollForward": "latestFeature", |g' "$f"
   fi
-fi`
+done; true`
 
 func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error {
 	// Suppress auto-detected SO deps: dotnet publish bundles native libs (e.g. librdkafka)
