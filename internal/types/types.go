@@ -255,6 +255,11 @@ type BuildConfig struct {
 	// Distro holds optional per-distro package name overrides for build.dependencies.
 	// When --distro alpine is set and Alpine.Dependencies is non-empty, it fully replaces Dependencies.
 	Distro *DistroOverrides `yaml:"distro,omitempty"`
+
+	// ProjectDependencies holds extra build deps added via apexpacks.yaml.
+	// Stored separately so they survive distro-specific package replacement in BuildMelangeConfig.
+	// Never written to or read from YAML — set only by MergeProjectConfig.
+	ProjectDependencies []string `yaml:"-"`
 }
 
 // FrameworkBuildOverride lets a specific framework replace or extend the default build.
@@ -321,6 +326,11 @@ type ImageConfig struct {
 	// Distro holds optional per-distro package name overrides for image.packages.
 	// When --distro alpine is set and Alpine.Packages is non-empty, it fully replaces Packages.
 	Distro *DistroOverrides `yaml:"distro,omitempty"`
+
+	// ProjectPackages holds extra image packages added via apexpacks.yaml.
+	// Stored separately so they survive distro-specific package replacement in BuildApkoConfig.
+	// Never written to or read from YAML — set only by MergeProjectConfig.
+	ProjectPackages []string `yaml:"-"`
 }
 
 // HealthCheckConfig controls the container health check written to apko.yaml.
@@ -494,6 +504,11 @@ type BuildOptions struct {
 	// AlpineRepository overrides the default Alpine package repository base URL.
 	// The base is appended with /main and /community. Default: https://dl-cdn.alpinelinux.org/alpine/edge
 	AlpineRepository string
+	// PreSteps are shell commands injected as pipeline steps before the main build command.
+	// Useful for ad-hoc debugging (e.g. printing env, inspecting files).
+	PreSteps []string
+	// PostSteps are shell commands injected as pipeline steps after the main build command.
+	PostSteps []string
 }
 
 // ============================================================================

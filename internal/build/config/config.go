@@ -73,6 +73,7 @@ func BuildMelangeConfig(p *types.Profile, opts types.BuildOptions) (types.Melang
 		p.Build.Distro.Alpine != nil && len(p.Build.Distro.Alpine.Dependencies) > 0 {
 		buildDeps = p.Build.Distro.Alpine.Dependencies
 	}
+	buildDeps = append(buildDeps, p.Build.ProjectDependencies...)
 	packages := helpers.VsubSlice(append([]string{d.baselayout}, buildDeps...), token, version)
 
 	cfg := types.MelangeConfig{
@@ -145,6 +146,19 @@ func BuildMelangeConfig(p *types.Profile, opts types.BuildOptions) (types.Melang
 		cfg.Pipeline[0].Runs = "cd " + opts.ProjectSubpath + "\n" + cfg.Pipeline[0].Runs
 	}
 
+	if len(opts.PreSteps) > 0 {
+		pre := make([]types.MelangePipeline, len(opts.PreSteps))
+		for i, s := range opts.PreSteps {
+			pre[i] = types.MelangePipeline{Runs: s}
+		}
+		cfg.Pipeline = append(pre, cfg.Pipeline...)
+	}
+	if len(opts.PostSteps) > 0 {
+		for _, s := range opts.PostSteps {
+			cfg.Pipeline = append(cfg.Pipeline, types.MelangePipeline{Runs: s})
+		}
+	}
+
 	if opts.TLSExtraCA != "" && len(p.Build.TLSCAEnv) > 0 {
 		if cfg.Environment.Env == nil {
 			cfg.Environment.Env = make(map[string]string)
@@ -173,6 +187,7 @@ func BuildApkoConfig(p *types.Profile, opts types.BuildOptions) (types.ApkoConfi
 		p.Image.Distro.Alpine != nil && len(p.Image.Distro.Alpine.Packages) > 0 {
 		imagePkgs = p.Image.Distro.Alpine.Packages
 	}
+	imagePkgs = append(imagePkgs, p.Image.ProjectPackages...)
 	packages := helpers.VsubSlice(append([]string{d.baselayout, opts.ProjectName}, imagePkgs...), token, version)
 
 	runAs := p.Image.RunAs

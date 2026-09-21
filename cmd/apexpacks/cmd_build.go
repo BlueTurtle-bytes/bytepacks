@@ -34,6 +34,8 @@ func buildCmd() *cobra.Command {
 		distro           string
 		wolfiRepository  string
 		alpineRepository string
+		preSteps         []string
+		postSteps        []string
 	)
 
 	cmd := &cobra.Command{
@@ -179,6 +181,8 @@ Examples:
 				Distro:           distro,
 				WolfiRepository:  wolfiRepository,
 				AlpineRepository: alpineRepository,
+				PreSteps:         preSteps,
+				PostSteps:        postSteps,
 			}
 
 			plan, err := build.Plan(matchedProfile, opts)
@@ -289,6 +293,12 @@ Use "docker" when bubblewrap user namespaces are unavailable and a Docker socket
 	cmd.Flags().StringVar(&wolfiRepository, "wolfi-repository", "",
 		"Custom Wolfi package repository URL (e.g. https://mirror.example.com/wolfi).\n"+
 			"Default: https://packages.wolfi.dev/os")
+	cmd.Flags().StringArrayVar(&preSteps, "pre-step", nil,
+		"Shell command to run before the main build pipeline step. Repeatable.\n"+
+			"Example: --pre-step 'cat global.json' --pre-step 'dotnet --version'")
+	cmd.Flags().StringArrayVar(&postSteps, "post-step", nil,
+		"Shell command to run after the main build pipeline step. Repeatable.\n"+
+			"Example: --post-step 'ls -la ${{targets.destdir}}/app'")
 	cmd.Flags().StringVar(&alpineRepository, "alpine-repository", "",
 		"Custom Alpine package repository base URL (e.g. https://mirror.example.com/alpine/edge).\n"+
 			"Appended with /main and /community. Default: https://dl-cdn.alpinelinux.org/alpine/edge")

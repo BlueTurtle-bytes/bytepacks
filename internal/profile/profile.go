@@ -194,7 +194,9 @@ func MergeProjectConfig(p *types.Profile, proj *types.ProjectConfig) *types.Prof
 	merged := *p
 
 	if proj.Build != nil {
-		merged.Build.Dependencies = dedupe(append(merged.Build.Dependencies, proj.Build.Dependencies...))
+		if len(proj.Build.Dependencies) > 0 {
+			merged.Build.ProjectDependencies = proj.Build.Dependencies
+		}
 		if proj.Build.Command != "" {
 			merged.Build.Command = proj.Build.Command
 		}
@@ -211,7 +213,9 @@ func MergeProjectConfig(p *types.Profile, proj *types.ProjectConfig) *types.Prof
 	}
 
 	if proj.Image != nil {
-		merged.Image.Packages = dedupe(append(merged.Image.Packages, proj.Image.Packages...))
+		if len(proj.Image.Packages) > 0 {
+			merged.Image.ProjectPackages = proj.Image.Packages
+		}
 		if proj.Image.Entrypoint != "" {
 			merged.Image.Entrypoint = proj.Image.Entrypoint
 		}
