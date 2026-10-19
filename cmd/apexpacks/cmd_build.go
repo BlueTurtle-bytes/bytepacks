@@ -79,16 +79,16 @@ Examples:
 			}
 			fmt.Printf("  → %d profile(s) loaded\n", len(profiles))
 
-			projCfg, err := profile.LoadProjectConfig(absSrcDir)
-			if err != nil {
-				return fmt.Errorf("loading apexpacks.yaml: %w", err)
-			}
-
 			detectionDir := absSrcDir
 			if projectSubpath != "" {
 				projectSubpath = strings.TrimLeft(projectSubpath, "/")
 				detectionDir = filepath.Join(absSrcDir, projectSubpath)
 				fmt.Printf("  → --project-subpath: detecting in %s\n", detectionDir)
+			}
+
+			projCfg, err := profile.LoadProjectConfig(detectionDir)
+			if err != nil {
+				return fmt.Errorf("loading apexpacks.yaml: %w", err)
 			}
 
 			// If --runtime not given, check context.json set by a prior detect run.

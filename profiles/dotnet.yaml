@@ -64,6 +64,17 @@ build:
         done
       fi
     fi
+  caches:
+    - /home/build/.nuget/packages
+
+  copy_source_dirs:
+    - configs
+    - config
+    - templates
+    - wwwroot
+    - scripts
+    - sql
+
   env:
     DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     DOTNET_NOLOGO: "1"
@@ -100,14 +111,17 @@ image:
     - aspnet-{DOTNET_VERSION}-runtime
     - ca-certificates-bundle=20260413-r0
     - icu-libs
+    - tzdata
     - curl
     - cyrus-sasl-heimdal-libs
   distro:
     alpine:
       packages:
+        - alpine-release
         - aspnetcore{DOTNET_VERSION}-runtime
         - ca-certificates
         - icu-libs
+        - tzdata
         - curl
         - cyrus-sasl
   # The entrypoint is the published DLL.

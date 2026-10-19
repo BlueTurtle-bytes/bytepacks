@@ -3,6 +3,7 @@ package hooks
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/apexpack/apexpack/internal/types"
 )
@@ -21,6 +22,20 @@ type dotnetHook struct{}
 // rollForward cannot resolve to a version lower than the pin — delete the file so the
 // SDK accepts whatever band is installed.
 const globalJSONPatch = `find /home/build -maxdepth 4 -name "global.json" -delete 2>/dev/null; true`
+
+func buildCopySourceDirsStep(dirs []string) string {
+	if len(dirs) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for _, d := range dirs {
+		sb.WriteString(fmt.Sprintf(
+			`if [ -d "/home/build/%s" ]; then cp -r "/home/build/%s" "${{targets.destdir}}/app/%s"; fi`+"\n",
+			d, d, d,
+		))
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
 
 func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error {
 	// Suppress auto-detected SO deps: dotnet publish bundles native libs (e.g. librdkafka)
@@ -66,6 +81,11 @@ func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts 
 		[]types.MelangePipeline{{Runs: globalJSONPatch}},
 		cfg.Pipeline...,
 	)
+
+	if copyStep := buildCopySourceDirsStep(p.Build.CopySourceDirs); copyStep != "" {
+		cfg.Pipeline = append(cfg.Pipeline, types.MelangePipeline{Runs: copyStep})
+	}
+
 	return nil
 }
 

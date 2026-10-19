@@ -171,6 +171,13 @@ type BuildConfig struct {
 	// Example: ["/home/build/.npm", "/home/build/go/pkg/mod"]
 	Caches []string `yaml:"caches,omitempty"`
 
+	// CopySourceDirs lists source-root subdirectory names to copy into the
+	// publish output after the build command runs. Use for directories that are
+	// not declared as <Content> in the project file but must be present at
+	// runtime (e.g. configs, templates, wwwroot, scripts).
+	// Project-level copy_source_dirs entries are appended to this list.
+	CopySourceDirs []string `yaml:"copy_source_dirs,omitempty"`
+
 	// Frameworks maps a detected framework name to build overrides.
 	// When detection identifies a framework (e.g. "quarkus", "spring-boot"),
 	// the matching entry's Command replaces the default, and its Env is merged on top.
@@ -461,6 +468,9 @@ type ProjectBuildOverride struct {
 
 	// Command fully replaces the profile's build.command if set.
 	Command string `yaml:"command,omitempty"`
+
+	// CopySourceDirs are appended to the profile's copy_source_dirs list.
+	CopySourceDirs []string `yaml:"copy_source_dirs,omitempty"`
 }
 
 // ============================================================================
