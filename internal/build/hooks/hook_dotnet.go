@@ -30,8 +30,13 @@ func buildCopySourceDirsStep(dirs []string) string {
 	var sb strings.Builder
 	for _, d := range dirs {
 		sb.WriteString(fmt.Sprintf(
-			`if [ -d "/home/build/%s" ]; then cp -r "/home/build/%s" "${{targets.destdir}}/app/%s"; fi`+"\n",
-			d, d, d,
+			`if [ -d "/home/build/%s" ]; then`+"\n"+
+				`  echo "  → copying source dir: %s";`+"\n"+
+				`  mkdir -p "${{targets.destdir}}/app/%s" && cp -rv "/home/build/%s/." "${{targets.destdir}}/app/%s/";`+"\n"+
+				`else`+"\n"+
+				`  echo "  → skip (not found): %s";`+"\n"+
+				`fi`+"\n",
+			d, d, d, d, d, d,
 		))
 	}
 	return strings.TrimRight(sb.String(), "\n")
