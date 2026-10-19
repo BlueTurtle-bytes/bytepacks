@@ -23,20 +23,25 @@ type dotnetHook struct{}
 // SDK accepts whatever band is installed.
 const globalJSONPatch = `find /home/build -maxdepth 4 -name "global.json" -delete 2>/dev/null; true`
 
-func buildCopySourceDirsStep(dirs []string) string {
+func buildCopySourceDirsStep(dirs []string, projectSubpath string) string {
 	if len(dirs) == 0 {
 		return ""
 	}
+	srcBase := "/home/build"
+	if projectSubpath != "" {
+		srcBase = "/home/build/" + projectSubpath
+	}
 	var sb strings.Builder
 	for _, d := range dirs {
+		src := srcBase + "/" + d
 		sb.WriteString(fmt.Sprintf(
-			`if [ -d "/home/build/%s" ]; then`+"\n"+
+			`if [ -d "%s" ]; then`+"\n"+
 				`  echo "  → copying source dir: %s";`+"\n"+
-				`  mkdir -p "${{targets.destdir}}/app/%s" && cp -rv "/home/build/%s/." "${{targets.destdir}}/app/%s/";`+"\n"+
+				`  mkdir -p "${{targets.destdir}}/app/%s" && cp -rv "%s/." "${{targets.destdir}}/app/%s/";`+"\n"+
 				`else`+"\n"+
 				`  echo "  → skip (not found): %s";`+"\n"+
 				`fi`+"\n",
-			d, d, d, d, d, d,
+			src, src, d, src, d, src,
 		))
 	}
 	return strings.TrimRight(sb.String(), "\n")
@@ -87,7 +92,7 @@ func (dotnetHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts 
 		cfg.Pipeline...,
 	)
 
-	if copyStep := buildCopySourceDirsStep(p.Build.CopySourceDirs); copyStep != "" {
+	if copyStep := buildCopySourceDirsStep(p.Build.CopySourceDirs, opts.ProjectSubpath); copyStep != "" {
 		cfg.Pipeline = append(cfg.Pipeline, types.MelangePipeline{Runs: copyStep})
 	}
 
