@@ -18,6 +18,15 @@ func (javaHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts ty
 
 	isGradleFramework := strings.HasSuffix(opts.Framework, "-gradle")
 
+	if p.Build.MavenExtraArgs != "" {
+		if cfg.Environment.Env == nil {
+			cfg.Environment.Env = make(map[string]string)
+		}
+		if _, exists := cfg.Environment.Env["MAVEN_EXTRA_ARGS"]; !exists {
+			cfg.Environment.Env["MAVEN_EXTRA_ARGS"] = p.Build.MavenExtraArgs
+		}
+	}
+
 	if !isGradleFramework {
 		tmplName := p.Build.MavenSettingsTemplate
 		if p.Build.MavenMirrorURL != "" {

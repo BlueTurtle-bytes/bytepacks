@@ -209,6 +209,9 @@ func MergeProjectConfig(p *types.Profile, proj *types.ProjectConfig) *types.Prof
 		if len(proj.Build.CopySourceDirs) > 0 {
 			merged.Build.CopySourceDirs = append(merged.Build.CopySourceDirs, proj.Build.CopySourceDirs...)
 		}
+		if proj.Build.MavenExtraArgs != "" {
+			merged.Build.MavenExtraArgs = proj.Build.MavenExtraArgs
+		}
 	}
 
 	if proj.Test != nil && len(proj.Test.Pipeline) > 0 {

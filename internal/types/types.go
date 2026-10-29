@@ -263,6 +263,11 @@ type BuildConfig struct {
 	// Defaults to "default" when empty.
 	NuGetSettingsTemplate string `yaml:"nuget_settings_template,omitempty"`
 
+	// MavenExtraArgs are appended verbatim to every mvn invocation.
+	// Use this to pass flags that suppress stricter validation in newer Maven versions,
+	// e.g. "-Denforcer.skip=true" or "-Dmaven.artifact.descriptorPolicy=lenient".
+	MavenExtraArgs string `yaml:"maven_extra_args,omitempty"`
+
 	// Distro holds optional per-distro package name overrides for build.dependencies.
 	// When --distro alpine is set and Alpine.Dependencies is non-empty, it fully replaces Dependencies.
 	Distro *DistroOverrides `yaml:"distro,omitempty"`
@@ -475,6 +480,10 @@ type ProjectBuildOverride struct {
 
 	// CopySourceDirs are appended to the profile's copy_source_dirs list.
 	CopySourceDirs []string `yaml:"copy_source_dirs,omitempty"`
+
+	// MavenExtraArgs are appended verbatim to every mvn invocation for this project.
+	// Overrides any value set in the profile's build.maven_extra_args.
+	MavenExtraArgs string `yaml:"maven_extra_args,omitempty"`
 }
 
 // ============================================================================

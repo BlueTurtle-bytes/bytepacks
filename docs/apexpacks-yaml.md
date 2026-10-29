@@ -68,6 +68,12 @@ build:
     - resources
     - migrations
 
+  # Extra flags appended to every mvn invocation (Java projects only).
+  # Use when your pom.xml triggers stricter validation in newer Maven versions.
+  # Common values:
+  #   "-Denforcer.skip=true"   — skip maven-enforcer-plugin rules
+  maven_extra_args: "-Denforcer.skip=true"
+
   # Fully replace the profile's build command (advanced — use sparingly).
   command: |
     dotnet publish -c Release -o ${{targets.destdir}}/app
@@ -209,6 +215,23 @@ build:
   copy_source_dirs:
     - migrations
     - email-templates
+```
+
+### Fix "dependencies must be unique" Maven error
+
+Newer Maven versions (3.9+/4.x) treat duplicate `pom.xml` dependencies as an error.
+If the project built fine with Paketo (which ships an older Maven), add:
+
+```yaml
+build:
+  maven_extra_args: "-Denforcer.skip=true"
+```
+
+If the error is from Maven's core validator rather than the enforcer plugin, try:
+
+```yaml
+build:
+  maven_extra_args: "-Dmaven.artifact.descriptorPolicy=LENIENT"
 ```
 
 ### Disable health-check for a background worker
