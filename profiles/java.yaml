@@ -70,7 +70,7 @@ build:
         - git
   # Default: plain Maven project with no detected framework.
   command: |
-    [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
+    [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d -print -quit 2>/dev/null)
     export PATH="$JAVA_HOME/bin:$PATH"
     if [ -f "/home/build/.apexpack-truststore.p12" ]; then
       export MAVEN_OPTS="${MAVEN_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit"
@@ -123,7 +123,7 @@ build:
     if [ -f "$JAVA_CACERTS" ]; then
       cp "$JAVA_CACERTS" /tmp/apexpack-cacerts
       awk '/-----BEGIN CERTIFICATE-----/{n++;f="/tmp/apexpack-rt-cert-"n".pem"} f{print > f} /-----END CERTIFICATE-----/{f=""}' /tmp/apexpack-runtime-ca.pem
-      KEYTOOL=$(find /usr/lib/jvm -name "keytool" 2>/dev/null | head -1)
+      KEYTOOL=$(find /usr/lib/jvm -name "keytool" -print -quit 2>/dev/null)
       if [ -n "$KEYTOOL" ]; then
         for certfile in /tmp/apexpack-rt-cert-*.pem; do
           [ -f "$certfile" ] || continue
@@ -136,7 +136,7 @@ build:
     fi
   tls_ca_pre_step: |
     [ -f /home/build/.apexpack-ca.crt ] || exit 0
-    KEYTOOL=$(find /usr/lib/jvm -name "keytool" 2>/dev/null | head -1)
+    KEYTOOL=$(find /usr/lib/jvm -name "keytool" -print -quit 2>/dev/null)
     if [ -z "$KEYTOOL" ]; then
       echo "ERROR: keytool not found under /usr/lib/jvm" >&2; exit 1
     fi
@@ -162,7 +162,7 @@ build:
     quarkus:
       # Quarkus default output is a fast-jar directory — uber-jar gives a single runnable JAR.
       command: |
-        [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
+        [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d -print -quit 2>/dev/null)
         export PATH="$JAVA_HOME/bin:$PATH"
         if [ -f "/home/build/.apexpack-truststore.p12" ]; then
           export MAVEN_OPTS="${MAVEN_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit"
@@ -174,24 +174,24 @@ build:
         cp target/*-runner.jar ${{targets.destdir}}/app/app.jar
     spring-boot-gradle:
       command: |
-        [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
+        [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d -print -quit 2>/dev/null)
         export PATH="$JAVA_HOME/bin:$PATH"
         echo "→ distributionUrl after rewrite:"
         grep "^distributionUrl=" gradle/wrapper/gradle-wrapper.properties || echo "  (not found)"
         DIST_URL=$(grep "^distributionUrl=" gradle/wrapper/gradle-wrapper.properties | sed 's/distributionUrl=//' | sed 's/\\:/:/g')
         echo "→ curl connectivity test to distribution URL:"
-        curl --connect-timeout 10 -sI "$DIST_URL" 2>&1 | head -5 || echo "  curl failed"
+        curl --connect-timeout 10 -sI "$DIST_URL" 2>&1 | head -5; true
         chmod +x ./gradlew
         ./gradlew build -x test --no-daemon -q
         mkdir -p ${{targets.destdir}}/app
-        JAR=$(find build/libs -name "*.jar" ! -name "*-plain.jar" | head -1)
+        JAR=$(find build/libs -name "*.jar" ! -name "*-plain.jar" -print -quit)
         [ -n "$JAR" ] || { echo "ERROR: no bootJar found in build/libs" >&2; exit 1; }
         cp "$JAR" ${{targets.destdir}}/app/app.jar
       caches:
         - /home/build/.gradle
     quarkus-gradle:
       command: |
-        [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
+        [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d -print -quit 2>/dev/null)
         export PATH="$JAVA_HOME/bin:$PATH"
         if [ -f "/home/build/.apexpack-truststore.p12" ]; then
           export GRADLE_OPTS="${GRADLE_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit"
@@ -204,7 +204,7 @@ build:
         - /home/build/.gradle
     micronaut-gradle:
       command: |
-        [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
+        [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d -print -quit 2>/dev/null)
         export PATH="$JAVA_HOME/bin:$PATH"
         if [ -f "/home/build/.apexpack-truststore.p12" ]; then
           export GRADLE_OPTS="${GRADLE_OPTS} -Djavax.net.ssl.trustStore=/home/build/.apexpack-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit"
@@ -262,8 +262,8 @@ test:
   pipeline:
     - runs: |
         test -s /app/app.jar || { echo "ERROR: /app/app.jar not found or empty"; exit 1; }
-        JAVA_BIN=$(find /usr/lib/jvm -name java -type f 2>/dev/null | head -1)
+        JAVA_BIN=$(find /usr/lib/jvm -name java -type f -print -quit 2>/dev/null)
         if [ -z "$JAVA_BIN" ]; then JAVA_BIN=$(command -v java 2>/dev/null); fi
         if [ -z "$JAVA_BIN" ]; then echo "ERROR: java binary not found"; exit 1; fi
-        "$JAVA_BIN" -version 2>&1 | head -2
+        "$JAVA_BIN" -version 2>&1 | { head -2; cat > /dev/null; }
         echo "✓ /app/app.jar present, Java runtime available"

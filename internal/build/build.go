@@ -203,7 +203,7 @@ fi`
 				pipelineModified = true
 
 				if opts.Profile != nil && opts.Profile.Runtime == "java" {
-					const jvmCACertsStep = `JAVA_CACERTS=$(find /usr/lib/jvm -name "cacerts" 2>/dev/null | head -1)
+					const jvmCACertsStep = `JAVA_CACERTS=$(find /usr/lib/jvm -name "cacerts" -print -quit 2>/dev/null)
 if [ -n "$JAVA_CACERTS" ]; then
   mkdir -p "${{targets.destdir}}/etc/ssl/certs"
   cp "$JAVA_CACERTS" "${{targets.destdir}}/etc/ssl/certs/cacerts"

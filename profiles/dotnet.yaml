@@ -54,7 +54,7 @@ build:
     DOTNET_RID="linux-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')"
     dotnet restore -r "$DOTNET_RID" $NUGET_CONFIG
     dotnet publish -c Release -o ${{targets.destdir}}/app -r "$DOTNET_RID" --self-contained false --no-restore
-    RCONFIG=$(find ${{targets.destdir}}/app -maxdepth 1 -name "*.runtimeconfig.json" | head -1)
+    RCONFIG=$(find ${{targets.destdir}}/app -maxdepth 1 -name "*.runtimeconfig.json" -print -quit)
     if [ -n "$RCONFIG" ]; then
       PROJ=$(basename "$RCONFIG" .runtimeconfig.json)
       if [ "$PROJ" != "app" ]; then
