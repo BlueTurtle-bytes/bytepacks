@@ -132,7 +132,7 @@ build:
           rm -f "$certfile"
         done
       fi
-      export JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStore=/tmp/apexpack-cacerts -Djavax.net.ssl.trustStorePassword=changeit"
+      export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djavax.net.ssl.trustStore=/tmp/apexpack-cacerts -Djavax.net.ssl.trustStorePassword=changeit"
     fi
   tls_ca_pre_step: |
     [ -f /home/build/.apexpack-ca.crt ] || exit 0
@@ -237,7 +237,7 @@ image:
     - "8080"
   env:
     JAVA_HOME: "/usr/lib/jvm/java-{JAVA_VERSION}-openjdk"
-    JAVA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+    JAVA_TOOL_OPTIONS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
   health-check:
     http:
       port: 8080
