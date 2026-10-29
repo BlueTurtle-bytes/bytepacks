@@ -216,19 +216,21 @@ func gradleJavaVersion(path string) string {
 	return ""
 }
 
-// mavenCompilerRelease extracts the Java version from a <release> tag inside
-// the maven-compiler-plugin <configuration> block in pom.xml.
+// mavenCompilerRelease extracts the Java version from <release>, <source>, or <target>
+// tags inside the maven-compiler-plugin <configuration> block in pom.xml.
 func mavenCompilerRelease(path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
-	// Match <release>N</release> where N looks like a plausible Java major version.
-	re := regexp.MustCompile(`<release>\s*(\d+)\s*</release>`)
-	if m := re.FindSubmatch(data); len(m) == 2 {
-		v := string(m[1])
-		if javaMajor(v) != "" {
-			return v
+	// Prefer <release> — most explicit. Fall back to <source> / <target>.
+	for _, tag := range []string{"release", "source", "target"} {
+		re := regexp.MustCompile(`<` + tag + `>\s*(\d+)\s*</` + tag + `>`)
+		if m := re.FindSubmatch(data); len(m) == 2 {
+			v := string(m[1])
+			if javaMajor(v) != "" {
+				return v
+			}
 		}
 	}
 	return ""
