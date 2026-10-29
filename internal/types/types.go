@@ -60,6 +60,10 @@ type TestConfig struct {
 	// the built package. Keep minimal — only what the test commands need.
 	Packages []string `yaml:"packages,omitempty"`
 
+	// Distro holds optional per-distro package name overrides for test.packages.
+	// When --distro alpine is set and Alpine.Packages is non-empty, it fully replaces Packages.
+	Distro *DistroOverrides `yaml:"distro,omitempty"`
+
 	// Pipeline is the list of test steps to run.
 	Pipeline []MelangePipeline `yaml:"pipeline,omitempty"`
 }

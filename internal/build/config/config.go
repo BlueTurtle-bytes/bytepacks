@@ -112,7 +112,11 @@ func BuildMelangeConfig(p *types.Profile, opts types.BuildOptions) (types.Melang
 	}
 
 	if len(p.Test.Pipeline) > 0 {
-		testPkgs := helpers.VsubSlice(p.Test.Packages, token, version)
+		rawTestPkgs := p.Test.Packages
+		if opts.Distro == "alpine" && p.Test.Distro != nil && p.Test.Distro.Alpine != nil && len(p.Test.Distro.Alpine.Packages) > 0 {
+			rawTestPkgs = p.Test.Distro.Alpine.Packages
+		}
+		testPkgs := helpers.VsubSlice(rawTestPkgs, token, version)
 		steps := make([]types.MelangePipeline, len(p.Test.Pipeline))
 		for i, step := range p.Test.Pipeline {
 			steps[i] = types.MelangePipeline{

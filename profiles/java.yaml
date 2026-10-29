@@ -252,6 +252,11 @@ test:
   packages:
     - busybox
     - openjdk-{JAVA_VERSION}-jre
+  distro:
+    alpine:
+      packages:
+        - busybox
+        - openjdk{JAVA_VERSION}-jre
   pipeline:
     - runs: |
         test -s /app/app.jar || { echo "ERROR: /app/app.jar not found or empty"; exit 1; }
