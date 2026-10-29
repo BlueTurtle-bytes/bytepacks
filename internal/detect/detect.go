@@ -150,10 +150,14 @@ func detectJavaVersion(srcDir string) string {
 			return m[1]
 		}
 	}
-	// pom.xml property tags
+	// pom.xml — explicit property tags (highest confidence)
 	if v := javaMajor(extractXMLTag(srcDir, "pom.xml",
 		"java.version", "maven.compiler.source", "maven.compiler.release", "maven.compiler.target",
 	)); v != "" {
+		return v
+	}
+	// pom.xml — maven-compiler-plugin <release> inside <configuration>
+	if v := mavenCompilerRelease(filepath.Join(srcDir, "pom.xml")); v != "" {
 		return v
 	}
 	// build.gradle / build.gradle.kts
@@ -161,6 +165,10 @@ func detectJavaVersion(srcDir string) string {
 		if v := gradleJavaVersion(filepath.Join(srcDir, gf)); v != "" {
 			return v
 		}
+	}
+	// pom.xml — infer from Spring Boot parent version as last resort
+	if v := javaVersionFromSpringBootParent(filepath.Join(srcDir, "pom.xml")); v != "" {
+		return v
 	}
 	return ""
 }
@@ -197,11 +205,52 @@ func gradleJavaVersion(path string) string {
 		regexp.MustCompile(`sourceCompatibility\s*=\s*['"]?(\d+)['"]?`),
 		regexp.MustCompile(`sourceCompatibility\s*=\s*JavaVersion\.VERSION_(\d+)`),
 		regexp.MustCompile(`JavaLanguageVersion\.of\((\d+)\)`),
+		regexp.MustCompile(`jvmToolchain\((\d+)\)`),
 		regexp.MustCompile(`targetCompatibility\s*=\s*['"]?(\d+)['"]?`),
 	}
 	for _, re := range patterns {
 		if m := re.FindStringSubmatch(content); len(m) == 2 {
 			return m[1]
+		}
+	}
+	return ""
+}
+
+// mavenCompilerRelease extracts the Java version from a <release> tag inside
+// the maven-compiler-plugin <configuration> block in pom.xml.
+func mavenCompilerRelease(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	// Match <release>N</release> where N looks like a plausible Java major version.
+	re := regexp.MustCompile(`<release>\s*(\d+)\s*</release>`)
+	if m := re.FindSubmatch(data); len(m) == 2 {
+		v := string(m[1])
+		if javaMajor(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// javaVersionFromSpringBootParent infers the minimum required Java version from
+// the Spring Boot parent version declared in pom.xml. Used as a last resort when
+// no explicit Java version is found — Spring Boot 3.x requires Java 17+.
+func javaVersionFromSpringBootParent(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	// Only act when the parent is spring-boot-starter-parent.
+	if !strings.Contains(string(data), "spring-boot-starter-parent") {
+		return ""
+	}
+	re := regexp.MustCompile(`<parent>[\s\S]*?spring-boot-starter-parent[\s\S]*?<version>\s*(\d+)\.`)
+	if m := re.FindSubmatch(data); len(m) == 2 {
+		major := string(m[1])
+		if major == "3" {
+			return "17" // Spring Boot 3.x requires Java 17 minimum
 		}
 	}
 	return ""
