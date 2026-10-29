@@ -60,6 +60,14 @@ build:
     - maven
     - build-base
     - git
+  distro:
+    alpine:
+      dependencies:
+        - busybox
+        - openjdk{JAVA_VERSION}-jdk
+        - maven
+        - build-base
+        - git
   # Default: plain Maven project with no detected framework.
   command: |
     [ -d "$JAVA_HOME" ] || JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -name "java-*-openjdk" -type d 2>/dev/null | head -1)
@@ -211,6 +219,12 @@ image:
   packages:
     - openjdk-{JAVA_VERSION}-jre
     - ca-certificates-bundle=20260413-r0
+  distro:
+    alpine:
+      packages:
+        - alpine-release
+        - openjdk{JAVA_VERSION}-jre
+        - ca-certificates
   # java -jar is the entrypoint. The JAR path is passed via cmd.
   entrypoint: java
   cmd:
