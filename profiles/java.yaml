@@ -246,7 +246,7 @@ image:
     - "8080"
   env:
     JAVA_HOME: "/usr/lib/jvm/java-{JAVA_VERSION}-openjdk"
-    JAVA_TOOL_OPTIONS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:-TieredCompilation"
+    JAVA_TOOL_OPTIONS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -Xint"
     MALLOC_ARENA_MAX: "2"
   health-check:
     http:
