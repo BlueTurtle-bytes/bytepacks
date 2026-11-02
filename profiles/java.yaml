@@ -79,7 +79,16 @@ build:
     if [ -f "/home/build/.m2/settings.xml" ]; then MVN_SETTINGS="-s /home/build/.m2/settings.xml"; fi
     mvn package -DskipTests -B -q $MVN_SETTINGS ${MAVEN_EXTRA_ARGS:-}
     mkdir -p ${{targets.destdir}}/app
-    cp target/*.jar ${{targets.destdir}}/app/app.jar
+    JAR=""
+    for f in target/*.jar; do
+      [ -f "$f" ] || continue
+      if "$JAVA_HOME/bin/jar" tf "$f" 2>/dev/null | grep -q "^BOOT-INF/"; then
+        JAR="$f"; break
+      fi
+    done
+    if [ -z "$JAR" ]; then JAR=$(ls -S target/*.jar 2>/dev/null | head -1); fi
+    [ -n "$JAR" ] || { echo "ERROR: no JAR found in target/" >&2; exit 1; }
+    cp "$JAR" ${{targets.destdir}}/app/app.jar
   env:
     JAVA_HOME: "/usr/lib/jvm/java-{JAVA_VERSION}-openjdk"
     MAVEN_OPTS: "-Xmx512m -XX:+UseContainerSupport"
