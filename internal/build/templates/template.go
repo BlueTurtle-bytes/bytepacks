@@ -50,10 +50,26 @@ func LoadNuGetTemplate(name, profilesDir string) (string, error) {
 }
 
 // LoadNpmrcTemplate returns the .npmrc template.
-func LoadNpmrcTemplate() string { return npmrcTemplate }
+// Falls back to the embedded default if no custom template is found at <profilesDir>/templates/npm/npmrc.tmpl.
+func LoadNpmrcTemplate(profilesDir string) (string, error) {
+	custom := filepath.Join(profilesDir, "templates", "npm", "npmrc.tmpl")
+	data, err := os.ReadFile(custom)
+	if err == nil {
+		return string(data), nil
+	}
+	return npmrcTemplate, nil
+}
 
 // LoadYarnrcTemplate returns the .yarnrc.yml template.
-func LoadYarnrcTemplate() string { return yarnrcTemplate }
+// Falls back to the embedded default if no custom template is found at <profilesDir>/templates/npm/yarnrc.tmpl.
+func LoadYarnrcTemplate(profilesDir string) (string, error) {
+	custom := filepath.Join(profilesDir, "templates", "npm", "yarnrc.tmpl")
+	data, err := os.ReadFile(custom)
+	if err == nil {
+		return string(data), nil
+	}
+	return yarnrcTemplate, nil
+}
 
 // LoadGradleTemplate returns the Gradle init script template.
 func LoadGradleTemplate(name, profilesDir string) (string, error) {

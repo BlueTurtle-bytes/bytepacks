@@ -44,18 +44,25 @@ func (nodeHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts ty
 		"{{YARN_AUTH_IDENT}}", yarnAuthIdent,
 	)
 
-	npmrcContent := r.Replace(templates.LoadNpmrcTemplate())
+	npmrcTmpl, err := templates.LoadNpmrcTemplate(opts.ProfilesDir)
+	if err != nil {
+		return err
+	}
+	npmrcContent := r.Replace(npmrcTmpl)
 	step := "mkdir -p /home/build\n" +
 		"cat >> /home/build/.npmrc << APEXPACK_NPMRC_EOF\n" +
 		npmrcContent +
 		"APEXPACK_NPMRC_EOF\n" +
 		fmt.Sprintf("echo \"→ npm registry: %s\"", registryURL)
-		fmt.Sprintf("cat /home/build/.npmrc ")
 
 	if opts.Framework == "yarn-berry" {
 		// Append to the project's existing .yarnrc.yml (always present in Yarn Berry projects).
 		// Yarn Berry merges the file top-to-bottom; later root keys override earlier ones.
-		yarnrcContent := r.Replace(templates.LoadYarnrcTemplate())
+		yarnrcTmpl, err := templates.LoadYarnrcTemplate(opts.ProfilesDir)
+		if err != nil {
+			return err
+		}
+		yarnrcContent := r.Replace(yarnrcTmpl)
 		step += "\ncat >> /home/build/.yarnrc.yml << APEXPACK_YARNRC_EOF\n" +
 			yarnrcContent +
 			"APEXPACK_YARNRC_EOF"
