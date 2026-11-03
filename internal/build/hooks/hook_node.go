@@ -17,7 +17,7 @@ func (nodeHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts ty
 		return nil
 	}
 
-	for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD", "ARTI_TOKEN", "ARTI_REPO"} {
+	for _, key := range []string{"ARTI_USER", "ARTI_PASSWORD", "ARTI_REPO"} {
 		if val := os.Getenv(key); val != "" {
 			if cfg.Environment.Env == nil {
 				cfg.Environment.Env = make(map[string]string)
@@ -33,16 +33,7 @@ func (nodeHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts ty
 	scope := "//" + strings.TrimPrefix(strings.TrimPrefix(registryURL, "https://"), "http://")
 	scopeKey := strings.TrimRight(scope, "/")
 
-	// Prefer _authToken (raw Artifactory token) over _auth (base64 user:pass).
-	// Both are computed in Go so the shell script contains no dynamic computation.
-	var authLine string
-	if token := os.Getenv("ARTI_TOKEN"); token != "" {
-		authLine = scopeKey + "/:_authToken=" + token
-	} else {
-		encoded := base64.StdEncoding.EncodeToString([]byte(os.Getenv("ARTI_USER") + ":" + os.Getenv("ARTI_PASSWORD")))
-		authLine = scopeKey + "/:_auth=" + encoded
-	}
-
+	authLine := scopeKey + "/:_authToken=" + os.Getenv("ARTI_PASSWORD")
 	yarnAuthIdent := base64.StdEncoding.EncodeToString([]byte(os.Getenv("ARTI_USER") + ":" + os.Getenv("ARTI_PASSWORD")))
 
 	r := strings.NewReplacer(
