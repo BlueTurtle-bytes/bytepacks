@@ -263,6 +263,13 @@ type BuildConfig struct {
 	// Defaults to "default" when empty.
 	NuGetSettingsTemplate string `yaml:"nuget_settings_template,omitempty"`
 
+	// NpmRegistryURL is the URL of a corporate Artifactory (or Nexus) npm registry proxy.
+	// When set, apexpack writes a ~/.npmrc (and ~/.yarnrc.yml for yarn-berry) into every
+	// build that routes npm/pnpm/yarn/bun installs through this registry.
+	// Fires only when ARTI_USER is also present.
+	// Example: "https://artifactory.corp.example.com/artifactory/api/npm/npm-virtual"
+	NpmRegistryURL string `yaml:"npm_registry_url,omitempty"`
+
 	// MavenExtraArgs are appended verbatim to every mvn invocation.
 	// Use this to pass flags that suppress stricter validation in newer Maven versions,
 	// e.g. "-Denforcer.skip=true" or "-Dmaven.artifact.descriptorPolicy=lenient".
@@ -484,6 +491,9 @@ type ProjectBuildOverride struct {
 	// MavenExtraArgs are appended verbatim to every mvn invocation for this project.
 	// Overrides any value set in the profile's build.maven_extra_args.
 	MavenExtraArgs string `yaml:"maven_extra_args,omitempty"`
+
+	// NpmRegistryURL overrides the profile's npm_registry_url for this project.
+	NpmRegistryURL string `yaml:"npm_registry_url,omitempty"`
 }
 
 // ============================================================================

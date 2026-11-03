@@ -212,6 +212,9 @@ func MergeProjectConfig(p *types.Profile, proj *types.ProjectConfig) *types.Prof
 		if proj.Build.MavenExtraArgs != "" {
 			merged.Build.MavenExtraArgs = proj.Build.MavenExtraArgs
 		}
+		if proj.Build.NpmRegistryURL != "" {
+			merged.Build.NpmRegistryURL = proj.Build.NpmRegistryURL
+		}
 	}
 
 	if proj.Test != nil && len(proj.Test.Pipeline) > 0 {

@@ -76,6 +76,13 @@ build:
   caches:
     - /home/build/.npm
 
+  # Corporate Artifactory / Nexus npm registry URL (base path — ARTI_REPO is appended automatically).
+  # When set, apexpack writes ~/.npmrc (and ~/.yarnrc.yml for yarn-berry) into every
+  # build so npm/pnpm/yarn/bun resolve packages through this registry instead of
+  # registry.npmjs.org. Requires ARTI_USER + ARTI_REPO (and ARTI_PASSWORD or ARTI_TOKEN).
+  # Example: https://<host>/artifactory/api/npm
+  npm_registry_url: ""
+
   tls_ca_env:
     - NODE_EXTRA_CA_CERTS  # Node.js (npm, yarn, pnpm, bun) — bundled OpenSSL, not SSL_CERT_FILE
     - SSL_CERT_FILE        # curl and other OpenSSL-linked tools used in build scripts
