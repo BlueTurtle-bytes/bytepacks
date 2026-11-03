@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/apexpack/apexpack/internal/build/helpers"
+	"github.com/apexpack/apexpack/internal/build/templates"
 	"github.com/apexpack/apexpack/internal/types"
 )
 
@@ -33,41 +34,31 @@ func (nodeHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts ty
 	scope := "//" + strings.TrimPrefix(strings.TrimPrefix(registryURL, "https://"), "http://")
 	scopeKey := strings.TrimRight(scope, "/")
 
-	authLine := scopeKey + "/:_authToken=" + os.Getenv("ARTI_PASSWORD")
 	yarnAuthIdent := base64.StdEncoding.EncodeToString([]byte(os.Getenv("ARTI_USER") + ":" + os.Getenv("ARTI_PASSWORD")))
 
 	r := strings.NewReplacer(
-		"__REGISTRY_URL__", registryURL,
-		"__SCOPE_KEY__", scopeKey,
-		"__ARTI_USER__", os.Getenv("ARTI_USER"),
-		"__AUTH_LINE__", authLine,
-		"__YARN_AUTH_IDENT__", yarnAuthIdent,
+		"{{REGISTRY_URL}}", registryURL,
+		"{{SCOPE_KEY}}", scopeKey,
+		"{{ARTI_USER}}", os.Getenv("ARTI_USER"),
+		"{{ARTI_PASSWORD}}", os.Getenv("ARTI_PASSWORD"),
+		"{{YARN_AUTH_IDENT}}", yarnAuthIdent,
 	)
 
-	step := r.Replace(`mkdir -p /home/build
-
-cat >> /home/build/.npmrc << APEXPACK_NPMRC_EOF
-always-auth=true
-strict-ssl=true
-registry=__REGISTRY_URL__
-__SCOPE_KEY__/:email=__ARTI_USER__
-__AUTH_LINE__
-APEXPACK_NPMRC_EOF
-
-echo "→ npm registry: __REGISTRY_URL__"`)
+	npmrcContent := r.Replace(templates.LoadNpmrcTemplate())
+	step := "mkdir -p /home/build\n" +
+		"cat >> /home/build/.npmrc << APEXPACK_NPMRC_EOF\n" +
+		npmrcContent +
+		"APEXPACK_NPMRC_EOF\n" +
+		fmt.Sprintf("echo \"→ npm registry: %s\"", registryURL)
+		fmt.Sprintf("cat /home/build/.npmrc ")
 
 	if opts.Framework == "yarn-berry" {
 		// Append to the project's existing .yarnrc.yml (always present in Yarn Berry projects).
 		// Yarn Berry merges the file top-to-bottom; later root keys override earlier ones.
-		step += r.Replace(`
-
-cat >> /home/build/.yarnrc.yml << APEXPACK_YARNRC_EOF
-npmRegistryServer: "__REGISTRY_URL__"
-npmRegistries:
-  "__SCOPE_KEY__/":
-    npmAuthIdent: "__YARN_AUTH_IDENT__"
-    npmAlwaysAuth: true
-APEXPACK_YARNRC_EOF`)
+		yarnrcContent := r.Replace(templates.LoadYarnrcTemplate())
+		step += "\ncat >> /home/build/.yarnrc.yml << APEXPACK_YARNRC_EOF\n" +
+			yarnrcContent +
+			"APEXPACK_YARNRC_EOF"
 	}
 
 	cfg.Pipeline = append([]types.MelangePipeline{{Runs: step}}, cfg.Pipeline...)

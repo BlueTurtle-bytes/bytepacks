@@ -17,6 +17,12 @@ var nugetConfigTemplate string
 //go:embed gradle/gradle_init.gradle
 var gradleInitTemplate string
 
+//go:embed npm/npmrc.tmpl
+var npmrcTemplate string
+
+//go:embed npm/yarnrc.tmpl
+var yarnrcTemplate string
+
 // LoadMavenTemplate returns the Maven settings.xml template.
 func LoadMavenTemplate(name, profilesDir string) (string, error) {
 	if name == "" {
@@ -42,6 +48,12 @@ func LoadNuGetTemplate(name, profilesDir string) (string, error) {
 	}
 	return string(data), nil
 }
+
+// LoadNpmrcTemplate returns the .npmrc template.
+func LoadNpmrcTemplate() string { return npmrcTemplate }
+
+// LoadYarnrcTemplate returns the .yarnrc.yml template.
+func LoadYarnrcTemplate() string { return yarnrcTemplate }
 
 // LoadGradleTemplate returns the Gradle init script template.
 func LoadGradleTemplate(name, profilesDir string) (string, error) {
