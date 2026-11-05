@@ -57,6 +57,15 @@ build:
     - python3
     - build-base
     - git
+  distro:
+    alpine:
+      dependencies:
+        - busybox
+        - nodejs
+        - npm
+        - python3
+        - build-base
+        - git
   # Default: npm. Installs prod deps only in final output.
   command: |
     if [ -f "package-lock.json" ]; then
@@ -177,6 +186,12 @@ image:
   packages:
     - nodejs-{NODE_VERSION}
     - ca-certificates-bundle=20260413-r0
+  distro:
+    alpine:
+      packages:
+        - alpine-release
+        - nodejs
+        - ca-certificates
   entrypoint: node
   cmd:
     - "/app/server.js"
@@ -202,6 +217,11 @@ test:
   packages:
     - busybox
     - nodejs-{NODE_VERSION}
+  distro:
+    alpine:
+      packages:
+        - busybox
+        - nodejs
   pipeline:
     - runs: |
         test -d /app || { echo "ERROR: /app directory not found"; exit 1; }
