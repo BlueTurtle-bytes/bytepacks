@@ -75,9 +75,9 @@ build:
   # Default: npm. Installs prod deps only in final output.
   command: |
     if [ -f "package-lock.json" ]; then
-      npm ci --prefer-offline
+      npm ci --prefer-offline --include=dev
     else
-      npm install --prefer-offline
+      npm install --prefer-offline --include=dev
     fi
     npm run build --if-present
     mkdir -p ${{targets.destdir}}/app
@@ -87,7 +87,7 @@ build:
   env:
     NODE_ENV: "production"
     NPM_CONFIG_CACHE: "/home/build/.npm"
-    CI: "true"
+    CI: "false"
   caches:
     - /home/build/.npm
 

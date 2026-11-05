@@ -14,6 +14,13 @@ import (
 type nodeHook struct{}
 
 func (nodeHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error {
+	return patchNpmRegistry(cfg, p, opts)
+}
+
+// patchNpmRegistry injects .npmrc (and .yarnrc.yml for yarn-berry) into the
+// melange pipeline when npm_registry_url + ARTI_USER are configured.
+// Called by both nodeHook and webserverHook so SPA builds get registry auth too.
+func patchNpmRegistry(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error {
 	if p.Build.NpmRegistryURL == "" || os.Getenv("ARTI_USER") == "" {
 		fmt.Printf("  → npm registry: skipped (npm_registry_url or ARTI_USER not set)\n")
 		return nil
@@ -30,7 +37,6 @@ func (nodeHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts ty
 		}
 	}
 
-	// Build full registry URL: base from profile + ARTI_REPO from env (same pattern as dotnet/java hooks).
 	registryURL := strings.TrimRight(p.Build.NpmRegistryURL, "/") + "/" + os.Getenv("ARTI_REPO") + "/"
 	scope := "//" + strings.TrimPrefix(strings.TrimPrefix(registryURL, "https://"), "http://")
 	scopeKey := strings.TrimRight(scope, "/")
@@ -58,8 +64,6 @@ func (nodeHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts ty
 		"APEXPACK_NPMRC_EOF"
 
 	if opts.Framework == "yarn-berry" {
-		// Append to the project's existing .yarnrc.yml (always present in Yarn Berry projects).
-		// Yarn Berry merges the file top-to-bottom; later root keys override earlier ones.
 		yarnrcTmpl, err := templates.LoadYarnrcTemplate(opts.ProfilesDir)
 		if err != nil {
 			return err

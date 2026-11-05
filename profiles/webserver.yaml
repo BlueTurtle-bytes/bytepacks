@@ -72,13 +72,18 @@ build:
     NODE_ENV: "production"
     CI: "true"
 
+  # Corporate Artifactory / Nexus npm registry URL (base path — ARTI_REPO is appended automatically).
+  # Same as node profile. Required when SPA builds pull packages from a private registry.
+  # Example: https://<host>/artifactory/api/npm
+  npm_registry_url: ""
+
   frameworks:
     angular:
       command: |
         if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
-        else npm ci --prefer-offline; fi
+        else npm ci --prefer-offline --include=dev; fi
         if [ -f "yarn.lock" ]; then yarn build
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
@@ -94,7 +99,7 @@ build:
         if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
-        else npm ci --prefer-offline; fi
+        else npm ci --prefer-offline --include=dev; fi
         if [ -f "yarn.lock" ]; then yarn build
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
@@ -111,7 +116,7 @@ build:
         if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
-        else npm ci --prefer-offline; fi
+        else npm ci --prefer-offline --include=dev; fi
         if [ -f "yarn.lock" ]; then yarn build
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
@@ -127,7 +132,7 @@ build:
         if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
-        else npm ci --prefer-offline; fi
+        else npm ci --prefer-offline --include=dev; fi
         if [ -f "yarn.lock" ]; then yarn build
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
@@ -143,7 +148,7 @@ build:
         if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
-        else npm ci --prefer-offline; fi
+        else npm ci --prefer-offline --include=dev; fi
         if [ -f "yarn.lock" ]; then yarn build
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build

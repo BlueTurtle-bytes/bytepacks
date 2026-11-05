@@ -5,7 +5,7 @@ import "github.com/apexpack/apexpack/internal/types"
 type webserverHook struct{}
 
 func (webserverHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts types.BuildOptions) error {
-	return nil
+	return patchNpmRegistry(cfg, p, opts)
 }
 
 func (webserverHook) PatchApko(cfg *types.ApkoConfig, p *types.Profile, opts types.BuildOptions) error {
