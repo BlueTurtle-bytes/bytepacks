@@ -50,13 +50,12 @@ func (nodeHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts ty
 		return err
 	}
 	npmrcContent := r.Replace(npmrcTmpl)
+	fmt.Printf("  → npm registry: %s\n", registryURL)
+	fmt.Printf("  → .npmrc:\n%s\n", npmrcContent)
 	step := "mkdir -p /home/build\n" +
 		"cat >> /home/build/.npmrc << APEXPACK_NPMRC_EOF\n" +
 		npmrcContent +
-		"APEXPACK_NPMRC_EOF\n" +
-		fmt.Sprintf("echo \"→ npm registry: %s\"\n", registryURL) +
-		"echo \"→ .npmrc contents:\"\n" +
-		"cat /home/build/.npmrc"
+		"APEXPACK_NPMRC_EOF"
 
 	if opts.Framework == "yarn-berry" {
 		// Append to the project's existing .yarnrc.yml (always present in Yarn Berry projects).

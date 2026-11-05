@@ -16,7 +16,6 @@ detect:
     - hugo.toml
     - hugo.yaml
     - _config.yml
-    - nginx.conf
   content:
     - file: nginx.conf
       contains: "server"
