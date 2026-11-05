@@ -542,6 +542,8 @@ type BuildOptions struct {
 	PreSteps []string
 	// PostSteps are shell commands injected as pipeline steps after the main build command.
 	PostSteps []string
+	// NoCache disables Docker volume caches for this build (forces a clean install of all dependencies).
+	NoCache bool
 }
 
 // ============================================================================

@@ -28,6 +28,7 @@ func buildCmd() *cobra.Command {
 		arch             string
 		dryRun           bool
 		localBuild       bool
+		noCache          bool
 		signingKey       string
 		melangeRunner    string
 		buildArgSlice    []string
@@ -176,6 +177,7 @@ Examples:
 				MelangeRunner:    melangeRunner,
 				Arch:             arch,
 				LocalBuild:       localBuild,
+				NoCache:          noCache,
 				SigningKey:       signingKey,
 				BuildArgs:        buildArgs,
 				Distro:           distro,
@@ -267,6 +269,8 @@ Examples:
 			"Use for multi-project trees where the full source tree must be mounted for cross-project references.")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"Print generated melange.yaml and apko.yaml without building")
+	cmd.Flags().BoolVar(&noCache, "no-cache", false,
+		"Disable Docker volume caches — forces a clean download of all dependencies (useful for testing registry auth)")
 	cmd.Flags().StringVar(&tlsExtraCA, "tls-extra-ca", "",
 		"Path to an extra CA certificate (PEM) to trust — use in corporate proxy environments")
 	cmd.Flags().StringVar(&arch, "arch", "",

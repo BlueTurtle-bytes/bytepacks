@@ -47,6 +47,12 @@ detect:
       contains: "\"@remix-run/node\""
       boost-confidence: 0.03
       framework: remix
+    - file: server.js
+      contains: ""
+      boost-confidence: 0.15
+    - file: server.ts
+      contains: ""
+      boost-confidence: 0.15
   confidence: 0.85
 
 build:

@@ -92,12 +92,14 @@ func runMelangeInDocker(configFile, keyFile string, opts types.BuildOptions) err
 		"-v", absOut + ":/work/output",
 	}
 
-	for _, cachePath := range opts.Profile.Build.Caches {
-		args = append(args, "-v", helpers.CacheVolumeName(cachePath)+":"+cachePath)
-	}
-	if override, found := helpers.ResolveOverride(opts.Profile, opts.Framework, opts.PackageManager); found {
-		for _, cachePath := range override.Caches {
+	if !opts.NoCache {
+		for _, cachePath := range opts.Profile.Build.Caches {
 			args = append(args, "-v", helpers.CacheVolumeName(cachePath)+":"+cachePath)
+		}
+		if override, found := helpers.ResolveOverride(opts.Profile, opts.Framework, opts.PackageManager); found {
+			for _, cachePath := range override.Caches {
+				args = append(args, "-v", helpers.CacheVolumeName(cachePath)+":"+cachePath)
+			}
 		}
 	}
 
