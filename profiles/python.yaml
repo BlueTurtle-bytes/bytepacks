@@ -160,8 +160,8 @@ build:
             - unixodbc-dev
       command: |
         python{PYTHON_VERSION} -m pip install poetry --quiet
-        poetry config virtualenvs.in-project true
-        poetry install --only main --no-interaction --no-ansi
+        python{PYTHON_VERSION} -m poetry config virtualenvs.in-project true
+        python{PYTHON_VERSION} -m poetry install --only main --no-interaction --no-ansi
         mkdir -p ${{targets.destdir}}/app/deps
         cp -r .venv/lib/python*/site-packages/. ${{targets.destdir}}/app/deps/
         mkdir -p ${{targets.destdir}}/app/src
