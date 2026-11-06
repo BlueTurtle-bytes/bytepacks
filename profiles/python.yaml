@@ -80,6 +80,12 @@ build:
   caches:
     - /home/build/.cache/pip
 
+  # Corporate Artifactory / Nexus PyPI registry URL (base path — ARTI_REPO is appended automatically).
+  # When set, apexpack writes ~/.config/pip/pip.conf and ~/.pypirc into every build.
+  # Requires ARTI_USER + ARTI_REPO + ARTI_PASSWORD.
+  # Example: https://<host>/artifactory/api/pypi
+  pypi_registry_url: ""
+
   tls_ca_env:
     - SSL_CERT_FILE        # Python ssl module (OpenSSL-linked)
     - REQUESTS_CA_BUNDLE   # requests library (used by pip, poetry, pipenv)

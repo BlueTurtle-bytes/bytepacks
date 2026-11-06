@@ -270,6 +270,12 @@ type BuildConfig struct {
 	// Example: "https://artifactory.corp.example.com/artifactory/api/npm/npm-virtual"
 	NpmRegistryURL string `yaml:"npm_registry_url,omitempty"`
 
+	// PypiRegistryURL is the base URL of a corporate Artifactory PyPI proxy.
+	// ARTI_REPO is appended automatically (same pattern as npm_registry_url).
+	// Fires only when ARTI_USER is also present.
+	// Example: "https://artifactory.corp.example.com/artifactory/api/pypi"
+	PypiRegistryURL string `yaml:"pypi_registry_url,omitempty"`
+
 	// MavenExtraArgs are appended verbatim to every mvn invocation.
 	// Use this to pass flags that suppress stricter validation in newer Maven versions,
 	// e.g. "-Denforcer.skip=true" or "-Dmaven.artifact.descriptorPolicy=lenient".
@@ -494,6 +500,9 @@ type ProjectBuildOverride struct {
 
 	// NpmRegistryURL overrides the profile's npm_registry_url for this project.
 	NpmRegistryURL string `yaml:"npm_registry_url,omitempty"`
+
+	// PypiRegistryURL overrides the profile's pypi_registry_url for this project.
+	PypiRegistryURL string `yaml:"pypi_registry_url,omitempty"`
 }
 
 // ============================================================================

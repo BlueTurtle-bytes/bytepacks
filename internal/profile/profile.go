@@ -215,6 +215,9 @@ func MergeProjectConfig(p *types.Profile, proj *types.ProjectConfig) *types.Prof
 		if proj.Build.NpmRegistryURL != "" {
 			merged.Build.NpmRegistryURL = proj.Build.NpmRegistryURL
 		}
+		if proj.Build.PypiRegistryURL != "" {
+			merged.Build.PypiRegistryURL = proj.Build.PypiRegistryURL
+		}
 	}
 
 	if proj.Test != nil && len(proj.Test.Pipeline) > 0 {

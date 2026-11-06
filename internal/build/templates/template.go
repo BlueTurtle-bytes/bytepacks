@@ -23,6 +23,12 @@ var npmrcTemplate string
 //go:embed npm/yarnrc.tmpl
 var yarnrcTemplate string
 
+//go:embed pypi/pip.conf.tmpl
+var pipConfTemplate string
+
+//go:embed pypi/pypirc.tmpl
+var pypircTemplate string
+
 // LoadMavenTemplate returns the Maven settings.xml template.
 func LoadMavenTemplate(name, profilesDir string) (string, error) {
 	if name == "" {
@@ -69,6 +75,28 @@ func LoadYarnrcTemplate(profilesDir string) (string, error) {
 		return string(data), nil
 	}
 	return yarnrcTemplate, nil
+}
+
+// LoadPipConfTemplate returns the pip.conf template.
+// Falls back to the embedded default if no custom template is found at <profilesDir>/templates/pypi/pip.conf.tmpl.
+func LoadPipConfTemplate(profilesDir string) (string, error) {
+	custom := filepath.Join(profilesDir, "templates", "pypi", "pip.conf.tmpl")
+	data, err := os.ReadFile(custom)
+	if err == nil {
+		return string(data), nil
+	}
+	return pipConfTemplate, nil
+}
+
+// LoadPypircTemplate returns the .pypirc template.
+// Falls back to the embedded default if no custom template is found at <profilesDir>/templates/pypi/pypirc.tmpl.
+func LoadPypircTemplate(profilesDir string) (string, error) {
+	custom := filepath.Join(profilesDir, "templates", "pypi", "pypirc.tmpl")
+	data, err := os.ReadFile(custom)
+	if err == nil {
+		return string(data), nil
+	}
+	return pypircTemplate, nil
 }
 
 // LoadGradleTemplate returns the Gradle init script template.
