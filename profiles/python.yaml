@@ -144,7 +144,6 @@ build:
         - busybox
         - python-{PYTHON_VERSION}
         - py3-pip
-        - py3-poetry
         - build-base
         - git
         - postgresql-dev
@@ -155,12 +154,12 @@ build:
             - busybox
             - python3
             - py3-pip
-            - poetry
             - build-base
             - git
             - postgresql-dev
             - unixodbc-dev
       command: |
+        python{PYTHON_VERSION} -m pip install poetry --quiet
         poetry config virtualenvs.in-project true
         poetry install --only main --no-interaction --no-ansi
         mkdir -p ${{targets.destdir}}/app/deps

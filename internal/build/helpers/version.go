@@ -16,10 +16,12 @@ var defaultLangVersions = map[string]string{
 var supportedLangVersions = map[string][]string{
 	"dotnet": {"8", "9", "10"},
 	"node":   {"18", "20", "22"},
+	"python": {"3.11", "3.12", "3.13"},
 }
 
 var warnFallbackRuntimes = map[string]bool{
-	"node": true,
+	"node":   true,
+	"python": true,
 }
 
 // LangVersionToken returns the substitution token for a given runtime.
