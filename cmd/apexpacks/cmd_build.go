@@ -133,12 +133,16 @@ Examples:
 				if fw == "" {
 					fw = "no framework identified"
 				}
+				pmSuffix := ""
+				if detectedPM != "" {
+					pmSuffix = " [" + detectedPM + "]"
+				}
 				versionSuffix := ""
 				if detectedLangVersion != "" {
 					versionSuffix = " — version " + detectedLangVersion
 				}
-				fmt.Printf("  → Detected: %s (%.0f%% confidence) — %s%s\n",
-					result.Profile.Runtime, result.Confidence*100, fw, versionSuffix)
+				fmt.Printf("  → Detected: %s (%.0f%% confidence) — %s%s%s\n",
+					result.Profile.Runtime, result.Confidence*100, fw, pmSuffix, versionSuffix)
 			}
 			runtime_ = matchedProfile.Runtime
 

@@ -63,13 +63,21 @@ func (pythonHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts 
 	fmt.Printf("  → pypi registry: %s\n", registryURL)
 	fmt.Printf("  → pip.conf:\n%s\n", pipConfContent)
 
-	step := "mkdir -p /home/build/.config/pip /home/build\n" +
-		"cat >> /home/build/.config/pip/pip.conf << APEXPACK_PIPCONF_EOF\n" +
+	const pipConfPath = "/home/build/.config/pip/pip.conf"
+	step := "mkdir -p /home/build/.config/pip\n" +
+		"cat >> " + pipConfPath + " << APEXPACK_PIPCONF_EOF\n" +
 		pipConfContent +
 		"APEXPACK_PIPCONF_EOF\n" +
 		"cat >> /home/build/.pypirc << APEXPACK_PYPIRC_EOF\n" +
 		pypircContent +
 		"APEXPACK_PYPIRC_EOF"
+
+	// Set explicit env vars so pip finds the config regardless of HOME.
+	if cfg.Environment.Env == nil {
+		cfg.Environment.Env = make(map[string]string)
+	}
+	cfg.Environment.Env["PIP_CONFIG_FILE"] = pipConfPath
+	cfg.Environment.Env["PIP_INDEX_URL"] = registryURLWithAuth + "/simple"
 
 	cfg.Pipeline = append([]types.MelangePipeline{{Runs: step}}, cfg.Pipeline...)
 	return nil

@@ -114,6 +114,16 @@ build:
         - git
         - postgresql-dev
         - unixodbc-dev
+      distro:
+        alpine:
+          dependencies:
+            - busybox
+            - python3
+            - uv
+            - build-base
+            - git
+            - postgresql-dev
+            - unixodbc-dev
       command: |
         uv pip install --python python{PYTHON_VERSION} -r requirements.txt --target ${{targets.destdir}}/app/deps
         mkdir -p ${{targets.destdir}}/app/src
@@ -139,6 +149,17 @@ build:
         - git
         - postgresql-dev
         - unixodbc-dev
+      distro:
+        alpine:
+          dependencies:
+            - busybox
+            - python3
+            - py3-pip
+            - poetry
+            - build-base
+            - git
+            - postgresql-dev
+            - unixodbc-dev
       command: |
         poetry config virtualenvs.in-project true
         poetry install --only main --no-interaction --no-ansi
@@ -160,6 +181,16 @@ build:
         - /home/build/.cache/pip
 
     pipenv:
+      distro:
+        alpine:
+          dependencies:
+            - busybox
+            - python3
+            - py3-pip
+            - build-base
+            - git
+            - postgresql-dev
+            - unixodbc-dev
       command: |
         python{PYTHON_VERSION} -m ensurepip --upgrade
         python{PYTHON_VERSION} -m pip install pipenv
