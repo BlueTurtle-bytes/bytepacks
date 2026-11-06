@@ -72,10 +72,14 @@ build:
         - git
         - postgresql-dev
         - unixodbc-dev
-  # Default: pip from requirements.txt
+  # Default: pip from requirements.txt or pyproject.toml
   command: |
     python{PYTHON_VERSION} -m ensurepip --upgrade
-    python{PYTHON_VERSION} -m pip install --no-cache-dir -r requirements.txt --target ${{targets.destdir}}/app/deps
+    if [ -f requirements.txt ]; then
+      python{PYTHON_VERSION} -m pip install --no-cache-dir -r requirements.txt --target ${{targets.destdir}}/app/deps
+    else
+      python{PYTHON_VERSION} -m pip install --no-cache-dir . --target ${{targets.destdir}}/app/deps
+    fi
     mkdir -p ${{targets.destdir}}/app/src
     tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
     chmod -R a+rX ${{targets.destdir}}/app
@@ -162,7 +166,7 @@ build:
         which poetry 2>/dev/null || pip install poetry --quiet --break-system-packages 2>/dev/null || pip install poetry --quiet
         sed -i 's/^\(python\s*=\s*\)"[~^>=<0-9., *]*"/\1">=3.8"/' pyproject.toml || true
         poetry config virtualenvs.in-project true
-        poetry lock --no-update --no-interaction --no-ansi 2>/dev/null || true
+        poetry lock --no-update --no-interaction --no-ansi || poetry lock --no-interaction --no-ansi
         poetry install --only main --no-interaction --no-ansi
         mkdir -p ${{targets.destdir}}/app/deps
         cp -r .venv/lib/python*/site-packages/. ${{targets.destdir}}/app/deps/
