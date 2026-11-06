@@ -160,6 +160,7 @@ build:
             - unixodbc-dev
       command: |
         which poetry 2>/dev/null || pip install poetry --quiet --break-system-packages 2>/dev/null || pip install poetry --quiet
+        sed -i 's/^\(python\s*=\s*\)"[~^>=<0-9., *]*"/\1">=3.8"/' pyproject.toml || true
         poetry config virtualenvs.in-project true
         poetry install --only main --no-interaction --no-ansi
         mkdir -p ${{targets.destdir}}/app/deps

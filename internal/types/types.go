@@ -305,6 +305,10 @@ type FrameworkBuildOverride struct {
 
 	// Caches replaces Build.Caches when set.
 	Caches []string `yaml:"caches,omitempty"`
+
+	// Distro holds optional per-distro package name overrides for this framework's dependencies.
+	// When --distro alpine is set and Alpine.Dependencies is non-empty, it fully replaces Dependencies.
+	Distro *DistroOverrides `yaml:"distro,omitempty"`
 }
 
 // ============================================================================

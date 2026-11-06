@@ -97,8 +97,13 @@ func BuildMelangeConfig(p *types.Profile, opts types.BuildOptions) (types.Melang
 
 	override, found := helpers.ResolveOverride(p, opts.Framework, opts.PackageManager)
 	if found {
-		if len(override.Dependencies) > 0 {
-			cfg.Environment.Contents.Packages = helpers.VsubSlice(append([]string{d.baselayout}, override.Dependencies...), token, version)
+		overrideDeps := override.Dependencies
+		if opts.Distro == "alpine" && override.Distro != nil &&
+			override.Distro.Alpine != nil && len(override.Distro.Alpine.Dependencies) > 0 {
+			overrideDeps = override.Distro.Alpine.Dependencies
+		}
+		if len(overrideDeps) > 0 {
+			cfg.Environment.Contents.Packages = helpers.VsubSlice(append([]string{d.baselayout}, overrideDeps...), token, version)
 		}
 		if override.Command != "" {
 			cfg.Pipeline = []types.MelangePipeline{{Runs: helpers.Vsub(helpers.ApplyProjectTemplates(override.Command, opts.ProjectName), token, version)}}
