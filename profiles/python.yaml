@@ -130,11 +130,12 @@ build:
         - postgresql-dev
         - unixodbc-dev
       command: |
-        poetry export -f requirements.txt --output /tmp/requirements.txt --without-hashes --without dev
-        python{PYTHON_VERSION} -m ensurepip --upgrade
-        python{PYTHON_VERSION} -m pip install --no-cache-dir -r /tmp/requirements.txt --target ${{targets.destdir}}/app/deps
+        poetry config virtualenvs.in-project true
+        poetry install --only main --no-interaction --no-ansi
+        mkdir -p ${{targets.destdir}}/app/deps
+        cp -r .venv/lib/python*/site-packages/. ${{targets.destdir}}/app/deps/
         mkdir -p ${{targets.destdir}}/app/src
-        tar --exclude=./melange-out --exclude=./.apexpack-output -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
+        tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./.venv -cf - . | tar -C ${{targets.destdir}}/app/src -xf -
         chmod -R a+rX ${{targets.destdir}}/app
         SITE_PKG=$(python{PYTHON_VERSION} -c "import sysconfig; print(sysconfig.get_path('purelib'))")
         mkdir -p "${{targets.destdir}}${SITE_PKG}"
