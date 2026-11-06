@@ -64,13 +64,22 @@ func (pythonHook) PatchMelange(cfg *types.MelangeConfig, p *types.Profile, opts 
 	fmt.Printf("  → pip.conf:\n%s\n", pipConfContent)
 
 	const pipConfPath = "/home/build/.config/pip/pip.conf"
+	// Configure Poetry http-basic credentials for every [[tool.poetry.source]] entry.
+	// awk extracts the name field from each source section; poetry config stores it
+	// in ~/.config/pypoetry/auth.toml which Poetry reads before resolving packages.
+	poetryCredStep := `if [ -f pyproject.toml ] && command -v poetry >/dev/null 2>&1; then
+  awk '/^\[\[tool\.poetry\.source\]\]/{f=1} f && /^name\s*=/{gsub(/.*=\s*"|"\s*$/,""); print; f=0}' pyproject.toml 2>/dev/null \
+    | while IFS= read -r src; do poetry config "http-basic.$src" "$ARTI_USER" "$ARTI_PASSWORD" 2>/dev/null || true; done
+fi`
+
 	step := "mkdir -p /home/build/.config/pip\n" +
 		"cat >> " + pipConfPath + " << APEXPACK_PIPCONF_EOF\n" +
 		pipConfContent +
 		"APEXPACK_PIPCONF_EOF\n" +
 		"cat >> /home/build/.pypirc << APEXPACK_PYPIRC_EOF\n" +
 		pypircContent +
-		"APEXPACK_PYPIRC_EOF"
+		"APEXPACK_PYPIRC_EOF\n" +
+		poetryCredStep
 
 	// Set explicit env vars so pip finds the config regardless of HOME.
 	if cfg.Environment.Env == nil {
