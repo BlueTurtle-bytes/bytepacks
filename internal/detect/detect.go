@@ -321,10 +321,14 @@ func detectPythonVersion(srcDir string) string {
 			return m
 		}
 	}
-	// pyproject.toml: requires-python = ">=3.11"
+	// pyproject.toml: requires-python = ">=3.11" (PEP 621) or python = "~3.10" (Poetry)
 	if data, err := os.ReadFile(filepath.Join(srcDir, "pyproject.toml")); err == nil {
-		re := regexp.MustCompile(`requires-python\s*=\s*["'][><=!~]*3\.(\d+)`)
-		if m := re.FindSubmatch(data); len(m) == 2 {
+		rePep := regexp.MustCompile(`requires-python\s*=\s*["'][><=!~]*3\.(\d+)`)
+		if m := rePep.FindSubmatch(data); len(m) == 2 {
+			return "3." + string(m[1])
+		}
+		rePoetry := regexp.MustCompile(`\bpython\s*=\s*["'][~^>=<]*3\.(\d+)`)
+		if m := rePoetry.FindSubmatch(data); len(m) == 2 {
 			return "3." + string(m[1])
 		}
 	}

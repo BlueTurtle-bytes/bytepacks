@@ -62,6 +62,16 @@ build:
     - git
     - postgresql-dev  # pg_config for psycopg2/psycopg2-binary source builds on aarch64
     - unixodbc-dev    # odbc.h for pyodbc source builds on aarch64
+  distro:
+    alpine:
+      dependencies:
+        - busybox
+        - python3
+        - py3-pip
+        - build-base
+        - git
+        - postgresql-dev
+        - unixodbc-dev
   # Default: pip from requirements.txt
   command: |
     python{PYTHON_VERSION} -m ensurepip --upgrade
@@ -174,6 +184,12 @@ image:
   packages:
     - python-{PYTHON_VERSION}
     - ca-certificates-bundle=20260413-r0
+  distro:
+    alpine:
+      packages:
+        - alpine-release
+        - python3
+        - ca-certificates
   entrypoint: python3
   # Default: run main.py directly. FastAPI/ASGI projects should override via
   # apexpacks.yaml image.cmd: ["-m", "uvicorn", "main:app", "--host=0.0.0.0", "--port=8000"]
@@ -202,6 +218,11 @@ test:
   packages:
     - busybox
     - python-{PYTHON_VERSION}
+  distro:
+    alpine:
+      packages:
+        - busybox
+        - python3
   pipeline:
     - runs: |
         test -d /app/src || { echo "ERROR: /app/src not found"; exit 1; }
