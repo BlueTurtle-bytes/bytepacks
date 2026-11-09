@@ -95,6 +95,7 @@ build:
     PYTHONUNBUFFERED: "1"
     PIP_NO_CACHE_DIR: "1"
     PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    PIP_PREFER_BINARY: "1"
   caches:
     - /home/build/.cache/pip
 
@@ -193,6 +194,7 @@ build:
         PYTHONUNBUFFERED: "1"
         POETRY_CACHE_DIR: "/home/build/.cache/pypoetry"
         PIP_NO_CACHE_DIR: "1"
+        PIP_PREFER_BINARY: "1"
       caches:
         - /home/build/.cache/pypoetry
         - /home/build/.cache/pip

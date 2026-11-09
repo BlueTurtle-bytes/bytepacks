@@ -56,7 +56,7 @@ build:
   # For SPAs (React/Vue/Vite), the framework command installs deps and builds.
   dependencies:
     - busybox
-    - nodejs
+    - nodejs-{NODE_VERSION}
     - npm
     - git
   # Default: plain HTML — no build tool, just copy static files.
@@ -80,7 +80,7 @@ build:
   frameworks:
     angular:
       command: |
-        if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile
+        if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile --production=false
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
         else npm ci --prefer-offline --include=dev; fi
@@ -96,7 +96,7 @@ build:
         fi
     vite:
       command: |
-        if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile
+        if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile --production=false
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
         else npm ci --prefer-offline --include=dev; fi
@@ -113,7 +113,7 @@ build:
     react:
       # CRA output is build/, not dist/. Vite+React projects are detected as vite, not react.
       command: |
-        if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile
+        if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile --production=false
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
         else npm ci --prefer-offline --include=dev; fi
@@ -129,7 +129,7 @@ build:
         fi
     vue:
       command: |
-        if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile
+        if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile --production=false
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
         else npm ci --prefer-offline --include=dev; fi
@@ -145,7 +145,7 @@ build:
         fi
     svelte:
       command: |
-        if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile
+        if [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile --production=false
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
         else npm ci --prefer-offline --include=dev; fi
