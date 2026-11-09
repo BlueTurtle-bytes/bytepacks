@@ -7,21 +7,24 @@ import (
 )
 
 var defaultLangVersions = map[string]string{
-	"java":   "21",
-	"node":   "20",
-	"python": "3.12",
-	"dotnet": "8",
+	"java":      "21",
+	"node":      "20",
+	"webserver": "20",
+	"python":    "3.12",
+	"dotnet":    "8",
 }
 
 var supportedLangVersions = map[string][]string{
-	"dotnet": {"8", "9", "10"},
-	"node":   {"18", "20", "22"},
-	"python": {"3.11", "3.12", "3.13"},
+	"dotnet":    {"8", "9", "10"},
+	"node":      {"18", "20", "22"},
+	"webserver": {"18", "20", "22"},
+	"python":    {"3.11", "3.12", "3.13"},
 }
 
 var warnFallbackRuntimes = map[string]bool{
-	"node":   true,
-	"python": true,
+	"node":      true,
+	"webserver": true,
+	"python":    true,
 }
 
 // LangVersionToken returns the substitution token for a given runtime.
@@ -29,7 +32,7 @@ func LangVersionToken(runtime string) string {
 	switch runtime {
 	case "java":
 		return "{JAVA_VERSION}"
-	case "node":
+	case "node", "webserver":
 		return "{NODE_VERSION}"
 	case "python":
 		return "{PYTHON_VERSION}"

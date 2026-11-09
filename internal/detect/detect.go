@@ -114,7 +114,7 @@ func detectLanguageVersion(runtime, srcDir string) string {
 	switch runtime {
 	case "java":
 		return detectJavaVersion(srcDir)
-	case "node":
+	case "node", "webserver":
 		return detectNodeVersion(srcDir)
 	case "python":
 		return detectPythonVersion(srcDir)
