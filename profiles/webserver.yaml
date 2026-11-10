@@ -84,6 +84,10 @@ build:
   # Example: https://<host>/artifactory/api/npm
   npm_registry_url: ""
 
+  tls_ca_env:
+    - NODE_EXTRA_CA_CERTS  # Node.js (npm, yarn, pnpm, bun) — bundled OpenSSL, not SSL_CERT_FILE
+    - SSL_CERT_FILE        # curl and other OpenSSL-linked tools used in build scripts
+
   frameworks:
     angular:
       command: |
