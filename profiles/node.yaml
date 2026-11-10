@@ -75,7 +75,7 @@ build:
   # Default: npm. Installs prod deps only in final output.
   command: |
     if [ -f "package-lock.json" ]; then
-      npm ci --prefer-offline --include=dev
+      npm ci --prefer-offline --include=dev || npm install --prefer-offline --include=dev
     else
       npm install --prefer-offline --include=dev
     fi
@@ -110,12 +110,11 @@ build:
       dependencies:
         - busybox
         - nodejs-{NODE_VERSION}
-        - npm<11
+        - pnpm
         - python3
         - build-base
         - git
       command: |
-        npm install -g pnpm
         if [ -f "pnpm-lock.yaml" ]; then
           pnpm install --frozen-lockfile
         else
@@ -129,7 +128,7 @@ build:
       env:
         NODE_ENV: "production"
         PNPM_HOME: "/home/build/.local/share/pnpm"
-        CI: "true"
+        CI: "false"
       caches:
         - /home/build/.local/share/pnpm/store
 
@@ -150,14 +149,14 @@ build:
       env:
         NODE_ENV: "production"
         BUN_INSTALL_CACHE_DIR: "/home/build/.bun/install/cache"
-        CI: "true"
+        CI: "false"
       caches:
         - /home/build/.bun/install/cache
 
     yarn:
       command: |
         if [ -f "yarn.lock" ]; then
-          yarn install --frozen-lockfile
+          yarn install --frozen-lockfile --production=false
         else
           yarn install
         fi
@@ -169,7 +168,7 @@ build:
       env:
         NODE_ENV: "production"
         YARN_CACHE_FOLDER: "/home/build/.yarn/cache"
-        CI: "true"
+        CI: "false"
       caches:
         - /home/build/.yarn/cache
 
@@ -184,7 +183,7 @@ build:
       env:
         NODE_ENV: "production"
         YARN_CACHE_FOLDER: "/home/build/.yarn/cache"
-        CI: "true"
+        CI: "false"
       caches:
         - /home/build/.yarn/cache
 
