@@ -91,7 +91,7 @@ build:
   frameworks:
     angular:
       command: |
-        if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev
+        if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --force --prefer-offline --include=dev
         elif [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile --production=false
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
@@ -111,7 +111,7 @@ build:
         fi
     vite:
       command: |
-        if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev
+        if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --force --prefer-offline --include=dev
         elif [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile --production=false
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
@@ -130,7 +130,7 @@ build:
     react:
       # CRA output is build/, not dist/. Vite+React projects are detected as vite, not react.
       command: |
-        if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev
+        if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --force --prefer-offline --include=dev
         elif [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile --production=false
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
@@ -148,7 +148,7 @@ build:
         fi
     vue:
       command: |
-        if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev
+        if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --force --prefer-offline --include=dev
         elif [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile --production=false
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
@@ -166,7 +166,7 @@ build:
         fi
     svelte:
       command: |
-        if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev
+        if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --force --prefer-offline --include=dev
         elif [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile --production=false
         elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
