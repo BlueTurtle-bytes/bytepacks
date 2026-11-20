@@ -18,7 +18,7 @@ var supportedLangVersions = map[string][]string{
 	"dotnet":    {"8", "9", "10"},
 	"node":      {"18", "20", "22"},
 	"webserver": {"18", "20", "22"},
-	"python":    {"3.11", "3.12", "3.13"},
+	"python":    {"3.10", "3.11", "3.12", "3.13", "3.14"},
 }
 
 var warnFallbackRuntimes = map[string]bool{

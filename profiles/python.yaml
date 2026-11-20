@@ -177,11 +177,14 @@ build:
             - unixodbc-dev
       command: |
         which poetry 2>/dev/null || pip install poetry --quiet --break-system-packages 2>/dev/null || pip install poetry --quiet
-        sed -i -e 's/^\(python[[:space:]]*=[[:space:]]*\)"[^"]*"/\1">={PYTHON_VERSION},<4.0"/' \
-               -e 's/^\(requires-python[[:space:]]*=[[:space:]]*\)"[^"]*"/\1">={PYTHON_VERSION},<4.0"/' pyproject.toml || true
         poetry config virtualenvs.in-project true
-        poetry lock --no-interaction --no-ansi || true
-        poetry install --only main --no-interaction --no-ansi
+        # Prefer the committed lock file: it is reproducible and skips resolution
+        # entirely. Only re-lock if the lock is missing or stale against pyproject.toml.
+        poetry install --only main --no-interaction --no-ansi || {
+          echo "apexpack: poetry.lock missing or stale — re-locking"
+          poetry lock --no-interaction --no-ansi
+          poetry install --only main --no-interaction --no-ansi
+        }
         mkdir -p ${{targets.destdir}}/app/deps
         cp -r .venv/lib/python*/site-packages/. ${{targets.destdir}}/app/deps/
         mkdir -p ${{targets.destdir}}/app/src
