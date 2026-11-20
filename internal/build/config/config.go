@@ -61,7 +61,7 @@ func MarshalYAML(v any) (string, error) {
 // Hook patches are NOT applied here — the caller (build.Plan) applies them after.
 func BuildMelangeConfig(p *types.Profile, opts types.BuildOptions) (types.MelangeConfig, error) {
 	token := helpers.LangVersionToken(p.Runtime)
-	version := helpers.ResolveVersion(p.Runtime, opts.LanguageVersion)
+	version := helpers.ResolveVersionForDistro(p.Runtime, opts.LanguageVersion, opts.Distro)
 	if err := helpers.ValidateRuntimeVersion(p.Runtime, version); err != nil {
 		return types.MelangeConfig{}, err
 	}
@@ -187,7 +187,7 @@ func BuildMelangeConfig(p *types.Profile, opts types.BuildOptions) (types.Melang
 // Hook patches are NOT applied here — the caller applies them after.
 func BuildApkoConfig(p *types.Profile, opts types.BuildOptions) (types.ApkoConfig, *types.ApkoHealthCheck, error) {
 	token := helpers.LangVersionToken(p.Runtime)
-	version := helpers.ResolveVersion(p.Runtime, opts.LanguageVersion)
+	version := helpers.ResolveVersionForDistro(p.Runtime, opts.LanguageVersion, opts.Distro)
 
 	d := resolveDistro(opts)
 

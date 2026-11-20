@@ -63,6 +63,22 @@ func ResolveVersion(runtime, detected string) string {
 	return detected
 }
 
+// ResolveVersionForDistro returns the value substituted for a runtime's version
+// token, accounting for how each distro names its interpreters.
+//
+// Wolfi ships one package per Python minor version (python-3.12) and a matching
+// versioned binary, so the token carries the minor version. Alpine ships a single
+// unversioned python3 package whose binary is /usr/bin/python3; substituting a
+// minor version there yields "python3.12", which does not exist on the image.
+// Alpine profiles override their dependency lists with unversioned names, so the
+// token only ever reaches command text on that path.
+func ResolveVersionForDistro(runtime, detected, distro string) string {
+	if distro == "alpine" && runtime == "python" {
+		return "3"
+	}
+	return ResolveVersion(runtime, detected)
+}
+
 // ValidateRuntimeVersion returns an error if the resolved version is not available in Wolfi.
 func ValidateRuntimeVersion(runtime, version string) error {
 	if warnFallbackRuntimes[runtime] {

@@ -118,3 +118,34 @@ func TestValidateRuntimeVersion(t *testing.T) {
 		t.Error("dotnet version 7 should be invalid")
 	}
 }
+
+func TestResolveVersionForDistro(t *testing.T) {
+	cases := []struct {
+		name                      string
+		runtime, detected, distro string
+		want                      string
+	}{
+		// Alpine ships a single unversioned python3; the binary is /usr/bin/python3,
+		// so "python{PYTHON_VERSION}" must render as "python3", never "python3.12".
+		{"alpine python detected", "python", "3.11", "alpine", "3"},
+		{"alpine python undetected", "python", "", "alpine", "3"},
+		{"alpine python unsupported", "python", "3.8", "alpine", "3"},
+		// Wolfi keeps per-minor packages and versioned binaries.
+		{"wolfi python detected", "python", "3.11", "wolfi", "3.11"},
+		{"wolfi python undetected", "python", "", "wolfi", "3.12"},
+		{"empty distro python", "python", "3.13", "", "3.13"},
+		// Other runtimes are unaffected: their tokens only reach dependency lists,
+		// which alpine profiles already override with unversioned names.
+		{"alpine node", "node", "20", "alpine", "20"},
+		{"alpine java", "java", "17", "alpine", "17"},
+		{"alpine dotnet", "dotnet", "9", "alpine", "9"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := ResolveVersionForDistro(c.runtime, c.detected, c.distro); got != c.want {
+				t.Errorf("ResolveVersionForDistro(%q, %q, %q) = %q, want %q",
+					c.runtime, c.detected, c.distro, got, c.want)
+			}
+		})
+	}
+}
