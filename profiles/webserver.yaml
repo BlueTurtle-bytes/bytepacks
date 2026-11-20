@@ -211,6 +211,19 @@ test:
     - runs: |
         nginx -v 2>&1
         echo "✓ nginx is installed"
+    # melange runs this pipeline as root. Before nginx accepts any config it
+    # resolves its compile-time default user and group ("nginx") through
+    # getpwnam/getgrnam, and neither account exists in the test environment —
+    # so -t dies with getpwnam("nginx") failed after reporting the syntax ok.
+    #
+    # The runtime image never reaches that code: it runs as uid 65532, and
+    # nginx only looks the accounts up when euid is 0. These entries exist
+    # purely so -t can get past the lookup and actually load the config.
+    - runs: |
+        grep -q '^nginx:' /etc/passwd || \
+          echo 'nginx:x:65533:65533:nginx:/nonexistent:/sbin/nologin' >> /etc/passwd
+        grep -q '^nginx:' /etc/group || echo 'nginx:x:65533:' >> /etc/group
+        echo "✓ test-only nginx account present"
     # Parses the config apexpack actually ships and loads every include, so a
     # missing mime.types or a bad project nginx.conf fails the build rather than
     # the pod. -e keeps the prefix-relative default error log out of the way.
