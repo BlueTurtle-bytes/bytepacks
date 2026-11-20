@@ -177,7 +177,8 @@ build:
             - unixodbc-dev
       command: |
         which poetry 2>/dev/null || pip install poetry --quiet --break-system-packages 2>/dev/null || pip install poetry --quiet
-        sed -i 's/^\(python\s*=\s*\)"[~^>=<0-9., *]*"/\1">={PYTHON_VERSION}"/' pyproject.toml || true
+        sed -i -e 's/^\(python[[:space:]]*=[[:space:]]*\)"[^"]*"/\1">={PYTHON_VERSION},<4.0"/' \
+               -e 's/^\(requires-python[[:space:]]*=[[:space:]]*\)"[^"]*"/\1">={PYTHON_VERSION},<4.0"/' pyproject.toml || true
         poetry config virtualenvs.in-project true
         poetry lock --no-interaction --no-ansi || true
         poetry install --only main --no-interaction --no-ansi
