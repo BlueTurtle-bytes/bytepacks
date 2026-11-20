@@ -29,6 +29,12 @@ var pipConfTemplate string
 //go:embed pypi/pypirc.tmpl
 var pypircTemplate string
 
+//go:embed nginx/nginx.conf.tmpl
+var nginxConfTemplate string
+
+//go:embed nginx/default_server.conf.tmpl
+var nginxDefaultServerTemplate string
+
 // LoadMavenTemplate returns the Maven settings.xml template.
 func LoadMavenTemplate(name, profilesDir string) (string, error) {
 	if name == "" {
@@ -110,4 +116,30 @@ func LoadGradleTemplate(name, profilesDir string) (string, error) {
 		return "", fmt.Errorf("gradle init script template %q not found: place it at %s", name, custom)
 	}
 	return string(data), nil
+}
+
+// LoadNginxConfTemplate returns the main nginx.conf template — the one apexpack
+// ships as /etc/nginx/apexpack.conf and loads with -c.
+// Falls back to the embedded default if no custom template is found at
+// <profilesDir>/templates/nginx/nginx.conf.tmpl.
+func LoadNginxConfTemplate(profilesDir string) (string, error) {
+	custom := filepath.Join(profilesDir, "templates", "nginx", "nginx.conf.tmpl")
+	data, err := os.ReadFile(custom)
+	if err == nil {
+		return string(data), nil
+	}
+	return nginxConfTemplate, nil
+}
+
+// LoadNginxDefaultServerTemplate returns the conf.d server-block template used
+// only when the project ships no nginx.conf of its own.
+// Falls back to the embedded default if no custom template is found at
+// <profilesDir>/templates/nginx/default_server.conf.tmpl.
+func LoadNginxDefaultServerTemplate(profilesDir string) (string, error) {
+	custom := filepath.Join(profilesDir, "templates", "nginx", "default_server.conf.tmpl")
+	data, err := os.ReadFile(custom)
+	if err == nil {
+		return string(data), nil
+	}
+	return nginxDefaultServerTemplate, nil
 }

@@ -71,10 +71,6 @@ build:
     mkdir -p ${{targets.destdir}}/usr/share/nginx/html
     tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . \
       | tar -C ${{targets.destdir}}/usr/share/nginx/html -xf -
-    if [ -f "nginx.conf" ]; then
-      mkdir -p ${{targets.destdir}}/etc/nginx/http.d
-      cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
-    fi
   env:
     NODE_ENV: "production"
     CI: "false"
@@ -105,10 +101,6 @@ build:
         else ./node_modules/.bin/ng build; fi
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
-        if [ -f "nginx.conf" ]; then
-          mkdir -p ${{targets.destdir}}/etc/nginx/http.d
-          cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
-        fi
     vite:
       command: |
         if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --prefer-offline --include=dev
@@ -123,10 +115,6 @@ build:
         else npm run build; fi
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
-        if [ -f "nginx.conf" ]; then
-          mkdir -p ${{targets.destdir}}/etc/nginx/http.d
-          cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
-        fi
     react:
       # CRA output is build/, not dist/. Vite+React projects are detected as vite, not react.
       command: |
@@ -142,10 +130,6 @@ build:
         else npm run build; fi
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r build/. ${{targets.destdir}}/usr/share/nginx/html/
-        if [ -f "nginx.conf" ]; then
-          mkdir -p ${{targets.destdir}}/etc/nginx/http.d
-          cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
-        fi
     vue:
       command: |
         if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --prefer-offline --include=dev
@@ -160,10 +144,6 @@ build:
         else npm run build; fi
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
-        if [ -f "nginx.conf" ]; then
-          mkdir -p ${{targets.destdir}}/etc/nginx/http.d
-          cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
-        fi
     svelte:
       command: |
         if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --prefer-offline --include=dev
@@ -178,19 +158,30 @@ build:
         else npm run build; fi
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
         cp -r build/. ${{targets.destdir}}/usr/share/nginx/html/
-        if [ -f "nginx.conf" ]; then
-          mkdir -p ${{targets.destdir}}/etc/nginx/http.d
-          cp nginx.conf ${{targets.destdir}}/etc/nginx/http.d/default.conf
-        fi
 
 image:
   # nginx serves the static files.
-  # nginx-config-bundle provides a sensible default nginx.conf.
+  #
+  # "nginx" is a virtual name in Wolfi, provided by both nginx-stable and
+  # nginx-mainline — apk picks whichever has the higher provider version, so the
+  # image could swing between branches on a Wolfi refresh. Pin the branch.
+  # nginx-stable-config pulls in mime.types, which /etc/nginx/apexpack.conf
+  # includes; without it nginx refuses to start.
   packages:
-    - nginx
+    - nginx-stable
+    - nginx-stable-config
     - ca-certificates-bundle=20260413-r0
   entrypoint: nginx
+  # Wolfi's stock /etc/nginx/nginx.conf has no conf.d/http.d include, listens on
+  # 80 (unbindable as uid 65532) and roots at the prefix /var/lib/nginx/html.
+  # The webserver hook writes a complete config instead; -c loads it.
+  # -e is required because nginx opens its compile-time default error log
+  # (/var/lib/nginx/logs/error.log) before it parses any config.
   cmd:
+    - "-c"
+    - "/etc/nginx/apexpack.conf"
+    - "-e"
+    - "/dev/stderr"
     - "-g"
     - "daemon off;"
   run-as: 65532
@@ -214,8 +205,24 @@ scan:
 test:
   packages:
     - busybox
-    - nginx
+    - nginx-stable
+    - nginx-stable-config
   pipeline:
     - runs: |
         nginx -v 2>&1
         echo "✓ nginx is installed"
+    # Parses the config apexpack actually ships and loads every include, so a
+    # missing mime.types or a bad project nginx.conf fails the build rather than
+    # the pod. -e keeps the prefix-relative default error log out of the way.
+    - runs: |
+        nginx -t -c /etc/nginx/apexpack.conf -e /dev/stderr
+        echo "✓ /etc/nginx/apexpack.conf parses"
+    # Nothing writable may live outside /tmp: the image runs with a read-only
+    # root filesystem.
+    - runs: |
+        if grep -nE '^[[:space:]]*(pid|[a-z_]*_temp_path)[[:space:]]' /etc/nginx/apexpack.conf \
+             | grep -vE '[[:space:]]/tmp/'; then
+          echo "✗ writable path outside /tmp in apexpack.conf" >&2
+          exit 1
+        fi
+        echo "✓ all writable paths are under /tmp"
