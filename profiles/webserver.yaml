@@ -230,12 +230,27 @@ test:
     - runs: |
         nginx -t -c /etc/nginx/apexpack.conf -e /dev/stderr
         echo "✓ /etc/nginx/apexpack.conf parses"
-    # Nothing writable may live outside /tmp: the image runs with a read-only
-    # root filesystem.
+    # Last line of defence for a project config apexpack rewrote: the image runs
+    # read-only as uid 65532, so nothing writable may sit outside /tmp and no
+    # listener may use a privileged port. Checks the fragment too, not just the
+    # main config.
     - runs: |
-        if grep -nE '^[[:space:]]*(pid|[a-z_]*_temp_path)[[:space:]]' /etc/nginx/apexpack.conf \
-             | grep -vE '[[:space:]]/tmp/'; then
-          echo "✗ writable path outside /tmp in apexpack.conf" >&2
-          exit 1
-        fi
-        echo "✓ all writable paths are under /tmp"
+        fail=0
+        for f in /etc/nginx/apexpack.conf /etc/nginx/conf.d/*.conf; do
+          [ -f "$f" ] || continue
+          if grep -nE '^[[:space:]]*(pid|proxy_cache_path|[a-z_]*_temp_path)[[:space:]]+/' "$f" \
+               | grep -vE '[[:space:]]/tmp/'; then
+            echo "✗ $f: writable path outside /tmp" >&2
+            fail=1
+          fi
+          if grep -nE '^[[:space:]]*listen[[:space:]]+([^;]*:)?(80|443)[[:space:];]' "$f"; then
+            echo "✗ $f: privileged listen port - uid 65532 cannot bind it" >&2
+            fail=1
+          fi
+          if grep -nE '^[[:space:]]*user[[:space:]]' "$f"; then
+            echo "✗ $f: active user directive - ignored at runtime, fatal to nginx -t as root" >&2
+            fail=1
+          fi
+        done
+        [ "$fail" -eq 0 ] || exit 1
+        echo "✓ writable paths under /tmp, no privileged ports, no user directive"

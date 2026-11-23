@@ -151,8 +151,8 @@ func TestNginxConfigStepHandlesBothConfigShapes(t *testing.T) {
 	s := step(t, "", "")
 	for _, want := range []string{
 		`grep -qE '^[[:space:]]*(events|http)[[:space:]]*\{' nginx.conf`,
-		`cp nginx.conf "$DESTDIR/etc/nginx/apexpack.conf"`,
-		`cp nginx.conf "$DESTDIR/etc/nginx/conf.d/default.conf"`,
+		`harden_nginx_conf nginx.conf > "$DESTDIR/etc/nginx/apexpack.conf"`,
+		`harden_nginx_conf nginx.conf > "$DESTDIR/etc/nginx/conf.d/default.conf"`,
 		"APEXPACK_NGINX_MAIN",
 		"APEXPACK_NGINX_SERVER",
 	} {
@@ -269,4 +269,115 @@ func firstLine(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+// A Docker-era nginx.conf is the common shape across this estate: temp paths
+// under /var/cache/nginx, logs under /var/log/nginx, user nginx, listen 80.
+// Every one of those is fatal on a read-only, non-root image, so run the real
+// shell function and check what it produces.
+func TestHardenNginxConfRewritesDockerEraConfig(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+
+	const input = `user  nginx;
+userid on;
+worker_processes auto;
+error_log  /var/log/nginx/error.log warn;
+pid        /var/run/nginx.pid;
+
+http {
+    access_log  /var/log/nginx/access.log  main;
+    client_body_temp_path /var/cache/nginx/client_temp;
+    proxy_temp_path       /var/cache/nginx/proxy_temp 1 2;
+    fastcgi_temp_path     /var/cache/nginx/fastcgi_temp 1 2;
+    uwsgi_temp_path       /var/cache/nginx/uwsgi_temp;
+    scgi_temp_path        /var/cache/nginx/scgi_temp;
+    proxy_cache_path      /var/cache/nginx/cache levels=1:2 keys_zone=z:10m;
+
+    server {
+        listen 80;
+        listen [::]:80;
+        listen 443 ssl http2;
+        listen 3000 default_server;
+        access_log off;
+        error_log syslog:server=1.2.3.4 warn;
+        proxy_set_header X-User $remote_user;
+        location / { try_files $uri /index.html; }
+    }
+}
+`
+
+	dir := t.TempDir()
+	in := filepath.Join(dir, "nginx.conf")
+	if err := os.WriteFile(in, []byte(input), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	script := filepath.Join(dir, "harden.sh")
+	if err := os.WriteFile(script, []byte(hardenNginxConf+"\nharden_nginx_conf \"$1\"\n"), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	out, err := exec.Command("sh", script, in).Output()
+	if err != nil {
+		t.Fatalf("harden_nginx_conf: %v", err)
+	}
+	got := string(out)
+
+	for _, want := range []string{
+		// Writable paths all land under /tmp, trailing arguments intact.
+		"pid        /tmp/nginx.pid;",
+		"client_body_temp_path /tmp/nginx-client_body;",
+		"proxy_temp_path       /tmp/nginx-proxy 1 2;",
+		"proxy_cache_path      /tmp/nginx-cache levels=1:2 keys_zone=z:10m;",
+		"error_log  /dev/stderr warn;",
+		"access_log  /dev/stdout  main;",
+		// Privileged ports become bindable; the address form survives.
+		"listen 8080;",
+		"listen [::]:8080;",
+		"listen 8443 ssl http2;",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in hardened config, got:\n%s", want, got)
+		}
+	}
+
+	for _, unwanted := range []string{"/var/cache/nginx", "/var/log/nginx", "/var/run/nginx.pid"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("%s survived hardening; it is unwritable on a read-only rootfs", unwanted)
+		}
+	}
+
+	// "user" is ignored at runtime anyway, but as root nginx -t aborts on it
+	// when the account is missing, so it must be commented out rather than left.
+	if !strings.Contains(got, "# apexpack: user  nginx;") {
+		t.Error("the user directive must be commented out")
+	}
+	if directiveLine(got, "user") != "" {
+		t.Errorf("an active user directive remains: %q", directiveLine(got, "user"))
+	}
+
+	// Things that must survive untouched.
+	for _, keep := range []string{
+		"userid on;",                            // not the user directive
+		"listen 3000 default_server;",           // already unprivileged
+		"access_log off;",                       // not a path
+		"error_log syslog:server=1.2.3.4 warn;", // not a path
+		"proxy_set_header X-User $remote_user;",
+		"try_files $uri /index.html;",
+	} {
+		if !strings.Contains(got, keep) {
+			t.Errorf("hardening altered %q, which it must leave alone:\n%s", keep, got)
+		}
+	}
+}
+
+// Both branches that install a project config must harden it — a server-level
+// fragment can carry client_body_temp_path and access_log just as a full
+// config can.
+func TestNginxConfigStepHardensBothBranches(t *testing.T) {
+	s := step(t, "", "")
+	if n := strings.Count(s, "harden_nginx_conf nginx.conf"); n != 2 {
+		t.Errorf("expected both the full-config and fragment branches to harden, found %d call(s)", n)
+	}
 }
