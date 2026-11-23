@@ -1,5 +1,6 @@
 # Webserver / Static site profile
-# Detects: index.html (plain static), or SPA build markers (vite.config.*, angular.json)
+# Detects: a project nginx.conf, index.html or public/index.html (plain static and
+#          bundler SPAs), or SPA build markers (vite.config.*, angular.json)
 # Supports: Plain HTML, React/Vue/Svelte SPA (Vite, CRA), Angular, Hugo, Jekyll
 # Runtime image: Wolfi + nginx (serves static files)
 
@@ -9,7 +10,16 @@ description: Static site or SPA served by nginx (React, Vue, Angular, plain HTML
 
 detect:
   files:
+    # A project that ships its own nginx.conf has already declared how it wants to
+    # be served. Under Paketo that file meant the nginx buildpack, which only ever
+    # served static files, so in a migrated repo it is the most reliable signal
+    # that this is a web server and not an app server.
+    - nginx.conf
     - index.html
+    # A bundler SPA (webpack, CRA) keeps its document root in public/ and has no
+    # index.html, vite.config or angular.json at the top level. Without this the
+    # whole shape went unrecognised and fell through to the node profile.
+    - public/index.html
     - vite.config.ts
     - vite.config.js
     - angular.json
@@ -17,9 +27,35 @@ detect:
     - hugo.yaml
     - _config.yml
   content:
+    # nginx.conf alone is not enough to outrank a real runtime: a Go, .NET or
+    # Python service often carries one as deployment infrastructure. What separates
+    # a web server from an app server is whether the repo holds a document root to
+    # serve, and whether the config serves files or hands requests to something
+    # else. Those two questions are scored below, and together they have to clear
+    # the 0.85 every language profile starts from.
     - file: nginx.conf
       contains: "server"
-      boost-confidence: 0.20
+      boost-confidence: 0.12
+    # try_files is the SPA fallback idiom, but it is corroboration only: deliberately
+    # small, so that nginx.conf and a static-looking config can never by themselves
+    # outrank a language profile. Clearing 0.85 takes a document root in the repo.
+    - file: nginx.conf
+      contains: "try_files"
+      boost-confidence: 0.02
+    # proxy_pass means requests leave nginx for an application. In a one-process
+    # image that application is not in this container, so the repo is a service
+    # fronted by nginx rather than a site nginx serves.
+    - file: nginx.conf
+      contains: "proxy_pass"
+      boost-confidence: -0.18
+    # A document root checked into the repo. "contains: ''" matches any readable
+    # file, so these score mere presence, the way node.yaml scores server.js.
+    - file: index.html
+      contains: ""
+      boost-confidence: 0.10
+    - file: public/index.html
+      contains: ""
+      boost-confidence: 0.10
     - file: package.json
       contains: "\"@angular/core\""
       boost-confidence: 0.05
@@ -66,11 +102,44 @@ build:
         - nodejs
         - npm
         - git
-  # Default: plain HTML — no build tool, just copy static files.
+  # Default: no framework was identified. That is either a genuinely static site
+  # to copy as it stands, or a bundler this profile has no entry for — and the two
+  # must not be treated alike.
   command: |
-    mkdir -p ${{targets.destdir}}/usr/share/nginx/html
-    tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . \
-      | tar -C ${{targets.destdir}}/usr/share/nginx/html -xf -
+    # A project with a build script is a source tree, not a document root. Copying
+    # it verbatim would serve src/, the bundler configs and package.json in place of
+    # the bundle, from an image that built perfectly cleanly. Only a project with no
+    # build script is a static site to install as it stands.
+    if [ -f package.json ] && node -e "process.exitCode=require('./package.json').scripts?.build?0:1" 2>/dev/null; then
+      echo "  -> webserver: no framework matched, but package.json declares a build script - running it"
+      if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --prefer-offline --include=dev
+      elif [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile --production=false
+      elif [ -f "pnpm-lock.yaml" ]; then npm install -g pnpm && pnpm install --frozen-lockfile
+      elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun install --frozen-lockfile
+      else npm install --prefer-offline --include=dev; fi
+      if [ -f "package-lock.json" ]; then npm run build
+      elif [ -f "yarn.lock" ]; then yarn build
+      elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
+      elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
+      else npm run build; fi
+      _out=""
+      for _c in dist build out dist/*/browser; do
+        if [ -f "$_c/index.html" ]; then _out="$_c"; break; fi
+      done
+      if [ -z "$_out" ]; then
+        echo "✗ webserver: the build produced no index.html under dist/, build/ or out/" >&2
+        echo "  Point the bundler's output directory at one of those." >&2
+        exit 1
+      fi
+      echo "  -> webserver: installing $_out as the document root"
+      mkdir -p ${{targets.destdir}}/usr/share/nginx/html
+      cp -r "$_out"/. ${{targets.destdir}}/usr/share/nginx/html/
+    else
+      echo "  -> webserver: no build script - installing the source tree as static files"
+      mkdir -p ${{targets.destdir}}/usr/share/nginx/html
+      tar --exclude=./melange-out --exclude=./.apexpack-output --exclude=./node_modules -cf - . \
+        | tar -C ${{targets.destdir}}/usr/share/nginx/html -xf -
+    fi
   env:
     NODE_ENV: "production"
     CI: "false"
@@ -99,8 +168,23 @@ build:
           elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
           else npm run build; fi
         else ./node_modules/.bin/ng build; fi
+        # Where the bundle lands depends on the tool and its version: CRA writes build/,
+        # Vite and Vue write dist/, Angular 17+ writes dist/<project>/browser. Copying a
+        # hardcoded guess either fails outright or ships a tree whose index.html sits a
+        # level down, which nginx then answers with 404 from an image that built
+        # perfectly cleanly. Take the first candidate that actually holds an index.html.
+        _out=""
+        for _c in dist build out dist/*/browser; do
+          if [ -f "$_c/index.html" ]; then _out="$_c"; break; fi
+        done
+        if [ -z "$_out" ]; then
+          echo "✗ webserver: the build produced no index.html under dist/, build/ or out/" >&2
+          echo "  Point the bundler's output directory at one of those." >&2
+          exit 1
+        fi
+        echo "  -> webserver: installing $_out as the document root"
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
-        cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
+        cp -r "$_out"/. ${{targets.destdir}}/usr/share/nginx/html/
     vite:
       command: |
         if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --prefer-offline --include=dev
@@ -113,10 +197,27 @@ build:
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
         else npm run build; fi
+        # Where the bundle lands depends on the tool and its version: CRA writes build/,
+        # Vite and Vue write dist/, Angular 17+ writes dist/<project>/browser. Copying a
+        # hardcoded guess either fails outright or ships a tree whose index.html sits a
+        # level down, which nginx then answers with 404 from an image that built
+        # perfectly cleanly. Take the first candidate that actually holds an index.html.
+        _out=""
+        for _c in dist build out dist/*/browser; do
+          if [ -f "$_c/index.html" ]; then _out="$_c"; break; fi
+        done
+        if [ -z "$_out" ]; then
+          echo "✗ webserver: the build produced no index.html under dist/, build/ or out/" >&2
+          echo "  Point the bundler's output directory at one of those." >&2
+          exit 1
+        fi
+        echo "  -> webserver: installing $_out as the document root"
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
-        cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
+        cp -r "$_out"/. ${{targets.destdir}}/usr/share/nginx/html/
     react:
-      # CRA output is build/, not dist/. Vite+React projects are detected as vite, not react.
+      # Covers CRA and webpack alike: both run "npm run build", and the output
+      # directory is resolved below rather than assumed. Vite+React projects are
+      # detected as vite, not react.
       command: |
         if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --prefer-offline --include=dev
         elif [ -f "yarn.lock" ]; then npm install -g yarn && yarn install --frozen-lockfile --production=false
@@ -128,8 +229,23 @@ build:
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
         else npm run build; fi
+        # Where the bundle lands depends on the tool and its version: CRA writes build/,
+        # Vite and Vue write dist/, Angular 17+ writes dist/<project>/browser. Copying a
+        # hardcoded guess either fails outright or ships a tree whose index.html sits a
+        # level down, which nginx then answers with 404 from an image that built
+        # perfectly cleanly. Take the first candidate that actually holds an index.html.
+        _out=""
+        for _c in dist build out dist/*/browser; do
+          if [ -f "$_c/index.html" ]; then _out="$_c"; break; fi
+        done
+        if [ -z "$_out" ]; then
+          echo "✗ webserver: the build produced no index.html under dist/, build/ or out/" >&2
+          echo "  Point the bundler's output directory at one of those." >&2
+          exit 1
+        fi
+        echo "  -> webserver: installing $_out as the document root"
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
-        cp -r build/. ${{targets.destdir}}/usr/share/nginx/html/
+        cp -r "$_out"/. ${{targets.destdir}}/usr/share/nginx/html/
     vue:
       command: |
         if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --prefer-offline --include=dev
@@ -142,8 +258,23 @@ build:
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
         else npm run build; fi
+        # Where the bundle lands depends on the tool and its version: CRA writes build/,
+        # Vite and Vue write dist/, Angular 17+ writes dist/<project>/browser. Copying a
+        # hardcoded guess either fails outright or ships a tree whose index.html sits a
+        # level down, which nginx then answers with 404 from an image that built
+        # perfectly cleanly. Take the first candidate that actually holds an index.html.
+        _out=""
+        for _c in dist build out dist/*/browser; do
+          if [ -f "$_c/index.html" ]; then _out="$_c"; break; fi
+        done
+        if [ -z "$_out" ]; then
+          echo "✗ webserver: the build produced no index.html under dist/, build/ or out/" >&2
+          echo "  Point the bundler's output directory at one of those." >&2
+          exit 1
+        fi
+        echo "  -> webserver: installing $_out as the document root"
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
-        cp -r dist/. ${{targets.destdir}}/usr/share/nginx/html/
+        cp -r "$_out"/. ${{targets.destdir}}/usr/share/nginx/html/
     svelte:
       command: |
         if [ -f "package-lock.json" ]; then npm ci --prefer-offline --include=dev || npm install --prefer-offline --include=dev
@@ -156,8 +287,23 @@ build:
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
         else npm run build; fi
+        # Where the bundle lands depends on the tool and its version: CRA writes build/,
+        # Vite and Vue write dist/, Angular 17+ writes dist/<project>/browser. Copying a
+        # hardcoded guess either fails outright or ships a tree whose index.html sits a
+        # level down, which nginx then answers with 404 from an image that built
+        # perfectly cleanly. Take the first candidate that actually holds an index.html.
+        _out=""
+        for _c in dist build out dist/*/browser; do
+          if [ -f "$_c/index.html" ]; then _out="$_c"; break; fi
+        done
+        if [ -z "$_out" ]; then
+          echo "✗ webserver: the build produced no index.html under dist/, build/ or out/" >&2
+          echo "  Point the bundler's output directory at one of those." >&2
+          exit 1
+        fi
+        echo "  -> webserver: installing $_out as the document root"
         mkdir -p ${{targets.destdir}}/usr/share/nginx/html
-        cp -r build/. ${{targets.destdir}}/usr/share/nginx/html/
+        cp -r "$_out"/. ${{targets.destdir}}/usr/share/nginx/html/
 
 image:
   # nginx serves the static files.
