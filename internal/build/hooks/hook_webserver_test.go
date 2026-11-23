@@ -381,3 +381,75 @@ func TestNginxConfigStepHardensBothBranches(t *testing.T) {
 		t.Errorf("expected both the full-config and fragment branches to harden, found %d call(s)", n)
 	}
 }
+
+// TestHardenNginxConfPreservesListenTerminators guards the regression that broke
+// mymi-gate: a listen rewrite that dropped the directive's ";" and produced
+//
+//	nginx: [emerg] directive "listen" is not terminated by ";"
+//
+// The invariant is narrow and absolute — hardening may change a port, never a
+// line's terminator. Shapes the rewriter does not fully understand (a
+// continuation line, an already-unprivileged port, a unix socket) must come out
+// byte-for-byte unchanged rather than half-rewritten.
+func TestHardenNginxConfPreservesListenTerminators(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+
+	// Each case is one input line and the line it must become.
+	cases := []struct{ in, want string }{
+		{"    listen 80;", "    listen 8080;"},
+		{"    listen       80;", "    listen 8080;"},
+		{"    listen 80 default_server;", "    listen 8080 default_server;"},
+		{"    listen 80;  # serve http", "    listen 8080;  # serve http"},
+		{"    listen [::]:80;", "    listen [::]:8080;"},
+		{"    listen [::]:80 ipv6only=on;", "    listen [::]:8080 ipv6only=on;"},
+		{"    listen *:80;", "    listen *:8080;"},
+		{"    listen 0.0.0.0:80;", "    listen 0.0.0.0:8080;"},
+		{"    listen 443 ssl http2;", "    listen 8443 ssl http2;"},
+		{"    listen [::]:443 ssl;", "    listen [::]:8443 ssl;"},
+		// Already fine, or not understood: must be returned verbatim.
+		{"    listen 8080;", "    listen 8080;"},
+		{"    listen 3000 default_server;", "    listen 3000 default_server;"},
+		{"    listen 80", "    listen 80"},
+		{"    listen unix:/var/run/nginx.sock;", "    listen unix:/var/run/nginx.sock;"},
+	}
+
+	var in strings.Builder
+	for _, c := range cases {
+		in.WriteString(c.in + "\n")
+	}
+
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "nginx.conf")
+	if err := os.WriteFile(conf, []byte(in.String()), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	script := filepath.Join(dir, "harden.sh")
+	if err := os.WriteFile(script, []byte(hardenNginxConf+"\nharden_nginx_conf \"$1\"\n"), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	out, err := exec.Command("sh", script, conf).Output()
+	if err != nil {
+		t.Fatalf("harden_nginx_conf: %v", err)
+	}
+	got := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+	if len(got) != len(cases) {
+		t.Fatalf("hardening changed the line count: got %d lines, want %d:\n%s",
+			len(got), len(cases), out)
+	}
+
+	for i, c := range cases {
+		if got[i] != c.want {
+			t.Errorf("line %d:\n  in   %q\n  got  %q\n  want %q", i+1, c.in, got[i], c.want)
+		}
+		// The terminator invariant, checked independently of the expected text:
+		// whatever else changed, a line that ended the directive still does.
+		if strings.Contains(c.in, ";") && !strings.Contains(got[i], ";") {
+			t.Errorf("line %d lost its semicolon — nginx would report "+
+				"'directive \"listen\" is not terminated by \";\"':\n  in  %q\n  got %q",
+				i+1, c.in, got[i])
+		}
+	}
+}

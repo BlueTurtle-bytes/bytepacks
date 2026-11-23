@@ -29,8 +29,21 @@ const nginxConfPath = "/etc/nginx/apexpack.conf"
 //
 // Only an absolute path is rewritten, so "access_log off;" and syslog: targets
 // are left alone. Arguments after the path (levels=, 1 2, keys_zone=) are
-// preserved — only the path token itself changes, and an already-unprivileged
-// listen port is not touched.
+// preserved — only the path token itself changes.
+//
+// The listen rules are deliberately strict: each requires the directive to
+// terminate with ";" on the same line, so any shape the rewriter does not fully
+// understand (a continuation, a semicolon-less line, an already-unprivileged
+// port) is left exactly as it was rather than half-rewritten into a config
+// nginx cannot parse. The profile's own check step still fails the build if an
+// untouched privileged port survives, so a skipped rewrite is loud, not silent.
+//
+// No backreference in a replacement is ever followed by a digit. "\18080" reads
+// as \1 followed by 8080 only if the sed in question stops a backreference at
+// one digit; the build environment's busybox sed is not the sed this is
+// developed against, and a reference swallowing the port would drop the ";" and
+// produce exactly 'directive "listen" is not terminated by ";"'. Capturing so
+// that every \N abuts a letter, ":" or ";" removes the question entirely.
 const hardenNginxConf = `
 harden_nginx_conf() {
   sed -E \
@@ -40,10 +53,10 @@ harden_nginx_conf() {
     -e 's#^([[:space:]]*error_log[[:space:]]+)/[^[:space:];]*#\1/dev/stderr#' \
     -e 's#^([[:space:]]*access_log[[:space:]]+)/[^[:space:];]*#\1/dev/stdout#' \
     -e 's|^([[:space:]]*)(user[[:space:]]+[^;]*;)|\1# apexpack: \2 ignored - image runs as uid 65532|' \
-    -e 's#^([[:space:]]*listen[[:space:]]+)80([[:space:];])#\18080\2#' \
-    -e 's#^([[:space:]]*listen[[:space:]]+[^;[:space:]]*:)80([[:space:];])#\18080\2#' \
-    -e 's#^([[:space:]]*listen[[:space:]]+)443([[:space:];])#\18443\2#' \
-    -e 's#^([[:space:]]*listen[[:space:]]+[^;[:space:]]*:)443([[:space:];])#\18443\2#' \
+    -e 's#^([[:space:]]*)listen[[:space:]]+80([[:space:]]+[^;]*)?;(.*)$#\1listen 8080\2;\3#' \
+    -e 's#^([[:space:]]*)listen[[:space:]]+([^;[:space:]]*):80([[:space:]]+[^;]*)?;(.*)$#\1listen \2:8080\3;\4#' \
+    -e 's#^([[:space:]]*)listen[[:space:]]+443([[:space:]]+[^;]*)?;(.*)$#\1listen 8443\2;\3#' \
+    -e 's#^([[:space:]]*)listen[[:space:]]+([^;[:space:]]*):443([[:space:]]+[^;]*)?;(.*)$#\1listen \2:8443\3;\4#' \
     "$1"
 }
 

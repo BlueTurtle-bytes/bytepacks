@@ -227,8 +227,22 @@ test:
     # Parses the config apexpack actually ships and loads every include, so a
     # missing mime.types or a bad project nginx.conf fails the build rather than
     # the pod. -e keeps the prefix-relative default error log out of the way.
+    #
+    # On failure the config is dumped with line numbers. nginx reports a parse
+    # error as "<file>:<line>" and nothing else, and the config is assembled at
+    # build time from the project's own nginx.conf — so without the dump the log
+    # names a line nobody can look up.
     - runs: |
-        nginx -t -c /etc/nginx/apexpack.conf -e /dev/stderr
+        if ! nginx -t -c /etc/nginx/apexpack.conf -e /dev/stderr; then
+          echo "--- nginx config as shipped (numbered) ---" >&2
+          for f in /etc/nginx/apexpack.conf /etc/nginx/conf.d/*.conf; do
+            [ -f "$f" ] || continue
+            echo "=== $f ===" >&2
+            cat -n "$f" >&2
+          done
+          echo "--- end nginx config ---" >&2
+          exit 1
+        fi
         echo "✓ /etc/nginx/apexpack.conf parses"
     # Last line of defence for a project config apexpack rewrote: the image runs
     # read-only as uid 65532, so nothing writable may sit outside /tmp and no
