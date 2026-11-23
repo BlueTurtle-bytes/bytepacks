@@ -22,10 +22,18 @@ const nginxConfPath = "/etc/nginx/apexpack.conf"
 // every temp path in ngx_create_paths at startup — so it dies before it serves
 // anything, with mkdir() ... failed rather than anything about permissions.
 //
-// It also neutralises the two other things a Docker-era config gets wrong on a
-// non-root image: "user" (always ignored at runtime, since the master process
-// is uid 65532, but fatal to nginx -t as root when the account is absent) and a
-// privileged listen port, which uid 65532 cannot bind at all.
+// It also neutralises the other things a config inherited from Docker or Paketo
+// gets wrong here:
+//
+//   - "user": always ignored at runtime, since the master process is uid 65532,
+//     but fatal to nginx -t as root when the account is absent.
+//   - a privileged listen port, which uid 65532 cannot bind at all.
+//   - "daemon": the image command already passes -g "daemon off;", and nginx
+//     rejects a second value for a directive the -g block has set, so a config
+//     carrying its own "daemon off;" aborts with "directive is duplicate".
+//   - "{{port}}": the Paketo nginx buildpack rendered its templates at container
+//     start. apexpack bakes a static config, so the placeholder would survive
+//     into the image; see assert_nginx_rendered for the rest of that story.
 //
 // Only an absolute path is rewritten, so "access_log off;" and syslog: targets
 // are left alone. Arguments after the path (levels=, 1 2, keys_zone=) are
@@ -53,6 +61,8 @@ harden_nginx_conf() {
     -e 's#^([[:space:]]*error_log[[:space:]]+)/[^[:space:];]*#\1/dev/stderr#' \
     -e 's#^([[:space:]]*access_log[[:space:]]+)/[^[:space:];]*#\1/dev/stdout#' \
     -e 's|^([[:space:]]*)(user[[:space:]]+[^;]*;)|\1# apexpack: \2 ignored - image runs as uid 65532|' \
+    -e 's|^([[:space:]]*)(daemon[[:space:]]+[^;]*;)|\1# apexpack: \2 supplied by the image command as -g|' \
+    -e 's#[{][{][[:space:]]*port[[:space:]]*[}][}]#8080#g' \
     -e 's#^([[:space:]]*)listen[[:space:]]+80([[:space:]]+[^;]*)?;(.*)$#\1listen 8080\2;\3#' \
     -e 's#^([[:space:]]*)listen[[:space:]]+([^;[:space:]]*):80([[:space:]]+[^;]*)?;(.*)$#\1listen \2:8080\3;\4#' \
     -e 's#^([[:space:]]*)listen[[:space:]]+443([[:space:]]+[^;]*)?;(.*)$#\1listen 8443\2;\3#' \
@@ -65,6 +75,56 @@ report_nginx_paths() {
   grep -nE '^[[:space:]]*(pid|error_log|access_log|proxy_cache_path|[a-z_]*_temp_path)[[:space:]]' "$1" \
     | sed 's/^/       /' \
     || echo "       (none declared - apexpack defaults apply)"
+}
+
+# Paketo served the site straight out of its own build directory (/workspace,
+# /source/dist). apexpack installs it at /usr/share/nginx/html, so a root carried
+# over from that era points at nothing in the image and every request 404s — from
+# a config that parses perfectly, so no syntax check catches it.
+#
+# Only a root that is genuinely absent from the package is moved, so a project
+# deliberately serving some other directory it ships keeps it.
+retarget_nginx_root() {
+  _conf="$1"
+  if [ ! -d "$DESTDIR/usr/share/nginx/html" ]; then
+    return 0
+  fi
+  sed -nE 's#^[[:space:]]*root[[:space:]]+([^;[:space:]]+)[[:space:]]*;.*#\1#p' "$_conf" \
+    | sort -u \
+    | while read -r _root; do
+        if [ -z "$_root" ]; then continue; fi
+        if [ -d "$DESTDIR$_root" ]; then continue; fi
+        echo "  -> nginx: root $_root is absent from the image - serving /usr/share/nginx/html instead"
+        _esc=$(printf '%s' "$_root" | sed 's#\.#\\.#g')
+        sed -E "s#^([[:space:]]*root[[:space:]]+)$_esc[[:space:]]*;#\1/usr/share/nginx/html;#" \
+          "$_conf" > "$_conf.apexpack"
+        mv "$_conf.apexpack" "$_conf"
+      done
+}
+
+# The Paketo nginx buildpack rendered {{...}} placeholders when the container
+# started. apexpack bakes a static config at build time, so anything still
+# unrendered reaches nginx verbatim — and nginx reads "{" as a block opener, so
+# "listen {{port}};" fails with
+#
+#	directive "listen" is not terminated by ";"
+#
+# naming a line that looks perfectly well formed. Failing here, with the offending
+# lines quoted, beats shipping an image that cannot start.
+assert_nginx_rendered() {
+  if grep -nE '[{][{]' "$1"; then
+    echo "✗ nginx: the lines above still hold template placeholders in $1" >&2
+    echo "  These are Paketo nginx buildpack templates, rendered at container start." >&2
+    echo "  apexpack builds a static config, so it renders {{port}} and nothing else:" >&2
+    echo "  {{env \"VAR\"}} and {{module \"name\"}} have no build-time value." >&2
+    echo "  Replace them with literal values in the project's nginx.conf." >&2
+    return 1
+  fi
+}
+
+finalise_nginx_conf() {
+  retarget_nginx_root "$1"
+  assert_nginx_rendered "$1"
 }
 `
 
@@ -122,6 +182,7 @@ func nginxConfigStep(projectSubpath, profilesDir string) (string, error) {
 if [ -f nginx.conf ] && grep -qE '^[[:space:]]*(events|http)[[:space:]]*\{' nginx.conf; then
   echo "  -> nginx: project nginx.conf is a full config - installing as ` + nginxConfPath + `"
   harden_nginx_conf nginx.conf > "$DESTDIR` + nginxConfPath + `"
+  finalise_nginx_conf "$DESTDIR` + nginxConfPath + `"
   report_nginx_paths "$DESTDIR` + nginxConfPath + `"
 else
   cat > "$DESTDIR` + nginxConfPath + `" <<'APEXPACK_NGINX_MAIN'
@@ -129,6 +190,7 @@ else
   if [ -f nginx.conf ]; then
     echo "  -> nginx: project nginx.conf is a server fragment - installing as /etc/nginx/conf.d/default.conf"
     harden_nginx_conf nginx.conf > "$DESTDIR/etc/nginx/conf.d/default.conf"
+    finalise_nginx_conf "$DESTDIR/etc/nginx/conf.d/default.conf"
     report_nginx_paths "$DESTDIR/etc/nginx/conf.d/default.conf"
   else
     echo "  -> nginx: no project nginx.conf - using the apexpack default server block"

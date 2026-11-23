@@ -1,9 +1,11 @@
 package hooks
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -109,8 +111,11 @@ func TestNginxStepLeavesNoUnsubstitutedTokens(t *testing.T) {
 	if !strings.Contains(s, "${{targets.destdir}}") {
 		t.Error("melange's ${{targets.destdir}} must be left for melange to expand")
 	}
-	if i := strings.Index(strings.ReplaceAll(s, "${{targets.destdir}}", ""), "{{"); i >= 0 {
-		t.Errorf("unsubstituted template token remains: %q", s[i:min(i+40, len(s))])
+	// apexpack's own tokens are {{UPPER_SNAKE}}. The step also quotes Paketo's
+	// lowercase placeholders ({{port}}, {{env ...}}) in its diagnostics, which
+	// are literal text and must survive, so match only apexpack's shape.
+	if m := regexp.MustCompile(`\{\{[A-Z][A-Z0-9_]*\}\}`).FindString(s); m != "" {
+		t.Errorf("unsubstituted template token remains: %q", m)
 	}
 }
 
@@ -451,5 +456,140 @@ func TestHardenNginxConfPreservesListenTerminators(t *testing.T) {
 				"'directive \"listen\" is not terminated by \";\"':\n  in  %q\n  got %q",
 				i+1, c.in, got[i])
 		}
+	}
+}
+
+// runHardenScript executes the injected shell helpers against conf, with DESTDIR
+// pointing at destdir, and returns stdout+stderr and the exit status.
+func runHardenScript(t *testing.T, body, conf, destdir string) (string, int) {
+	t.Helper()
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	script := filepath.Join(t.TempDir(), "run.sh")
+	src := "DESTDIR=\"" + destdir + "\"\n" + hardenNginxConf + "\n" + body
+	if err := os.WriteFile(script, []byte(src), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	out, err := exec.Command("sh", script, conf).CombinedOutput()
+	code := 0
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	return string(out), code
+}
+
+// TestHardenNginxConfRendersPaketoConfig covers the mymi-gate failure. Its config
+// came from the Paketo nginx buildpack, which rendered {{...}} when the container
+// started and served the app out of its own build directory. apexpack bakes a
+// static config instead, so all three of those assumptions have to be unwound at
+// build time or the image cannot start.
+func TestHardenNginxConfRendersPaketoConfig(t *testing.T) {
+	const input = `worker_processes auto;
+daemon off;
+
+http {
+    server {
+        listen {{port}};
+        server_name _;
+        root /source/dist;
+        index index.html;
+    }
+}
+`
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "nginx.conf")
+	if err := os.WriteFile(conf, []byte(input), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	destdir := filepath.Join(dir, "destdir")
+	if err := os.MkdirAll(filepath.Join(destdir, "usr/share/nginx/html"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	out := filepath.Join(dir, "out.conf")
+
+	log, code := runHardenScript(t,
+		"harden_nginx_conf \"$1\" > "+out+"\nfinalise_nginx_conf "+out+"\n", conf, destdir)
+	if code != 0 {
+		t.Fatalf("finalise failed (%d):\n%s", code, log)
+	}
+	b, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	got := string(b)
+
+	// {{port}} is nginx-fatal, not merely wrong: nginx reads "{" as a block
+	// opener and reports 'directive "listen" is not terminated by ";"'.
+	if !strings.Contains(got, "listen 8080;") {
+		t.Errorf("{{port}} was not rendered:\n%s", got)
+	}
+	// The image command already passes -g "daemon off;", and nginx rejects a
+	// second value for a directive the -g block set.
+	if directiveLine(got, "daemon") != "" {
+		t.Errorf("an active daemon directive remains: %q", directiveLine(got, "daemon"))
+	}
+	// Paketo's build directory does not exist in the image; left alone, every
+	// request 404s from a config that parses cleanly.
+	if !strings.Contains(got, "root /usr/share/nginx/html;") {
+		t.Errorf("stale root was not retargeted:\n%s", got)
+	}
+	if strings.Contains(got, "/source/dist") {
+		t.Errorf("/source/dist survived; it is absent from the image:\n%s", got)
+	}
+	if strings.Contains(got, "{{") {
+		t.Errorf("template placeholders survived:\n%s", got)
+	}
+}
+
+// TestFinaliseNginxConfKeepsRootThatExists guards the retarget from overreach: a
+// project serving a directory it genuinely ships must keep it.
+func TestFinaliseNginxConfKeepsRootThatExists(t *testing.T) {
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "nginx.conf")
+	if err := os.WriteFile(conf, []byte("server {\n    root /opt/site;\n}\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	destdir := filepath.Join(dir, "destdir")
+	for _, d := range []string{"usr/share/nginx/html", "opt/site"} {
+		if err := os.MkdirAll(filepath.Join(destdir, d), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+
+	log, code := runHardenScript(t, "finalise_nginx_conf \"$1\"\n", conf, destdir)
+	if code != 0 {
+		t.Fatalf("finalise failed (%d):\n%s", code, log)
+	}
+	b, _ := os.ReadFile(conf)
+	if !strings.Contains(string(b), "root /opt/site;") {
+		t.Errorf("a root the package ships was retargeted anyway:\n%s", b)
+	}
+}
+
+// TestFinaliseNginxConfRejectsUnrenderableTemplates: {{env}} and {{module}} had
+// launch-time values under Paketo and have none at build time. Failing the build
+// with the line quoted beats shipping an image that cannot start.
+func TestFinaliseNginxConfRejectsUnrenderableTemplates(t *testing.T) {
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "nginx.conf")
+	body := "server {\n    add_header X-Api \"{{env \"API_URL\"}}\" always;\n}\n"
+	if err := os.WriteFile(conf, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	destdir := filepath.Join(dir, "destdir")
+	if err := os.MkdirAll(filepath.Join(destdir, "usr/share/nginx/html"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	log, code := runHardenScript(t, "finalise_nginx_conf \"$1\"\n", conf, destdir)
+	if code == 0 {
+		t.Fatalf("an unrenderable placeholder must fail the build, got exit 0:\n%s", log)
+	}
+	if !strings.Contains(log, "API_URL") {
+		t.Errorf("the failure must quote the offending line, got:\n%s", log)
 	}
 }
