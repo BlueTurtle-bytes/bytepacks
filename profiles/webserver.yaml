@@ -22,6 +22,7 @@ detect:
     - public/index.html
     - vite.config.ts
     - vite.config.js
+    - vite.config.mjs
     - angular.json
     - hugo.toml
     - hugo.yaml
@@ -123,12 +124,15 @@ build:
       elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
       else npm run build; fi
       _out=""
-      for _c in dist build out dist/*/browser; do
+      for _c in dist build out dist/* build/* out/* dist/*/* build/*/*; do
         if [ -f "$_c/index.html" ]; then _out="$_c"; break; fi
       done
       if [ -z "$_out" ]; then
-        echo "✗ webserver: the build produced no index.html under dist/, build/ or out/" >&2
-        echo "  Point the bundler's output directory at one of those." >&2
+        echo "✗ webserver: the build ran but left no index.html where it could be found" >&2
+        echo "  Looked in: dist, build, out, and up to two levels beneath dist and build." >&2
+        echo "  What the build actually produced:" >&2
+        find dist build out -maxdepth 3 2>/dev/null | head -40 | sed "s|^|    |" >&2
+        echo "  Set the bundler's outDir to one of those paths." >&2
         exit 1
       fi
       echo "  -> webserver: installing $_out as the document root"
@@ -168,18 +172,22 @@ build:
           elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
           else npm run build; fi
         else ./node_modules/.bin/ng build; fi
-        # Where the bundle lands depends on the tool and its version: CRA writes build/,
-        # Vite and Vue write dist/, Angular 17+ writes dist/<project>/browser. Copying a
-        # hardcoded guess either fails outright or ships a tree whose index.html sits a
+        # Where the bundle lands depends on the tool, its version and the project's own
+        # config: CRA writes build/, Vite and Vue write dist/, Angular 17+ writes
+        # dist/<project>/browser, and an outDir can nest it further still (dist/build).
+        # A hardcoded guess either fails outright or ships a tree whose index.html sits a
         # level down, which nginx then answers with 404 from an image that built
-        # perfectly cleanly. Take the first candidate that actually holds an index.html.
+        # perfectly cleanly. Take the shallowest candidate that holds an index.html.
         _out=""
-        for _c in dist build out dist/*/browser; do
+        for _c in dist build out dist/* build/* out/* dist/*/* build/*/*; do
           if [ -f "$_c/index.html" ]; then _out="$_c"; break; fi
         done
         if [ -z "$_out" ]; then
-          echo "✗ webserver: the build produced no index.html under dist/, build/ or out/" >&2
-          echo "  Point the bundler's output directory at one of those." >&2
+          echo "✗ webserver: the build ran but left no index.html where it could be found" >&2
+          echo "  Looked in: dist, build, out, and up to two levels beneath dist and build." >&2
+          echo "  What the build actually produced:" >&2
+          find dist build out -maxdepth 3 2>/dev/null | head -40 | sed "s|^|    |" >&2
+          echo "  Set the bundler's outDir to one of those paths." >&2
           exit 1
         fi
         echo "  -> webserver: installing $_out as the document root"
@@ -197,18 +205,22 @@ build:
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
         else npm run build; fi
-        # Where the bundle lands depends on the tool and its version: CRA writes build/,
-        # Vite and Vue write dist/, Angular 17+ writes dist/<project>/browser. Copying a
-        # hardcoded guess either fails outright or ships a tree whose index.html sits a
+        # Where the bundle lands depends on the tool, its version and the project's own
+        # config: CRA writes build/, Vite and Vue write dist/, Angular 17+ writes
+        # dist/<project>/browser, and an outDir can nest it further still (dist/build).
+        # A hardcoded guess either fails outright or ships a tree whose index.html sits a
         # level down, which nginx then answers with 404 from an image that built
-        # perfectly cleanly. Take the first candidate that actually holds an index.html.
+        # perfectly cleanly. Take the shallowest candidate that holds an index.html.
         _out=""
-        for _c in dist build out dist/*/browser; do
+        for _c in dist build out dist/* build/* out/* dist/*/* build/*/*; do
           if [ -f "$_c/index.html" ]; then _out="$_c"; break; fi
         done
         if [ -z "$_out" ]; then
-          echo "✗ webserver: the build produced no index.html under dist/, build/ or out/" >&2
-          echo "  Point the bundler's output directory at one of those." >&2
+          echo "✗ webserver: the build ran but left no index.html where it could be found" >&2
+          echo "  Looked in: dist, build, out, and up to two levels beneath dist and build." >&2
+          echo "  What the build actually produced:" >&2
+          find dist build out -maxdepth 3 2>/dev/null | head -40 | sed "s|^|    |" >&2
+          echo "  Set the bundler's outDir to one of those paths." >&2
           exit 1
         fi
         echo "  -> webserver: installing $_out as the document root"
@@ -229,18 +241,22 @@ build:
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
         else npm run build; fi
-        # Where the bundle lands depends on the tool and its version: CRA writes build/,
-        # Vite and Vue write dist/, Angular 17+ writes dist/<project>/browser. Copying a
-        # hardcoded guess either fails outright or ships a tree whose index.html sits a
+        # Where the bundle lands depends on the tool, its version and the project's own
+        # config: CRA writes build/, Vite and Vue write dist/, Angular 17+ writes
+        # dist/<project>/browser, and an outDir can nest it further still (dist/build).
+        # A hardcoded guess either fails outright or ships a tree whose index.html sits a
         # level down, which nginx then answers with 404 from an image that built
-        # perfectly cleanly. Take the first candidate that actually holds an index.html.
+        # perfectly cleanly. Take the shallowest candidate that holds an index.html.
         _out=""
-        for _c in dist build out dist/*/browser; do
+        for _c in dist build out dist/* build/* out/* dist/*/* build/*/*; do
           if [ -f "$_c/index.html" ]; then _out="$_c"; break; fi
         done
         if [ -z "$_out" ]; then
-          echo "✗ webserver: the build produced no index.html under dist/, build/ or out/" >&2
-          echo "  Point the bundler's output directory at one of those." >&2
+          echo "✗ webserver: the build ran but left no index.html where it could be found" >&2
+          echo "  Looked in: dist, build, out, and up to two levels beneath dist and build." >&2
+          echo "  What the build actually produced:" >&2
+          find dist build out -maxdepth 3 2>/dev/null | head -40 | sed "s|^|    |" >&2
+          echo "  Set the bundler's outDir to one of those paths." >&2
           exit 1
         fi
         echo "  -> webserver: installing $_out as the document root"
@@ -258,18 +274,22 @@ build:
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
         else npm run build; fi
-        # Where the bundle lands depends on the tool and its version: CRA writes build/,
-        # Vite and Vue write dist/, Angular 17+ writes dist/<project>/browser. Copying a
-        # hardcoded guess either fails outright or ships a tree whose index.html sits a
+        # Where the bundle lands depends on the tool, its version and the project's own
+        # config: CRA writes build/, Vite and Vue write dist/, Angular 17+ writes
+        # dist/<project>/browser, and an outDir can nest it further still (dist/build).
+        # A hardcoded guess either fails outright or ships a tree whose index.html sits a
         # level down, which nginx then answers with 404 from an image that built
-        # perfectly cleanly. Take the first candidate that actually holds an index.html.
+        # perfectly cleanly. Take the shallowest candidate that holds an index.html.
         _out=""
-        for _c in dist build out dist/*/browser; do
+        for _c in dist build out dist/* build/* out/* dist/*/* build/*/*; do
           if [ -f "$_c/index.html" ]; then _out="$_c"; break; fi
         done
         if [ -z "$_out" ]; then
-          echo "✗ webserver: the build produced no index.html under dist/, build/ or out/" >&2
-          echo "  Point the bundler's output directory at one of those." >&2
+          echo "✗ webserver: the build ran but left no index.html where it could be found" >&2
+          echo "  Looked in: dist, build, out, and up to two levels beneath dist and build." >&2
+          echo "  What the build actually produced:" >&2
+          find dist build out -maxdepth 3 2>/dev/null | head -40 | sed "s|^|    |" >&2
+          echo "  Set the bundler's outDir to one of those paths." >&2
           exit 1
         fi
         echo "  -> webserver: installing $_out as the document root"
@@ -287,18 +307,22 @@ build:
         elif [ -f "pnpm-lock.yaml" ]; then pnpm run build
         elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then bun run build
         else npm run build; fi
-        # Where the bundle lands depends on the tool and its version: CRA writes build/,
-        # Vite and Vue write dist/, Angular 17+ writes dist/<project>/browser. Copying a
-        # hardcoded guess either fails outright or ships a tree whose index.html sits a
+        # Where the bundle lands depends on the tool, its version and the project's own
+        # config: CRA writes build/, Vite and Vue write dist/, Angular 17+ writes
+        # dist/<project>/browser, and an outDir can nest it further still (dist/build).
+        # A hardcoded guess either fails outright or ships a tree whose index.html sits a
         # level down, which nginx then answers with 404 from an image that built
-        # perfectly cleanly. Take the first candidate that actually holds an index.html.
+        # perfectly cleanly. Take the shallowest candidate that holds an index.html.
         _out=""
-        for _c in dist build out dist/*/browser; do
+        for _c in dist build out dist/* build/* out/* dist/*/* build/*/*; do
           if [ -f "$_c/index.html" ]; then _out="$_c"; break; fi
         done
         if [ -z "$_out" ]; then
-          echo "✗ webserver: the build produced no index.html under dist/, build/ or out/" >&2
-          echo "  Point the bundler's output directory at one of those." >&2
+          echo "✗ webserver: the build ran but left no index.html where it could be found" >&2
+          echo "  Looked in: dist, build, out, and up to two levels beneath dist and build." >&2
+          echo "  What the build actually produced:" >&2
+          find dist build out -maxdepth 3 2>/dev/null | head -40 | sed "s|^|    |" >&2
+          echo "  Set the bundler's outDir to one of those paths." >&2
           exit 1
         fi
         echo "  -> webserver: installing $_out as the document root"
