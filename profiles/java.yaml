@@ -141,7 +141,7 @@ build:
           rm -f "$certfile"
         done
       fi
-      export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djavax.net.ssl.trustStore=/tmp/apexpack-cacerts -Djavax.net.ssl.trustStorePassword=changeit"
+      export JDK_JAVA_OPTIONS="${JDK_JAVA_OPTIONS:+$JDK_JAVA_OPTIONS }-Djavax.net.ssl.trustStore=/tmp/apexpack-cacerts -Djavax.net.ssl.trustStorePassword=changeit"
     fi
   tls_ca_pre_step: |
     [ -f /home/build/.apexpack-ca.crt ] || exit 0
@@ -246,7 +246,14 @@ image:
     - "8080"
   env:
     JAVA_HOME: "/usr/lib/jvm/java-{JAVA_VERSION}-openjdk"
-    JAVA_TOOL_OPTIONS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -Xint"
+    # Container-aware heap sizing only. This is JVM tuning, so a chart that sets
+    # JAVA_TOOL_OPTIONS itself deliberately takes ownership of it; the truststore
+    # apexpack bakes in lives in JDK_JAVA_OPTIONS instead, where a pod-spec env
+    # entry cannot erase it. Do not add -Xint or -XX:-TieredCompilation here: both
+    # cost roughly an order of magnitude of throughput, and neither avoids needing
+    # executable memory, which is what "Failed to mark memory page as executable"
+    # is actually about - the template interpreter is generated code too.
+    JAVA_TOOL_OPTIONS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
     MALLOC_ARENA_MAX: "2"
   health-check:
     http:
@@ -271,9 +278,101 @@ test:
         - openjdk{JAVA_VERSION}-jre
   pipeline:
     - runs: |
-        test -s /app/app.jar || { echo "ERROR: /app/app.jar not found or empty"; exit 1; }
+        set -e
+
+        # Mirrors image.env JAVA_TOOL_OPTIONS. melange runs this test in the build
+        # sandbox, not under the apko image environment, so the shipped value cannot
+        # be read back here - it is repeated so the flags are at least proven to
+        # start a JVM. Change both together.
+        APEXPACK_JVM_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+        test -s /app/app.jar || { echo "ERROR: /app/app.jar not found or empty" >&2; exit 1; }
+
+        # A jar with no Main-Class cannot be started by "java -jar" at all: the
+        # container exits at once with "no main manifest attribute". A build that
+        # packaged a library module rather than the application produces exactly
+        # that, and it is far cheaper to catch here than from a CrashLoopBackOff.
+        # Spring Boot jars name the loader as Main-Class, so they pass.
+        if command -v unzip > /dev/null 2>&1; then
+          MANIFEST=$(unzip -p /app/app.jar META-INF/MANIFEST.MF 2>/dev/null || true)
+          if ! printf '%s' "$MANIFEST" | grep -qi "^Main-Class:"; then
+            echo "ERROR: /app/app.jar declares no Main-Class - java -jar cannot start it" >&2
+            echo "  MANIFEST.MF held:" >&2
+            printf '%s\n' "$MANIFEST" | sed 's/^/    /' >&2
+            exit 1
+          fi
+          echo "    manifest declares $(printf '%s' "$MANIFEST" | grep -i '^Main-Class:' | tr -d '\r')"
+        fi
+
         JAVA_BIN=$(find /usr/lib/jvm -name java -type f -print -quit 2>/dev/null)
         if [ -z "$JAVA_BIN" ]; then JAVA_BIN=$(command -v java 2>/dev/null); fi
-        if [ -z "$JAVA_BIN" ]; then echo "ERROR: java binary not found"; exit 1; fi
-        "$JAVA_BIN" -version 2>&1 | { head -2; cat > /dev/null; }
-        echo "✓ /app/app.jar present, Java runtime available"
+        if [ -z "$JAVA_BIN" ]; then echo "ERROR: java binary not found" >&2; exit 1; fi
+
+        # The JVM's exit status is the whole point of this check, so it must not be
+        # piped. "java -version | { head -2; cat >/dev/null; }" reports the status of
+        # the trailing command, which is always 0 - so a VM that died during
+        # initialisation passed this test. That is precisely the class of failure
+        # worth catching: a bad option, a missing shared library, or
+        # "Failed to mark memory page as executable".
+        if ! "$JAVA_BIN" -version > /tmp/apexpack-javaver.txt 2>&1; then
+          echo "ERROR: the JVM failed to start. Its output was:" >&2
+          sed 's/^/    /' /tmp/apexpack-javaver.txt >&2
+          exit 1
+        fi
+        sed 's/^/    /' /tmp/apexpack-javaver.txt
+
+        # Start a JVM under exactly the options the image sets. JAVA_TOOL_OPTIONS is
+        # applied before any application code runs, so an option this JVM does not
+        # recognise kills every container before it reaches main().
+        if ! JAVA_TOOL_OPTIONS="$APEXPACK_JVM_OPTS" "$JAVA_BIN" -version \
+             > /tmp/apexpack-javaopts.txt 2>&1; then
+          echo "ERROR: the JVM rejected the options this image ships:" >&2
+          echo "    JAVA_TOOL_OPTIONS=$APEXPACK_JVM_OPTS" >&2
+          sed 's/^/    /' /tmp/apexpack-javaopts.txt >&2
+          exit 1
+        fi
+        if ! grep -q "Picked up JAVA_TOOL_OPTIONS" /tmp/apexpack-javaopts.txt; then
+          echo "ERROR: the JVM did not pick up JAVA_TOOL_OPTIONS at all" >&2
+          sed 's/^/    /' /tmp/apexpack-javaopts.txt >&2
+          exit 1
+        fi
+
+        # -Xint leaves the JVM interpreting every bytecode. It is a debugging aid, not
+        # a deployment setting, and it does not avoid needing executable memory.
+        if grep -q "interpreted mode" /tmp/apexpack-javaopts.txt; then
+          echo "ERROR: the shipped options leave the JVM in interpreted mode (-Xint)" >&2
+          sed 's/^/    /' /tmp/apexpack-javaopts.txt >&2
+          exit 1
+        fi
+        echo "    JVM starts under the shipped options, JIT enabled"
+
+        # When a corporate CA was baked in, the truststore has to be a keystore the JVM
+        # can actually open. A truncated or wrongly-typed file fails only on the first
+        # outbound TLS call, deep inside the application.
+        if [ -f /etc/ssl/certs/cacerts ]; then
+          if ! JDK_JAVA_OPTIONS="-Djavax.net.ssl.trustStore=/etc/ssl/certs/cacerts -Djavax.net.ssl.trustStorePassword=changeit" \
+               "$JAVA_BIN" -version > /tmp/apexpack-ts.txt 2>&1; then
+            echo "ERROR: the JVM could not load the baked truststore /etc/ssl/certs/cacerts" >&2
+            sed 's/^/    /' /tmp/apexpack-ts.txt >&2
+            exit 1
+          fi
+          echo "    truststore /etc/ssl/certs/cacerts loads"
+        fi
+
+        # The entrypoint wrapper sits in front of the JVM in every image that needs a
+        # runtime CA, so it has to stay transparent to the environment. If it ever
+        # stopped exec-ing the real command, or dropped a variable on the way through,
+        # the symptom in the cluster is a JVM that never reports its JAVA_TOOL_OPTIONS
+        # and an application that cannot see its own configuration.
+        if [ -x /usr/bin/apexpack-entrypoint ]; then
+          GOT=$(APEXPACK_PROBE=transparent /usr/bin/apexpack-entrypoint \
+                  sh -c 'printf %s "$APEXPACK_PROBE"' 2>/dev/null || true)
+          if [ "$GOT" != "transparent" ]; then
+            echo "ERROR: /usr/bin/apexpack-entrypoint did not pass the environment through" >&2
+            echo "  expected 'transparent', got '$GOT'" >&2
+            exit 1
+          fi
+          echo "    apexpack-entrypoint passes the environment through"
+        fi
+
+        echo "✓ /app/app.jar is startable and the JVM runs with the shipped options"

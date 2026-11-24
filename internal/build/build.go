@@ -10,10 +10,10 @@ import (
 	"strings"
 
 	"github.com/apexpack/apexpack/internal/build/config"
+	"github.com/apexpack/apexpack/internal/build/helpers"
 	"github.com/apexpack/apexpack/internal/build/hooks"
 	"github.com/apexpack/apexpack/internal/build/probes"
 	"github.com/apexpack/apexpack/internal/build/runner"
-	"github.com/apexpack/apexpack/internal/build/helpers"
 	"github.com/apexpack/apexpack/internal/types"
 )
 
@@ -214,7 +214,31 @@ fi`
 					if plan.Apko.Environment == nil {
 						plan.Apko.Environment = make(map[string]string)
 					}
-					plan.Apko.Environment["JAVA_TOOL_OPTIONS"] = "-Djavax.net.ssl.trustStore=/etc/ssl/certs/cacerts -Djavax.net.ssl.trustStorePassword=changeit"
+					// The JVM truststore is apexpack infrastructure: on a proxied cluster
+					// nothing outbound completes a TLS handshake without it. It has to
+					// survive two separate things that were erasing it.
+					//
+					// Assigning JAVA_TOOL_OPTIONS here overwrote whatever the profile had
+					// put there, so every build that passed --tls-extra-ca shipped without
+					// -XX:+UseContainerSupport or -XX:MaxRAMPercentage and sized its heap
+					// from the node's RAM rather than the container limit. --dry-run could
+					// not show it either, because the dry-run output is marshalled before
+					// this block runs and apko.yaml is rewritten after it.
+					//
+					// JDK_JAVA_OPTIONS is read by the java launcher in addition to
+					// JAVA_TOOL_OPTIONS and processed after it, so apexpack owns one
+					// variable and leaves the other to the application. That division also
+					// fixes the deployment side: a pod-spec env entry replaces the image's
+					// value for that key outright, so a chart that adds a JAAS login
+					// config to JAVA_TOOL_OPTIONS would otherwise drop the truststore
+					// along with it.
+					const trustStoreOpts = "-Djavax.net.ssl.trustStore=/etc/ssl/certs/cacerts " +
+						"-Djavax.net.ssl.trustStorePassword=changeit"
+					if existing := plan.Apko.Environment["JDK_JAVA_OPTIONS"]; existing != "" {
+						plan.Apko.Environment["JDK_JAVA_OPTIONS"] = existing + " " + trustStoreOpts
+					} else {
+						plan.Apko.Environment["JDK_JAVA_OPTIONS"] = trustStoreOpts
+					}
 				}
 
 				var caBundleVersion string
