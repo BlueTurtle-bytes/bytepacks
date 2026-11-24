@@ -98,6 +98,12 @@ retarget_nginx_root() {
         _esc=$(printf '%s' "$_root" | sed 's#\.#\\.#g')
         sed -E "s#^([[:space:]]*root[[:space:]]+)$_esc[[:space:]]*;#\1/usr/share/nginx/html;#" \
           "$_conf" > "$_conf.apexpack"
+        # Same trap as above: never move an empty result over the config.
+        if [ ! -s "$_conf.apexpack" ]; then
+          rm -f "$_conf.apexpack"
+          echo "✗ nginx: rewriting root $_root in $_conf produced an empty file" >&2
+          exit 1
+        fi
         mv "$_conf.apexpack" "$_conf"
       done
 }
@@ -122,7 +128,91 @@ assert_nginx_rendered() {
   fi
 }
 
+# Every path nginx writes to has a compiled-in default under the build prefix
+# (/var/lib/nginx on Wolfi), and nginx creates all of them in ngx_create_paths
+# at startup whether or not the feature is ever used — a plain static site still
+# gets a uwsgi temp directory. harden_nginx_conf can only rewrite a directive
+# that is actually written down, so a project config that simply omits them
+# inherits the prefix and dies on a read-only root filesystem with
+#
+#	mkdir() "/var/lib/nginx/tmp/uwsgi" failed (30: Read-only file system)
+#
+# naming a directory nothing in the config mentions. Writing each one down is
+# what stops nginx reaching for its default at all; the apko path entries for
+# /var/lib/nginx cannot help, because those directories are read-only at runtime
+# however permissive their mode.
+ensure_nginx_writable_paths() {
+  _conf="$1"
+  # A conf.d fragment has no http block. The apexpack main config already
+  # declares all of these, and pid is valid only in the main context, so a
+  # fragment has to be left exactly as it is.
+  grep -qE '^[[:space:]]*http[[:space:]]*\{' "$_conf" || return 0
+
+  _http=""
+  for _spec in \
+    "client_body_temp_path /tmp/nginx-client-body" \
+    "proxy_temp_path /tmp/nginx-proxy" \
+    "fastcgi_temp_path /tmp/nginx-fastcgi" \
+    "uwsgi_temp_path /tmp/nginx-uwsgi" \
+    "scgi_temp_path /tmp/nginx-scgi"; do
+    _name=${_spec%% *}
+    if ! grep -qE "^[[:space:]]*$_name[[:space:]]" "$_conf"; then
+      _http="$_http    $_spec;
+"
+    fi
+  done
+  if [ -n "$_http" ]; then
+    echo "  -> nginx: these writable paths were left to the build prefix - pinning them under /tmp:"
+    printf '%s' "$_http" | sed 's/^ */       /'
+    # The directives reach awk through a file, not -v: an assignment cannot
+    # carry a newline, and busybox and BSD awk both abort with "newline in
+    # string" instead of failing cleanly.
+    printf '%s' "$_http" > "$_conf.apexpack-ins"
+    if ! awk -v insfile="$_conf.apexpack-ins" '
+      !ins_done && $0 ~ /^[[:space:]]*http[[:space:]]*\{/ {
+        print
+        while ((getline _l < insfile) > 0) print _l
+        close(insfile)
+        ins_done = 1
+        next
+      }
+      { print }
+    ' "$_conf" > "$_conf.apexpack" || [ ! -s "$_conf.apexpack" ]; then
+      # A filter that fails still leaves its redirect target behind, empty.
+      # Moving that over the config would ship an image whose nginx.conf is
+      # blank - which nginx accepts, then serves nothing.
+      rm -f "$_conf.apexpack" "$_conf.apexpack-ins"
+      echo "✗ nginx: could not declare writable paths in $_conf" >&2
+      return 1
+    fi
+    rm -f "$_conf.apexpack-ins"
+    mv "$_conf.apexpack" "$_conf"
+  fi
+
+  # pid is main-context only, so finding it anywhere settles the question.
+  # error_log may also appear inside http or server; a copy there still leaves
+  # the main-context default in place, but that only costs an alert at startup,
+  # whereas inserting a second main-level directive could not be undone.
+  _main=""
+  grep -qE '^[[:space:]]*pid[[:space:]]' "$_conf" || _main="${_main}pid /tmp/nginx.pid;
+"
+  grep -qE '^[[:space:]]*error_log[[:space:]]' "$_conf" || _main="${_main}error_log /dev/stderr notice;
+"
+  if [ -n "$_main" ]; then
+    echo "  -> nginx: adding main-context defaults the config omitted:"
+    printf '%s' "$_main" | sed 's/^/       /'
+    printf '%s' "$_main" | cat - "$_conf" > "$_conf.apexpack"
+    if [ ! -s "$_conf.apexpack" ]; then
+      rm -f "$_conf.apexpack"
+      echo "✗ nginx: could not add main-context defaults to $_conf" >&2
+      return 1
+    fi
+    mv "$_conf.apexpack" "$_conf"
+  fi
+}
+
 finalise_nginx_conf() {
+  ensure_nginx_writable_paths "$1"
   retarget_nginx_root "$1"
   assert_nginx_rendered "$1"
 }

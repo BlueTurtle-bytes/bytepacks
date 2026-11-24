@@ -593,3 +593,130 @@ func TestFinaliseNginxConfRejectsUnrenderableTemplates(t *testing.T) {
 		t.Errorf("the failure must quote the offending line, got:\n%s", log)
 	}
 }
+
+// TestEnsureWritablePathsCoversPrefixDefaults reproduces the read-only crash a
+// migrated project hit on boot:
+//
+//	nginx: [emerg] mkdir() "/var/lib/nginx/tmp/uwsgi" failed (30: Read-only file system)
+//
+// The config was a complete one, so it replaced the apexpack template that
+// declares these paths, and it named none of them itself. nginx creates every
+// temp directory at startup regardless of whether the feature is used, so a
+// static site died on a uwsgi directory its config never mentions.
+func TestEnsureWritablePathsCoversPrefixDefaults(t *testing.T) {
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "nginx.conf")
+	body := "worker_processes auto;\n\nevents {\n    worker_connections 1024;\n}\n\n" +
+		"http {\n    include /etc/nginx/mime.types;\n    sendfile on;\n\n" +
+		"    server {\n        listen 8080;\n        root /usr/share/nginx/html;\n    }\n}\n"
+	if err := os.WriteFile(conf, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	destdir := filepath.Join(dir, "destdir")
+	if err := os.MkdirAll(filepath.Join(destdir, "usr/share/nginx/html"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	log, code := runHardenScript(t, "finalise_nginx_conf \"$1\"\n", conf, destdir)
+	if code != 0 {
+		t.Fatalf("finalise failed (%d):\n%s", code, log)
+	}
+	got, _ := os.ReadFile(conf)
+	out := string(got)
+
+	for _, d := range []string{
+		"client_body_temp_path /tmp/nginx-client-body;",
+		"proxy_temp_path /tmp/nginx-proxy;",
+		"fastcgi_temp_path /tmp/nginx-fastcgi;",
+		"uwsgi_temp_path /tmp/nginx-uwsgi;",
+		"scgi_temp_path /tmp/nginx-scgi;",
+		"pid /tmp/nginx.pid;",
+	} {
+		if !strings.Contains(out, d) {
+			t.Errorf("%q was left to the build prefix; nginx would mkdir under /var/lib/nginx:\n%s", d, out)
+		}
+	}
+	// Every temp path is an http-context directive: outside that block nginx
+	// rejects the config outright.
+	httpAt := strings.Index(out, "http {")
+	if httpAt < 0 {
+		t.Fatalf("http block lost:\n%s", out)
+	}
+	if i := strings.Index(out, "uwsgi_temp_path"); i < httpAt {
+		t.Errorf("uwsgi_temp_path was inserted outside the http block:\n%s", out)
+	}
+}
+
+// TestEnsureWritablePathsKeepsWhatTheConfigDeclares: a project that has already
+// chosen a writable location keeps it. Only the directives it never wrote down
+// are supplied, so this never silently overrides a deliberate choice.
+func TestEnsureWritablePathsKeepsWhatTheConfigDeclares(t *testing.T) {
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "nginx.conf")
+	body := "pid /tmp/mine.pid;\nerror_log /dev/stderr;\n\nhttp {\n" +
+		"    uwsgi_temp_path /tmp/mine-uwsgi;\n}\n"
+	if err := os.WriteFile(conf, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	destdir := filepath.Join(dir, "destdir")
+	if err := os.MkdirAll(filepath.Join(destdir, "usr/share/nginx/html"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	log, code := runHardenScript(t, "finalise_nginx_conf \"$1\"\n", conf, destdir)
+	if code != 0 {
+		t.Fatalf("finalise failed (%d):\n%s", code, log)
+	}
+	out := string(mustRead(t, conf))
+	for _, keep := range []string{"pid /tmp/mine.pid;", "uwsgi_temp_path /tmp/mine-uwsgi;"} {
+		if !strings.Contains(out, keep) {
+			t.Errorf("a path the project chose was overridden, want %q:\n%s", keep, out)
+		}
+	}
+	if strings.Count(out, "uwsgi_temp_path") != 1 {
+		t.Errorf("uwsgi_temp_path was declared twice; nginx rejects a duplicate:\n%s", out)
+	}
+	if strings.Count(out, "pid ") != 1 {
+		t.Errorf("pid was declared twice:\n%s", out)
+	}
+	if !strings.Contains(out, "scgi_temp_path /tmp/nginx-scgi;") {
+		t.Errorf("a directive the config omitted was not supplied:\n%s", out)
+	}
+}
+
+// TestEnsureWritablePathsLeavesFragmentsAlone: a conf.d fragment is included
+// inside the apexpack main config's http block, which already declares these.
+// Adding them again would duplicate them, and pid is invalid outside the main
+// context, so a fragment has to come through untouched.
+func TestEnsureWritablePathsLeavesFragmentsAlone(t *testing.T) {
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "default.conf")
+	body := "server {\n    listen 8080;\n    root /usr/share/nginx/html;\n}\n"
+	if err := os.WriteFile(conf, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	destdir := filepath.Join(dir, "destdir")
+	if err := os.MkdirAll(filepath.Join(destdir, "usr/share/nginx/html"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	log, code := runHardenScript(t, "finalise_nginx_conf \"$1\"\n", conf, destdir)
+	if code != 0 {
+		t.Fatalf("finalise failed (%d):\n%s", code, log)
+	}
+	out := string(mustRead(t, conf))
+	for _, bad := range []string{"pid ", "uwsgi_temp_path", "error_log"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("%q was injected into a conf.d fragment, where it is invalid:\n%s", bad, out)
+		}
+	}
+}
+
+func mustRead(t *testing.T, p string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read %s: %v", p, err)
+	}
+	return b
+}
