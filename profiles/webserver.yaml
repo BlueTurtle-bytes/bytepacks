@@ -438,3 +438,24 @@ test:
         done
         [ "$fail" -eq 0 ] || exit 1
         echo "✓ writable paths under /tmp, no privileged ports, no user directive"
+    # The check above only sees a directive that is written down. nginx falls back
+    # to its compiled-in default for any *_temp_path the config omits, and on Wolfi
+    # those are absolute under /var/lib/nginx/tmp - read-only at runtime. nginx
+    # creates all of them in ngx_create_paths at startup whether the feature is
+    # used or not, so a plain static site still needs a uwsgi temp dir. An omitted
+    # directive is therefore exactly as fatal as a wrong one, and invisible to a
+    # value check - which is how a broken image shipped. Only the main config is
+    # checked: a conf.d fragment is included inside http{} and inherits these.
+    - runs: |
+        missing=""
+        for d in client_body_temp_path proxy_temp_path fastcgi_temp_path uwsgi_temp_path scgi_temp_path; do
+          grep -qE "^[[:space:]]*$d[[:space:]]" /etc/nginx/apexpack.conf || missing="$missing $d"
+        done
+        if [ -n "$missing" ]; then
+          echo "x /etc/nginx/apexpack.conf omits:$missing" >&2
+          echo "  nginx falls back to /var/lib/nginx/tmp for these and creates them at" >&2
+          echo "  startup, so the pod dies on a read-only root filesystem with" >&2
+          echo "  mkdir() /var/lib/nginx/tmp/uwsgi failed (30: Read-only file system)" >&2
+          exit 1
+        fi
+        echo "OK: all five nginx temp paths are declared"
