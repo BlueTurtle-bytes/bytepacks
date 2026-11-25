@@ -146,7 +146,13 @@ ensure_nginx_writable_paths() {
   # A conf.d fragment has no http block. The apexpack main config already
   # declares all of these, and pid is valid only in the main context, so a
   # fragment has to be left exactly as it is.
-  grep -qE '^[[:space:]]*http[[:space:]]*\{' "$_conf" || return 0
+  #
+  # nginx opens a block as "http {", "http{" or "http" with the brace on the
+  # next line, and all three are common in hand-written configs. Matching only
+  # the first spelling made the other two look like a fragment: the five
+  # directives were skipped and the image still died on a read-only root
+  # filesystem, with nothing in the build log to say why.
+  grep -qE '^[[:space:]]*http([[:space:]]*\{|[[:space:]]*$)' "$_conf" || return 0
 
   _http=""
   for _spec in \
@@ -169,8 +175,15 @@ ensure_nginx_writable_paths() {
     # string" instead of failing cleanly.
     printf '%s' "$_http" > "$_conf.apexpack-ins"
     if ! awk -v insfile="$_conf.apexpack-ins" '
-      !ins_done && $0 ~ /^[[:space:]]*http[[:space:]]*\{/ {
+      !ins_done && $0 ~ /^[[:space:]]*http([[:space:]]*\{|[[:space:]]*$)/ {
         print
+        # The brace may sit on a later line. Insert after whichever line opens
+        # the block, never before it - a directive above the brace would be
+        # read in the main context and nginx would refuse to start.
+        while ($0 !~ /\{/) {
+          if ((getline) <= 0) break
+          print
+        }
         while ((getline _l < insfile) > 0) print _l
         close(insfile)
         ins_done = 1
@@ -269,7 +282,7 @@ func nginxConfigStep(projectSubpath, profilesDir string) (string, error) {
 # A project nginx.conf declaring events{} or http{} is a complete config and
 # replaces ours; anything else is a server-level fragment for conf.d. Guessing
 # wrong either way means nginx silently runs a config nobody wrote.
-if [ -f nginx.conf ] && grep -qE '^[[:space:]]*(events|http)[[:space:]]*\{' nginx.conf; then
+if [ -f nginx.conf ] && grep -qE '^[[:space:]]*(events|http)([[:space:]]*\{|[[:space:]]*$)' nginx.conf; then
   echo "  -> nginx: project nginx.conf is a full config - installing as ` + nginxConfPath + `"
   harden_nginx_conf nginx.conf > "$DESTDIR` + nginxConfPath + `"
   finalise_nginx_conf "$DESTDIR` + nginxConfPath + `"

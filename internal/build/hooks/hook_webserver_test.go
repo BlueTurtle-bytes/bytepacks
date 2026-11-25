@@ -155,7 +155,7 @@ func TestNginxTemplatesHonourProfilesDirOverride(t *testing.T) {
 func TestNginxConfigStepHandlesBothConfigShapes(t *testing.T) {
 	s := step(t, "", "")
 	for _, want := range []string{
-		`grep -qE '^[[:space:]]*(events|http)[[:space:]]*\{' nginx.conf`,
+		`grep -qE '^[[:space:]]*(events|http)([[:space:]]*\{|[[:space:]]*$)' nginx.conf`,
 		`harden_nginx_conf nginx.conf > "$DESTDIR/etc/nginx/apexpack.conf"`,
 		`harden_nginx_conf nginx.conf > "$DESTDIR/etc/nginx/conf.d/default.conf"`,
 		"APEXPACK_NGINX_MAIN",
@@ -719,4 +719,71 @@ func mustRead(t *testing.T, p string) []byte {
 		t.Fatalf("read %s: %v", p, err)
 	}
 	return b
+}
+
+// TestEnsureWritablePathsHandlesBraceOnNextLine covers the mandatecalc-ui
+// failure. nginx accepts "http {", "http{" and "http" with the brace on the
+// following line, and the project's hand-written config used the last. Matching
+// only the first spelling made a complete config look like a conf.d fragment,
+// so ensure_nginx_writable_paths returned without touching it — silently, since
+// skipping a fragment is the normal case — and the image shipped with the two
+// temp paths the config happened to omit still pointing at the build prefix. It
+// then died on boot with the very error the function exists to prevent.
+//
+// The inserted directives must land *after* the opening brace: above it they
+// would be read in the main context and nginx would refuse to start.
+func TestEnsureWritablePathsHandlesBraceOnNextLine(t *testing.T) {
+	const input = `worker_processes auto;
+events
+{
+    worker_connections 1024;
+}
+http
+{
+    client_body_temp_path /tmp/client_body;
+    proxy_temp_path /tmp/proxy_temp;
+    fastcgi_temp_path /tmp/fastcgi_temp;
+    server {
+        listen 8080;
+        root /usr/share/nginx/html;
+    }
+}
+`
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "nginx.conf")
+	if err := os.WriteFile(conf, []byte(input), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	destdir := filepath.Join(dir, "destdir")
+	if err := os.MkdirAll(filepath.Join(destdir, "usr/share/nginx/html"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	log, code := runHardenScript(t, "finalise_nginx_conf \"$1\"\n", conf, destdir)
+	if code != 0 {
+		t.Fatalf("finalise failed (%d):\n%s", code, log)
+	}
+	b, _ := os.ReadFile(conf)
+	got := string(b)
+	for _, d := range []string{
+		"client_body_temp_path",
+		"proxy_temp_path",
+		"fastcgi_temp_path",
+		"uwsgi_temp_path",
+		"scgi_temp_path",
+	} {
+		if directiveLine(got, d) == "" {
+			t.Errorf("%s is still left to the build prefix:\n%s", d, got)
+		}
+	}
+	// Everything inserted belongs inside http{}, which starts at the brace.
+	brace := strings.Index(got, "http\n{")
+	if brace == -1 {
+		t.Fatalf("the http block opener was rewritten:\n%s", got)
+	}
+	for _, d := range []string{"uwsgi_temp_path", "scgi_temp_path"} {
+		if at := strings.Index(got, d); at < brace {
+			t.Errorf("%s was inserted above the opening brace, nginx reads it in the main context:\n%s", d, got)
+		}
+	}
 }
